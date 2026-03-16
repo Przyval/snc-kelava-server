@@ -171,6 +171,87 @@
         </div>
     </div>
 
+    <!-- Ontology Intelligence Panel -->
+    <div x-show="ontology.properties" class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 text-[#F97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                Ontology Intelligence
+            </h3>
+            <div class="flex items-center gap-2">
+                <!-- Priority Badge -->
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border"
+                      :class="{
+                          'bg-red-50 text-red-700 border-red-300': ontology.properties?.priority === 'P1',
+                          'bg-amber-50 text-amber-700 border-amber-300': ontology.properties?.priority === 'P2',
+                          'bg-slate-50 text-slate-600 border-slate-200': ontology.properties?.priority === 'P3' || !ontology.properties?.priority
+                      }"
+                      x-text="ontology.properties?.priority || 'P3'"></span>
+                <!-- UI Badge -->
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border"
+                      :class="{
+                          'bg-red-100 text-red-800 border-red-300': ontology.properties?.ui_badge === 'URGENT',
+                          'bg-orange-100 text-orange-800 border-orange-200': ontology.properties?.ui_badge === 'HIGH',
+                          'bg-blue-50 text-blue-700 border-blue-200': ontology.properties?.ui_badge === 'NORMAL',
+                          'bg-slate-50 text-slate-500 border-slate-200': ontology.properties?.ui_badge === 'LOW' || !ontology.properties?.ui_badge
+                      }"
+                      x-text="ontology.properties?.ui_badge || '—'"></span>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- RFM Segment -->
+            <div class="col-span-2 md:col-span-1">
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">RFM Segment</p>
+                <span class="inline-block px-2 py-1 rounded text-xs font-bold uppercase border"
+                      :class="{
+                          'bg-emerald-50 text-emerald-800 border-emerald-300': ontology.properties?.rfm_segment === 'CHAMPIONS',
+                          'bg-blue-50 text-blue-800 border-blue-200': ontology.properties?.rfm_segment === 'STABLE_CORE',
+                          'bg-amber-50 text-amber-800 border-amber-200': ontology.properties?.rfm_segment === 'AT_RISK',
+                          'bg-red-50 text-red-800 border-red-200': ontology.properties?.rfm_segment === 'INACTIVE',
+                          'bg-slate-50 text-slate-600 border-slate-200': !ontology.properties?.rfm_segment
+                      }"
+                      x-text="ontology.properties?.rfm_segment?.replace('_', ' ') || '—'"></span>
+                <p class="text-[10px] text-slate-400 mt-1.5 font-mono" x-text="'Vector: ' + (ontology.properties?.rfm_vector || '—')"></p>
+            </div>
+            <!-- RFM Scores -->
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5">R/F/M Scores</p>
+                <div class="space-y-1.5">
+                    <template x-for="[label, score, color] in [['R (Recency)', ontology.properties?.r_score, '#F97316'], ['F (Frequency)', ontology.properties?.f_score, '#3B82F6'], ['M (Monetary)', ontology.properties?.m_score, '#10B981']]">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] text-slate-400 w-24 shrink-0" x-text="label"></span>
+                            <div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all" :style="'width:' + ((score||0)/5*100) + '%;background:' + color"></div>
+                            </div>
+                            <span class="text-[10px] font-bold text-slate-700 w-4 text-right" x-text="score || '—'"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            <!-- Account Status -->
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Account Status</p>
+                <span class="inline-block px-2 py-1 rounded text-xs font-bold uppercase border"
+                      :class="{
+                          'bg-emerald-50 text-emerald-800 border-emerald-200': ontology.properties?.account_status === 'UNDER_SLA',
+                          'bg-amber-50 text-amber-800 border-amber-200': ontology.properties?.account_status === 'AT_RISK',
+                          'bg-red-50 text-red-800 border-red-200': ontology.properties?.account_status === 'OVERDUE',
+                          'bg-slate-50 text-slate-600 border-slate-200': ontology.properties?.account_status === 'INACTIVE' || !ontology.properties?.account_status
+                      }"
+                      x-text="ontology.properties?.account_status?.replace('_', ' ') || '—'"></span>
+                <p class="text-[10px] text-slate-400 mt-1.5">
+                    <span x-text="ontology.properties?.days_since_last_visit ?? '—'"></span>d since last visit
+                </p>
+            </div>
+            <!-- Suggested Action -->
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Suggested Action</p>
+                <p class="text-xs font-medium text-slate-700 leading-relaxed" x-text="ontology.properties?.suggested_action || '—'"></p>
+                <p class="text-[10px] text-slate-400 mt-1.5 italic" x-text="ontology.properties?.reason || ''"></p>
+            </div>
+        </div>
+    </div>
+
     <!-- Account Health Strip -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
         <div class="flex flex-wrap items-center gap-6 text-sm">
@@ -425,7 +506,8 @@ function customerAccountControl() {
         contractPolicy: null,
         contracts: [],
         assignedTechnicians: [],
-        
+        ontology: {},
+
         // Governance
         reviewModalOpen: false,
         reviewOutcome: 'RESOLVED',
@@ -433,12 +515,15 @@ function customerAccountControl() {
         isSubmitting: false,
 
         async loadData() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
             try {
-                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
-                const res = await _fetch(`/api/v1/enterprise/customers/${this.customerId}`);
+                const [res, ontRes] = await Promise.all([
+                    _fetch(`/api/v1/enterprise/customers/${this.customerId}`),
+                    _fetch(`/api/v1/enterprise/ontology/objects/customer/${this.customerId}`).catch(() => null),
+                ]);
                 if (!res.ok) throw new Error('Failed to load data');
                 const data = await res.json();
-                
+
                 this.customer = data.customer || {};
                 this.accountStatus = data.account_status || {};
                 this.summaryCards = data.summary_cards || {};
@@ -448,6 +533,10 @@ function customerAccountControl() {
                 this.contractPolicy = data.contract_policy;
                 this.contracts = data.contracts || [];
                 this.assignedTechnicians = data.assigned_technicians || [];
+
+                if (ontRes && ontRes.ok) {
+                    this.ontology = await ontRes.json();
+                }
             } catch (err) {
                 console.error('Error loading customer details:', err);
             }

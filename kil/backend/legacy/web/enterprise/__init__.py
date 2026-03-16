@@ -253,3 +253,21 @@ def daily_digest_page():
 def export_page():
     """Data Export page."""
     return render_template("enterprise/export.html")
+
+
+@enterprise_bp.route("/accurate")
+def accurate_page():
+    """Accurate Accounting Export page."""
+    return render_template("enterprise/accurate.html")
+
+
+@enterprise_bp.route("/service-forms")
+def service_forms_page():
+    """Form Pelayanan Digital page."""
+    return render_template("enterprise/service_form.html")
+
+
+@enterprise_bp.route("/barcode")
+def barcode_page():
+    """QR/Barcode Unit Checklist page."""
+    return render_template("enterprise/barcode.html")

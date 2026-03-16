@@ -73,8 +73,22 @@ def run_daily_tasks():
         else:
             print(f"      ERROR: {r.status_code} - {data}")
 
-        # 3. Health check
-        print("  [3] Health check...")
+        # 3. SLA breach sweep (mark overdue complaints)
+        print("  [3] SLA breach sweep...")
+        r = client.get("/api/v1/enterprise/complaints/sla-status", headers=headers)
+        try:
+            data = json.loads(r.data)
+        except Exception:
+            data = {}
+        if r.status_code == 200:
+            breached = data.get("breached", 0)
+            at_risk = data.get("at_risk", 0)
+            print(f"      OK: {breached} breached, {at_risk} at-risk complaints")
+        else:
+            print(f"      ERROR: {r.status_code}")
+
+        # 4. Health check
+        print("  [4] Health check...")
         r = client.get("/health")
         data = json.loads(r.data)
         print(f"      Status: {data.get('status', 'unknown')}")

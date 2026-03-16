@@ -214,6 +214,15 @@ def _test_local():
         # Client Portal - token list
         _test(results, "portal-tokens", lambda: c.get("/api/v1/enterprise/client-portal/tokens", headers=h), 200)
 
+        # Accurate Export - preview
+        _test(results, "accurate-preview", lambda: c.get("/api/v1/enterprise/accurate/preview", headers=h), 200)
+
+        # Accurate Export - monthly summary
+        _test(results, "accurate-summary", lambda: c.get("/api/v1/enterprise/accurate/summary", headers=h), 200)
+
+        # Complaint SLA status
+        _test(results, "complaints-sla", lambda: c.get("/api/v1/enterprise/complaints/sla-status", headers=h), 200)
+
     return _report(results)
 
 

@@ -1,0 +1,763 @@
+{% extends "enterprise/base.html" %}
+{% block title %}QR/Barcode Checklist{% endblock %}
+
+{% block content %}
+<div x-data="barcodeApp()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <h1 class="text-2xl font-bold text-[#0F172A]">QR/Barcode Unit Checklist</h1>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-orange-50 text-[#F97316] border border-orange-200">
+                    Replaces Manual Check
+                </span>
+            </div>
+            <p class="text-sm text-[#64748B]">Manajemen unit bait station, perangkap, monitor, dan titik semprot per customer.</p>
+        </div>
+    </div>
+
+    <!-- Customer Selector -->
+    <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm p-4 mb-6">
+        <div class="flex flex-wrap items-end gap-4">
+            <div class="flex flex-col gap-1 flex-1 min-w-[220px] max-w-sm">
+                <label class="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">Pilih Customer</label>
+                <select x-model="selectedCustomerId" @change="onCustomerChange()"
+                        class="px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                    <option value="">-- Pilih Customer --</option>
+                    <template x-for="c in customers" :key="c.id">
+                        <option :value="c.id" x-text="c.name"></option>
+                    </template>
+                </select>
+            </div>
+            <div x-show="unitsLoading" class="flex items-center gap-2 text-sm text-[#64748B]">
+                <svg class="w-4 h-4 animate-spin text-[#F97316]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Memuat unit...
+            </div>
+        </div>
+    </div>
+
+    <!-- Placeholder: No customer selected -->
+    <div x-show="!selectedCustomerId" class="bg-white rounded-xl border-2 border-dashed border-[#E2E8F0] p-12 text-center text-[#94A3B8]">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 mx-auto mb-4 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 4h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+        </svg>
+        <p class="text-base font-semibold text-[#64748B]">Pilih customer untuk melihat unit</p>
+        <p class="text-sm mt-1">Pilih customer di dropdown di atas untuk menampilkan unit terdaftar</p>
+    </div>
+
+    <!-- Content: shown when customer selected -->
+    <div x-show="selectedCustomerId">
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Unit</p>
+                <p class="text-2xl font-bold text-gray-900 mt-1" x-text="unitStats.total_units ?? '-'"></p>
+                <p class="text-xs text-gray-400 mt-1">unit terdaftar</p>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Discan Hari Ini</p>
+                <p class="text-2xl font-bold text-emerald-600 mt-1" x-text="unitStats.scanned_today ?? '-'"></p>
+                <p class="text-xs text-gray-400 mt-1">scan hari ini</p>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Belum Pernah Discan</p>
+                <p class="text-2xl font-bold mt-1" :class="(unitStats.never_scanned || 0) > 0 ? 'text-amber-600' : 'text-gray-900'" x-text="unitStats.never_scanned ?? '-'"></p>
+                <p class="text-xs text-gray-400 mt-1">unit tidak aktif</p>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Butuh Perhatian</p>
+                <p class="text-2xl font-bold mt-1" :class="(unitStats.needs_attention || 0) > 0 ? 'text-red-600' : 'text-gray-900'" x-text="unitStats.needs_attention ?? '-'"></p>
+                <p class="text-xs text-gray-400 mt-1">kondisi buruk</p>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="border-b border-[#E2E8F0] mb-6">
+            <nav class="flex gap-6">
+                <button @click="activeTab = 'registry'"
+                        class="py-3 text-sm font-semibold border-b-2 transition-colors"
+                        :class="activeTab === 'registry' ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'">
+                    Registry Unit
+                    <span class="ml-1.5 px-2 py-0.5 rounded-full text-xs font-bold"
+                          :class="activeTab === 'registry' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-600'"
+                          x-text="units.length"></span>
+                </button>
+                <button @click="activeTab = 'checklist'"
+                        class="py-3 text-sm font-semibold border-b-2 transition-colors"
+                        :class="activeTab === 'checklist' ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'">
+                    Cek Kunjungan
+                </button>
+            </nav>
+        </div>
+
+        <!-- ═══════════ TAB 1: Registry Unit ═══════════════ -->
+        <div x-show="activeTab === 'registry'">
+
+            <!-- Action Bar -->
+            <div class="flex items-center justify-between mb-4">
+                <p class="text-sm text-[#64748B]">
+                    <span class="font-semibold text-[#0F172A]" x-text="units.length"></span> unit terdaftar untuk customer ini
+                </p>
+                <div class="flex gap-2" x-data="{ role: (window.SanoCareAuth?.getCachedUser()?.role || 'viewer') }">
+                    <template x-if="['admin','koordinator'].includes(role)">
+                        <button @click="showAddUnit = true"
+                                class="flex items-center gap-2 px-4 py-2 bg-[#F97316] hover:bg-[#EA580C] text-white text-sm font-semibold rounded-lg shadow transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Tambah Unit
+                        </button>
+                    </template>
+                    <template x-if="['admin','koordinator'].includes(role)">
+                        <button @click="showBulkModal = true"
+                                class="flex items-center gap-2 px-4 py-2 bg-white border border-[#E2E8F0] hover:bg-slate-50 text-[#64748B] text-sm font-medium rounded-lg transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            Bulk Register
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Registry Table -->
+            <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                            <tr>
+                                <th class="px-4 py-3 text-left font-bold">Barcode</th>
+                                <th class="px-4 py-3 text-left font-bold">Jenis Unit</th>
+                                <th class="px-4 py-3 text-left font-bold">Lokasi</th>
+                                <th class="px-4 py-3 text-left font-bold">Area / Lantai</th>
+                                <th class="px-4 py-3 text-center font-bold">Kondisi</th>
+                                <th class="px-4 py-3 text-left font-bold">Terakhir Scan</th>
+                                <th class="px-4 py-3 text-right font-bold">Jml Scan</th>
+                                <th class="px-4 py-3 text-center font-bold">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#F1F5F9]">
+                            <template x-for="unit in units" :key="unit.id">
+                                <tr class="hover:bg-[#F8FAFC] transition-colors">
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#94A3B8] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 4h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                            </svg>
+                                            <span class="font-mono text-xs text-[#0F172A]" x-text="unit.barcode_value"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200"
+                                              x-text="translateUnitType(unit.unit_type)"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-[#0F172A] max-w-[160px] truncate" x-text="unit.location_name || '-'"></td>
+                                    <td class="px-4 py-3 text-xs text-[#475569]">
+                                        <span x-text="unit.area || '-'"></span>
+                                        <span x-show="unit.floor" class="ml-1 text-[#94A3B8]">/ Lt. <span x-text="unit.floor"></span></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                              :class="conditionClass(unit.condition)"
+                                              x-text="unit.condition || '-'"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-xs text-[#475569] whitespace-nowrap">
+                                        <span x-show="unit.last_scanned_at" x-text="formatDate(unit.last_scanned_at)"></span>
+                                        <span x-show="!unit.last_scanned_at" class="text-[#94A3B8] italic">Belum pernah</span>
+                                    </td>
+                                    <td class="px-4 py-3 text-right font-mono text-sm font-semibold text-[#0F172A]" x-text="unit.scan_count || 0"></td>
+                                    <td class="px-4 py-3 text-center">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold border"
+                                              :class="unit.is_active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-500 border-slate-200'"
+                                              x-text="unit.is_active ? 'Aktif' : 'Nonaktif'"></span>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Empty State -->
+                            <tr x-show="!unitsLoading && units.length === 0">
+                                <td colspan="8" class="px-4 py-16 text-center text-[#94A3B8]">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 4h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                    </svg>
+                                    <p class="text-sm font-semibold">Belum ada unit terdaftar</p>
+                                    <p class="text-xs mt-1">Tambah unit baru dengan tombol di atas</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ TAB 2: Cek Kunjungan ══════════════ -->
+        <div x-show="activeTab === 'checklist'">
+
+            <!-- Road Plan Input -->
+            <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm p-5 mb-6">
+                <p class="text-sm font-bold text-[#0F172A] mb-3">Masukkan ID Road Plan</p>
+                <div class="flex gap-3 items-end">
+                    <div class="flex flex-col gap-1 flex-1 max-w-sm">
+                        <label class="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">Road Plan ID</label>
+                        <input type="text" x-model="roadPlanInput" placeholder="Contoh: 12345"
+                               @keydown.enter="loadChecklist()"
+                               class="px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                    </div>
+                    <button @click="loadChecklist()" :disabled="checklistLoading || !roadPlanInput.trim()"
+                            class="flex items-center gap-2 px-5 py-2 bg-[#F97316] hover:bg-[#EA580C] text-white text-sm font-semibold rounded-lg shadow transition-all disabled:opacity-50">
+                        <svg x-show="!checklistLoading" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <svg x-show="checklistLoading" class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="checklistLoading ? 'Mengecek...' : 'Cek'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Checklist Result -->
+            <div x-show="checklist" class="space-y-5">
+
+                <!-- Summary Card -->
+                <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm p-5">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Road Plan</p>
+                            <p class="text-sm font-mono font-bold text-[#0F172A]" x-text="'#' + (checklist?.road_plan_id || '-')"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Tanggal</p>
+                            <p class="text-sm font-semibold text-[#0F172A]" x-text="checklist?.date ? formatDateShort(checklist.date) : '-'"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Teknisi</p>
+                            <p class="text-sm font-semibold text-[#0F172A]" x-text="checklist?.technician || '-'"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Kelengkapan</p>
+                            <p class="text-lg font-bold"
+                               :class="(checklist?.completion_pct || 0) >= 80 ? 'text-emerald-600' : (checklist?.completion_pct || 0) >= 50 ? 'text-amber-600' : 'text-red-600'"
+                               x-text="(checklist?.completion_pct || 0).toFixed(0) + '%'"></p>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-xs font-bold text-[#64748B] uppercase tracking-wide">Progress Scan</span>
+                            <span class="text-xs font-bold text-[#0F172A]">
+                                <span x-text="checklist?.scanned_count || 0"></span> /
+                                <span x-text="checklist?.total_units || 0"></span> unit
+                            </span>
+                        </div>
+                        <div class="h-3 bg-slate-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-[#F97316] rounded-full transition-all duration-700"
+                                 :style="'width: ' + (checklist?.completion_pct || 0) + '%'"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Checklist Table -->
+                <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                    <div class="px-5 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-[#0F172A]">Detail Unit Checklist</h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                                ✓ <span x-text="checklist?.scanned_count || 0"></span> Scanned
+                            </span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-600 border border-red-200">
+                                ✗ <span x-text="(checklist?.total_units || 0) - (checklist?.scanned_count || 0)"></span> Belum
+                            </span>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                                <tr>
+                                    <th class="px-4 py-3 text-left font-bold">Barcode Unit</th>
+                                    <th class="px-4 py-3 text-left font-bold">Jenis</th>
+                                    <th class="px-4 py-3 text-left font-bold">Lokasi</th>
+                                    <th class="px-4 py-3 text-center font-bold">Status Scan</th>
+                                    <th class="px-4 py-3 text-left font-bold">Waktu Scan</th>
+                                    <th class="px-4 py-3 text-center font-bold">Kondisi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-[#F1F5F9]">
+                                <template x-for="u in (checklist?.units || [])" :key="u.barcode_value">
+                                    <tr class="hover:bg-[#F8FAFC] transition-colors"
+                                        :class="!u.scanned ? 'bg-red-50/30' : ''">
+                                        <td class="px-4 py-3">
+                                            <span class="font-mono text-xs text-[#0F172A]" x-text="u.barcode_value"></span>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200"
+                                                  x-text="translateUnitType(u.unit_type)"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs text-[#475569] max-w-[160px] truncate" x-text="u.location_name || '-'"></td>
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="text-base font-bold" :class="u.scanned ? 'text-emerald-500' : 'text-red-500'"
+                                                  x-text="u.scanned ? '✓' : '✗'"></span>
+                                            <span class="ml-1 text-xs font-semibold"
+                                                  :class="u.scanned ? 'text-emerald-600' : 'text-red-500'"
+                                                  x-text="u.scanned ? 'Scanned' : 'Belum'"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs text-[#475569] whitespace-nowrap">
+                                            <span x-show="u.scanned_at" x-text="formatDate(u.scanned_at)"></span>
+                                            <span x-show="!u.scanned_at" class="text-[#94A3B8]">—</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                                  :class="conditionClass(u.condition)"
+                                                  x-text="u.condition || '-'"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="!checklist?.units || checklist.units.length === 0">
+                                    <td colspan="6" class="px-4 py-10 text-center text-[#94A3B8] text-sm">
+                                        Tidak ada unit dalam checklist ini
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty State: No checklist loaded yet -->
+            <div x-show="!checklist && !checklistLoading" class="bg-white rounded-xl border-2 border-dashed border-[#E2E8F0] p-12 text-center text-[#94A3B8]">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                </svg>
+                <p class="text-sm font-semibold text-[#64748B]">Masukkan Road Plan ID untuk melihat checklist scan</p>
+                <p class="text-xs mt-1">Gunakan form di atas untuk memeriksa hasil scan teknisi</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════ Add Unit Modal ════════════════════════ -->
+    <div x-show="showAddUnit" x-cloak
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="showAddUnit = false" @keydown.escape.window="showAddUnit = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" @click.stop>
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <h2 class="text-lg font-bold text-[#0F172A]">Tambah Unit Baru</h2>
+                <button @click="showAddUnit = false" class="p-2 rounded-lg hover:bg-slate-100 text-[#64748B]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">
+                        Barcode / QR Value <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" x-model="newUnit.barcode_value" placeholder="Contoh: SNC-BS-001"
+                           class="w-full px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">
+                        Jenis Unit <span class="text-red-500">*</span>
+                    </label>
+                    <select x-model="newUnit.unit_type"
+                            class="w-full px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                        <option value="BAIT_STATION">Umpan (Bait Station)</option>
+                        <option value="TRAP">Perangkap (Trap)</option>
+                        <option value="MONITOR">Monitor</option>
+                        <option value="SPRAY_POINT">Titik Semprot (Spray Point)</option>
+                        <option value="FLY_CATCHER">Fly Catcher</option>
+                        <option value="OTHER">Lainnya</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">Nama Lokasi</label>
+                    <input type="text" x-model="newUnit.location_name" placeholder="Contoh: Gudang Belakang"
+                           class="w-full px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">Area</label>
+                        <input type="text" x-model="newUnit.area" placeholder="Contoh: Zona A"
+                               class="w-full px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">Lantai</label>
+                        <input type="text" x-model="newUnit.floor" placeholder="Contoh: 1"
+                               class="w-full px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">Catatan</label>
+                    <textarea x-model="newUnit.notes" rows="3" placeholder="Catatan tambahan (opsional)..."
+                              class="w-full px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316] resize-none"></textarea>
+                </div>
+
+                <!-- Error -->
+                <div x-show="addUnitError" class="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700" x-text="addUnitError"></div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button @click="showAddUnit = false"
+                            class="px-4 py-2 text-sm text-[#64748B] hover:text-[#0F172A] font-medium transition-colors">
+                        Batal
+                    </button>
+                    <button @click="submitAddUnit()" :disabled="addingUnit || !newUnit.barcode_value.trim()"
+                            class="flex items-center gap-2 px-5 py-2 bg-[#F97316] hover:bg-[#EA580C] text-white text-sm font-semibold rounded-lg shadow transition-all disabled:opacity-50">
+                        <svg x-show="addingUnit" class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="addingUnit ? 'Menyimpan...' : 'Simpan Unit'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════ Bulk Register Modal ══════════════════ -->
+    <div x-show="showBulkModal" x-cloak
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="showBulkModal = false" @keydown.escape.window="showBulkModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" @click.stop>
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <div>
+                    <h2 class="text-lg font-bold text-[#0F172A]">Bulk Register Unit</h2>
+                    <p class="text-xs text-[#64748B]">Daftarkan banyak unit sekaligus via CSV atau JSON</p>
+                </div>
+                <button @click="showBulkModal = false" class="p-2 rounded-lg hover:bg-slate-100 text-[#64748B]">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+
+                <!-- Format Tabs -->
+                <div class="flex gap-2">
+                    <button @click="bulkFormat = 'csv'"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all"
+                            :class="bulkFormat === 'csv' ? 'bg-[#F97316] text-white border-[#F97316]' : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#F97316]'">
+                        CSV Format
+                    </button>
+                    <button @click="bulkFormat = 'json'"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all"
+                            :class="bulkFormat === 'json' ? 'bg-[#F97316] text-white border-[#F97316]' : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#F97316]'">
+                        JSON Format
+                    </button>
+                </div>
+
+                <!-- CSV Example -->
+                <div x-show="bulkFormat === 'csv'" class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <p class="text-[10px] font-bold text-[#64748B] uppercase mb-1">Format CSV (barcode,type,location)</p>
+                    <pre class="text-xs text-[#475569] font-mono">SNC-BS-001,BAIT_STATION,Gudang Depan
+SNC-TR-002,TRAP,Ruang Makan
+SNC-FLY-003,FLY_CATCHER,Dapur</pre>
+                </div>
+
+                <!-- JSON Example -->
+                <div x-show="bulkFormat === 'json'" class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <p class="text-[10px] font-bold text-[#64748B] uppercase mb-1">Format JSON</p>
+                    <pre class="text-xs text-[#475569] font-mono">[{"barcode_value":"SNC-BS-001","unit_type":"BAIT_STATION","location_name":"Gudang"}]</pre>
+                </div>
+
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase tracking-wide block mb-1">
+                        Data Unit (<span x-text="bulkFormat === 'csv' ? 'CSV' : 'JSON'"></span>)
+                    </label>
+                    <textarea x-model="bulkData" rows="8"
+                              :placeholder="bulkFormat === 'csv' ? 'barcode,type,location\nSNC-BS-001,BAIT_STATION,Gudang' : '[{\"barcode_value\":\"SNC-BS-001\",\"unit_type\":\"BAIT_STATION\"}]'"
+                              class="w-full px-3 py-2 text-sm font-mono rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316] resize-none"></textarea>
+                </div>
+
+                <!-- Bulk Result -->
+                <div x-show="bulkResult" class="p-3 rounded-lg border"
+                     :class="bulkResult?.failed > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-700'">
+                    <p class="text-sm font-semibold" x-text="bulkResult?.message || ''"></p>
+                    <p class="text-xs mt-1" x-show="bulkResult?.created !== undefined">
+                        Berhasil: <span class="font-bold" x-text="bulkResult?.created || 0"></span>
+                        <span x-show="bulkResult?.failed > 0"> &nbsp;|&nbsp; Gagal: <span class="font-bold text-red-600" x-text="bulkResult?.failed"></span></span>
+                    </p>
+                </div>
+
+                <!-- Error -->
+                <div x-show="bulkError" class="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700" x-text="bulkError"></div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button @click="showBulkModal = false; bulkResult = null; bulkError = ''"
+                            class="px-4 py-2 text-sm text-[#64748B] hover:text-[#0F172A] font-medium transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="submitBulk()" :disabled="bulkSubmitting || !bulkData.trim()"
+                            class="flex items-center gap-2 px-5 py-2 bg-[#F97316] hover:bg-[#EA580C] text-white text-sm font-semibold rounded-lg shadow transition-all disabled:opacity-50">
+                        <svg x-show="bulkSubmitting" class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="bulkSubmitting ? 'Mendaftar...' : 'Register Semua'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-cloak x-transition
+         class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg border text-sm font-medium"
+         :class="toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'">
+        <span x-text="toast.message"></span>
+        <button @click="toast.show = false" class="ml-2 opacity-60 hover:opacity-100">&times;</button>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function barcodeApp() {
+    const _fetch = (url, opts) => {
+        const auth = window.SanoCareAuth;
+        if (!auth) { window.location.href = '/enterprise/login'; return Promise.reject('No auth'); }
+        return auth.authenticatedFetch(url, opts).then(res => {
+            if (res.status === 401) { window.location.href = '/enterprise/login'; }
+            return res;
+        });
+    };
+
+    const API = '/api/v1/enterprise/barcode';
+    const CUSTOMERS_API = '/api/v1/enterprise/customers';
+
+    return {
+        // State
+        customers: [],
+        selectedCustomerId: '',
+        units: [],
+        unitStats: {},
+        unitsLoading: false,
+        activeTab: 'registry',
+
+        // Checklist
+        roadPlanInput: '',
+        checklist: null,
+        checklistLoading: false,
+
+        // Add Unit Modal
+        showAddUnit: false,
+        addingUnit: false,
+        addUnitError: '',
+        newUnit: {
+            barcode_value: '',
+            unit_type: 'BAIT_STATION',
+            location_name: '',
+            area: '',
+            floor: '',
+            notes: '',
+        },
+
+        // Bulk Modal
+        showBulkModal: false,
+        bulkData: '',
+        bulkFormat: 'csv',
+        bulkSubmitting: false,
+        bulkResult: null,
+        bulkError: '',
+
+        // Toast
+        toast: { show: false, message: '', type: 'success' },
+
+        async init() {
+            await this.loadCustomers();
+        },
+
+        async loadCustomers() {
+            try {
+                const res = await _fetch(`${CUSTOMERS_API}?per_page=500`);
+                if (!res) return;
+                const data = await res.json();
+                this.customers = data.customers || data.data || [];
+            } catch (e) {
+                console.error('Load customers failed:', e);
+            }
+        },
+
+        async onCustomerChange() {
+            this.units = [];
+            this.unitStats = {};
+            this.checklist = null;
+            if (!this.selectedCustomerId) return;
+            await this.loadUnits();
+        },
+
+        async loadUnits() {
+            if (!this.selectedCustomerId) return;
+            this.unitsLoading = true;
+            try {
+                const res = await _fetch(`${API}/units?customer_id=${this.selectedCustomerId}`);
+                if (!res) return;
+                const data = await res.json();
+                this.units = data.units || [];
+                this.unitStats = data.stats || {};
+            } catch (e) {
+                console.error('Load units failed:', e);
+                this.showToast('Gagal memuat unit', 'error');
+            } finally {
+                this.unitsLoading = false;
+            }
+        },
+
+        async loadChecklist() {
+            const id = this.roadPlanInput.trim();
+            if (!id) return;
+            this.checklistLoading = true;
+            this.checklist = null;
+            try {
+                const res = await _fetch(`${API}/visit-checklist/${encodeURIComponent(id)}`);
+                if (!res) return;
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    this.showToast(err.message || 'Road plan tidak ditemukan', 'error');
+                    return;
+                }
+                this.checklist = await res.json();
+            } catch (e) {
+                console.error('Load checklist failed:', e);
+                this.showToast('Gagal memuat checklist kunjungan', 'error');
+            } finally {
+                this.checklistLoading = false;
+            }
+        },
+
+        async submitAddUnit() {
+            if (!this.newUnit.barcode_value.trim()) return;
+            this.addingUnit = true;
+            this.addUnitError = '';
+            try {
+                const payload = { ...this.newUnit, customer_id: this.selectedCustomerId };
+                const res = await _fetch(`${API}/units`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res) return;
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    this.addUnitError = err.message || 'Gagal menyimpan unit';
+                    return;
+                }
+                this.showAddUnit = false;
+                this.newUnit = { barcode_value: '', unit_type: 'BAIT_STATION', location_name: '', area: '', floor: '', notes: '' };
+                this.showToast('Unit berhasil ditambahkan', 'success');
+                await this.loadUnits();
+            } catch (e) {
+                console.error('Add unit failed:', e);
+                this.addUnitError = 'Terjadi kesalahan. Coba lagi.';
+            } finally {
+                this.addingUnit = false;
+            }
+        },
+
+        async submitBulk() {
+            if (!this.bulkData.trim()) return;
+            this.bulkSubmitting = true;
+            this.bulkResult = null;
+            this.bulkError = '';
+            try {
+                let payload;
+                if (this.bulkFormat === 'json') {
+                    try {
+                        const parsed = JSON.parse(this.bulkData);
+                        payload = { units: Array.isArray(parsed) ? parsed : [parsed], customer_id: this.selectedCustomerId };
+                    } catch {
+                        this.bulkError = 'Format JSON tidak valid';
+                        return;
+                    }
+                } else {
+                    // CSV: barcode,type,location
+                    const lines = this.bulkData.trim().split('\n').filter(l => l.trim());
+                    const units = lines.map(line => {
+                        const parts = line.split(',').map(p => p.trim());
+                        return { barcode_value: parts[0] || '', unit_type: parts[1] || 'OTHER', location_name: parts[2] || '' };
+                    }).filter(u => u.barcode_value);
+                    if (units.length === 0) {
+                        this.bulkError = 'Tidak ada data valid ditemukan';
+                        return;
+                    }
+                    payload = { units, customer_id: this.selectedCustomerId };
+                }
+
+                const res = await _fetch(`${API}/units/bulk`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res) return;
+                this.bulkResult = await res.json();
+                if (res.ok) {
+                    this.showToast(`${this.bulkResult.created || 0} unit berhasil didaftarkan`, 'success');
+                    await this.loadUnits();
+                }
+            } catch (e) {
+                console.error('Bulk submit failed:', e);
+                this.bulkError = 'Terjadi kesalahan saat mendaftarkan unit';
+            } finally {
+                this.bulkSubmitting = false;
+            }
+        },
+
+        translateUnitType(type) {
+            const map = {
+                BAIT_STATION: 'Umpan',
+                TRAP: 'Perangkap',
+                MONITOR: 'Monitor',
+                SPRAY_POINT: 'Titik Semprot',
+                FLY_CATCHER: 'Fly Catcher',
+                OTHER: 'Lainnya',
+            };
+            return map[type] || type || '-';
+        },
+
+        conditionClass(condition) {
+            const map = {
+                OK:                'bg-green-50 text-green-700 border-green-200',
+                CLEAN:             'bg-green-50 text-green-700 border-green-200',
+                DAMAGED:           'bg-orange-50 text-orange-700 border-orange-200',
+                NEEDS_REPLACEMENT: 'bg-orange-50 text-orange-700 border-orange-200',
+                MISSING:           'bg-red-50 text-red-600 border-red-200',
+                INFESTED:          'bg-red-50 text-red-600 border-red-200',
+            };
+            return map[condition] || 'bg-slate-50 text-slate-500 border-slate-200';
+        },
+
+        formatDate(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return iso;
+                return d.toLocaleDateString('id-ID', {
+                    day: '2-digit', month: 'short', year: 'numeric'
+                }) + ' ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            } catch { return iso; }
+        },
+
+        formatDateShort(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return iso;
+                return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+            } catch { return iso; }
+        },
+
+        showToast(message, type = 'success') {
+            this.toast = { show: true, message, type };
+            setTimeout(() => { this.toast.show = false; }, 4000);
+        },
+    };
+}
+</script>
+{% endblock %}

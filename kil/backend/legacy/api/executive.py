@@ -388,6 +388,33 @@ def visits_by_type():
     )
 
 
+@executive_bp.route("/executive/leaderboard-mini")
+@require_auth
+def leaderboard_mini():
+    """Top 5 technicians by completed visits this calendar month."""
+    rows = execute_kelava_query(
+        """
+        SELECT u.id, u.fullname AS name,
+               COUNT(*) FILTER (WHERE rp.status = 'Selesai') AS selesai,
+               COUNT(*) AS total
+        FROM p_user u
+        JOIN t_road_plan rp ON rp.id_user = u.id
+        WHERE rp.visit_date::date >= DATE_TRUNC('month', CURRENT_DATE)
+          AND COALESCE(rp.is_cancel, false) = false
+        GROUP BY u.id, u.fullname
+        ORDER BY selesai DESC
+        LIMIT 5
+        """
+    )
+    return jsonify({
+        "technicians": [
+            {"id": r["id"], "name": r["name"], "selesai": r["selesai"], "total": r["total"]}
+            for r in (rows or [])
+        ],
+        "generated_at": datetime.now().isoformat(),
+    })
+
+
 @executive_bp.route("/executive/contracts/expiring")
 @require_auth
 def contracts_expiring():

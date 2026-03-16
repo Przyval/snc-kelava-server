@@ -69,6 +69,21 @@ def list_complaints():
         tuple(params),
     )
 
+    # Auto-mark SLA breaches for open tickets (best-effort)
+    try:
+        execute_kelava_query(
+            """
+            UPDATE complaint_tickets
+            SET sla_breached = TRUE
+            WHERE sla_deadline IS NOT NULL
+              AND sla_deadline < NOW()
+              AND status NOT IN ('resolved', 'closed')
+              AND (sla_breached IS NULL OR sla_breached = FALSE)
+            """
+        )
+    except Exception:
+        pass  # SLA columns may not exist yet (before migration 006)
+
     # Stats
     stats = execute_kelava_query_single(
         """
@@ -77,6 +92,7 @@ def list_complaints():
             COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress_count,
             COUNT(*) FILTER (WHERE status = 'resolved') AS resolved_count,
             COUNT(*) FILTER (WHERE status = 'closed') AS closed_count,
+            COUNT(*) FILTER (WHERE sla_breached = TRUE AND status NOT IN ('resolved','closed')) AS sla_breached_count,
             COUNT(*) AS total
         FROM complaint_tickets
         """
@@ -105,11 +121,15 @@ def create_complaint():
     if not title:
         return jsonify({"error": "title is required"}), 400
 
+    severity = data.get("severity", "medium")
+    sla_hours = {"critical": 4, "high": 24, "medium": 48, "low": 72}.get(severity, 48)
+
     result = execute_kelava_query_single(
         """
         INSERT INTO complaint_tickets
-            (customer_id, contract_id, title, description, severity, category, assigned_to, reported_by)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (customer_id, contract_id, title, description, severity, category,
+             assigned_to, reported_by, sla_hours, sla_deadline)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW() + (%s * INTERVAL '1 hour'))
         RETURNING id
         """,
         (
@@ -117,10 +137,12 @@ def create_complaint():
             data.get("contract_id"),
             title,
             data.get("description", ""),
-            data.get("severity", "medium"),
+            severity,
             data.get("category", "other"),
             data.get("assigned_to"),
             data.get("reported_by", ""),
+            sla_hours,
+            sla_hours,
         ),
     )
 
@@ -176,7 +198,11 @@ def update_complaint(complaint_id):
     if data.get("status") == "resolved":
         sets.append("resolved_at = NOW()")
         sets.append("resolved_by = %s")
+        sets.append("sla_breached = (sla_deadline IS NOT NULL AND sla_deadline < NOW())")
         params.append(g.current_user.id)
+    if "resolution_notes" in data:
+        sets.append("resolution_notes = %s")
+        params.append(data["resolution_notes"])
 
     if not sets:
         return jsonify({"error": "Nothing to update"}), 400
@@ -221,6 +247,34 @@ def search_customers():
         (f"%{q.lower()}%", f"%{q.lower()}%"),
     )
     return jsonify([_fmt(r) for r in rows])
+
+
+@complaints_bp.route("/sla-status", methods=["GET"])
+@require_auth
+def sla_status():
+    """SLA health: counts of breached, at-risk (< 4h left), and on-track open tickets."""
+    try:
+        row = execute_kelava_query_single(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE sla_breached = TRUE AND status NOT IN ('resolved','closed'))
+                    AS breached,
+                COUNT(*) FILTER (WHERE sla_deadline BETWEEN NOW() AND NOW() + INTERVAL '4 hours'
+                    AND status NOT IN ('resolved','closed'))
+                    AS at_risk,
+                COUNT(*) FILTER (WHERE sla_deadline > NOW() + INTERVAL '4 hours'
+                    AND status NOT IN ('resolved','closed'))
+                    AS on_track,
+                AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600)
+                    FILTER (WHERE resolved_at IS NOT NULL)
+                    AS avg_resolution_hours
+            FROM complaint_tickets
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            """
+        )
+        return jsonify(_fmt(row) if row else {})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @complaints_bp.route("/technicians", methods=["GET"])

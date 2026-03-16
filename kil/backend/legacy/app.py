@@ -241,6 +241,14 @@ app.register_blueprint(service_form_bp, url_prefix="/api/v1/enterprise/service-f
 from kil.backend.legacy.api.client_portal import client_portal_bp
 app.register_blueprint(client_portal_bp, url_prefix="/api/v1/enterprise/client-portal")
 
+# Accurate Accounting Export
+from kil.backend.legacy.api.accurate_export import accurate_bp
+app.register_blueprint(accurate_bp, url_prefix="/api/v1/enterprise/accurate")
+
+# Ontology Layer (Palantir-style semantic data layer)
+from kil.backend.legacy.api.ontology import ontology_bp
+app.register_blueprint(ontology_bp, url_prefix="/api/v1/enterprise")
+
 # Enterprise Web Dashboard
 app.register_blueprint(enterprise_bp, url_prefix="/enterprise")
 

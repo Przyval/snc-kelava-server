@@ -71,3 +71,7 @@ analytics/*.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# --- Staff photos (binary assets) ---
+"Foto Karyawan/"
+kil/backend/legacy/web/enterprise/static/img/staff/

@@ -1,0 +1,502 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Form Pelayanan{% endblock %}
+
+{% block content %}
+<div x-data="serviceFormApp()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <h1 class="text-2xl font-bold text-[#0F172A]">Form Pelayanan Digital</h1>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-orange-50 text-[#F97316] border border-orange-200">
+                    Replaces Paper BA
+                </span>
+            </div>
+            <p class="text-sm text-[#64748B]">Berita acara pelayanan digital — temuan, treatment, bahan kimia, dan rating.</p>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Submitted Hari Ini</p>
+            <p class="text-2xl font-bold text-gray-900 mt-1" x-text="stats.submitted_today ?? '-'"></p>
+            <p class="text-xs text-gray-400 mt-1">form terkirim hari ini</p>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Draft Pending</p>
+            <p class="text-2xl font-bold mt-1" :class="(stats.draft_count || 0) > 0 ? 'text-amber-600' : 'text-gray-900'" x-text="stats.draft_count ?? '-'"></p>
+            <p class="text-xs text-gray-400 mt-1">belum disubmit</p>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Rating Rata-rata</p>
+            <p class="text-2xl font-bold text-[#F97316] mt-1" x-text="stats.avg_rating ? Number(stats.avg_rating).toFixed(1) + ' ★' : '-'"></p>
+            <p class="text-xs text-gray-400 mt-1">dari customer</p>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Selesai 7 Hari</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1" x-text="stats.completed_7d ?? '-'"></p>
+            <p class="text-xs text-gray-400 mt-1">form completed</p>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4">
+        <div class="flex flex-wrap items-end gap-3">
+            <!-- Status Filter -->
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">Status</label>
+                <select x-model="filterStatus" @change="currentPage = 1; loadForms()"
+                        class="px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                    <option value="">Semua Status</option>
+                    <option value="SUBMITTED">Submitted</option>
+                    <option value="DRAFT">Draft</option>
+                </select>
+            </div>
+            <!-- Customer Search -->
+            <div class="flex flex-col gap-1 flex-1 min-w-[180px]">
+                <label class="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">Customer</label>
+                <select x-model="filterCustomerId" @change="currentPage = 1; loadForms()"
+                        class="px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                    <option value="">Semua Customer</option>
+                    <template x-for="c in customers" :key="c.id">
+                        <option :value="c.id" x-text="c.name"></option>
+                    </template>
+                </select>
+            </div>
+            <!-- Date Range -->
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">Dari Tanggal</label>
+                <input type="date" x-model="filterStart"
+                       class="px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">Sampai Tanggal</label>
+                <input type="date" x-model="filterEnd"
+                       class="px-3 py-2 text-sm rounded-lg border border-[#E2E8F0] bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+            </div>
+            <button @click="currentPage = 1; loadForms()"
+                    class="px-4 py-2 bg-[#F97316] hover:bg-[#EA580C] text-white text-sm font-semibold rounded-lg shadow transition-all">
+                Terapkan Filter
+            </button>
+            <button @click="resetFilters()"
+                    class="px-4 py-2 bg-white border border-[#E2E8F0] hover:bg-slate-50 text-sm text-[#64748B] font-medium rounded-lg transition-all">
+                Reset
+            </button>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+        <!-- Loading -->
+        <div x-show="loading" class="flex items-center justify-center py-16">
+            <svg class="w-6 h-6 animate-spin text-[#F97316]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span class="ml-3 text-sm text-[#64748B]">Memuat data...</span>
+        </div>
+
+        <div x-show="!loading">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-bold">ID</th>
+                            <th class="px-4 py-3 text-left font-bold">Tanggal</th>
+                            <th class="px-4 py-3 text-left font-bold">Teknisi</th>
+                            <th class="px-4 py-3 text-left font-bold">Customer</th>
+                            <th class="px-4 py-3 text-left font-bold">Hama</th>
+                            <th class="px-4 py-3 text-left font-bold">Treatment</th>
+                            <th class="px-4 py-3 text-center font-bold">Rating</th>
+                            <th class="px-4 py-3 text-center font-bold">Status</th>
+                            <th class="px-4 py-3 text-center font-bold">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#F1F5F9]">
+                        <template x-for="form in forms" :key="form.id">
+                            <tr class="hover:bg-[#F8FAFC] transition-colors">
+                                <td class="px-4 py-3 font-mono text-xs text-[#64748B]" x-text="'#' + form.id"></td>
+                                <td class="px-4 py-3 text-xs text-[#475569] whitespace-nowrap" x-text="formatDate(form.submitted_at || form.created_at)"></td>
+                                <td class="px-4 py-3">
+                                    <p class="font-medium text-[#0F172A] text-sm" x-text="form.technician_name || '-'"></p>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <p class="text-sm text-[#0F172A] max-w-[160px] truncate" x-text="form.customer_name || '-'"></p>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-[#475569]" x-text="form.pest_type || '-'"></td>
+                                <td class="px-4 py-3 max-w-[180px]">
+                                    <p class="text-xs text-[#475569] truncate" x-text="form.treatment_applied || '-'"></p>
+                                    <span x-show="form.follow_up_required"
+                                          class="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-600 border border-red-200">
+                                        Follow-up Required
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    <span class="text-sm text-amber-500 tracking-tighter" x-text="renderStars(form.rating)"></span>
+                                    <span x-show="!form.rating" class="text-xs text-[#94A3B8]">—</span>
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                          :class="{
+                                              'bg-green-50 text-green-700 border-green-200': form.status === 'SUBMITTED',
+                                              'bg-amber-50 text-amber-700 border-amber-200': form.status === 'DRAFT',
+                                          }"
+                                          x-text="form.status || '-'"></span>
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    <button @click="openDetail(form.id)"
+                                            class="px-3 py-1.5 text-xs font-semibold text-[#F97316] bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors">
+                                        Detail
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+
+                        <!-- Empty State -->
+                        <tr x-show="!loading && forms.length === 0">
+                            <td colspan="9" class="px-4 py-16 text-center text-[#94A3B8]">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                                <p class="text-sm font-semibold">Belum ada form pelayanan</p>
+                                <p class="text-xs mt-1">Coba ubah filter atau rentang tanggal</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="flex items-center justify-between px-4 py-3 border-t border-[#E2E8F0] bg-[#F8FAFC]">
+                <p class="text-xs text-[#64748B]">
+                    Halaman <span class="font-semibold" x-text="currentPage"></span> dari <span class="font-semibold" x-text="totalPages || 1"></span>
+                    (<span class="font-semibold" x-text="totalForms"></span> total)
+                </p>
+                <div class="flex gap-1">
+                    <button @click="currentPage--; loadForms()" :disabled="currentPage <= 1"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#E2E8F0] hover:bg-white disabled:opacity-30 transition-colors">
+                        Sebelumnya
+                    </button>
+                    <button @click="currentPage++; loadForms()" :disabled="currentPage >= totalPages"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#E2E8F0] hover:bg-white disabled:opacity-30 transition-colors">
+                        Berikutnya
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ Detail Modal ════════════════════════ -->
+    <div x-show="showDetail" x-cloak
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="closeDetail()" @keydown.escape.window="closeDetail()">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto" @click.stop>
+
+            <!-- Modal Header -->
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between z-10 rounded-t-2xl">
+                <div>
+                    <h2 class="text-lg font-bold text-[#0F172A]">Detail Form Pelayanan</h2>
+                    <p class="text-xs text-[#64748B]" x-text="detail ? 'Form #' + detail.id : 'Memuat...'"></p>
+                </div>
+                <button @click="closeDetail()" class="p-2 rounded-lg hover:bg-slate-100 text-[#64748B] transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Loading -->
+            <div x-show="detailLoading" class="flex items-center justify-center py-16">
+                <svg class="w-6 h-6 animate-spin text-[#F97316]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span class="ml-3 text-sm text-[#64748B]">Memuat detail form...</span>
+            </div>
+
+            <div x-show="!detailLoading && detail" class="p-6 space-y-6">
+
+                <!-- Status & Date Banner -->
+                <div class="flex items-center justify-between p-4 rounded-xl"
+                     :class="detail?.status === 'SUBMITTED' ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'">
+                    <div class="flex items-center gap-3">
+                        <span class="px-3 py-1 rounded-lg text-xs font-bold uppercase border"
+                              :class="detail?.status === 'SUBMITTED' ? 'bg-green-100 text-green-700 border-green-300' : 'bg-amber-100 text-amber-700 border-amber-300'"
+                              x-text="detail?.status || '-'"></span>
+                        <span x-show="detail?.submitted_at" class="text-xs text-[#64748B]">
+                            Submitted: <span class="font-semibold" x-text="formatDate(detail?.submitted_at)"></span>
+                        </span>
+                        <span x-show="!detail?.submitted_at" class="text-xs text-amber-600 font-medium">Belum disubmit</span>
+                    </div>
+                    <span x-show="detail?.follow_up_required"
+                          class="px-2 py-1 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-300">
+                        Follow-up Required
+                    </span>
+                </div>
+
+                <!-- Info Grid -->
+                <div>
+                    <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-3">Informasi Dasar</p>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Customer</p>
+                            <p class="text-sm font-semibold text-[#0F172A]" x-text="detail?.customer_name || '-'"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Teknisi</p>
+                            <p class="text-sm font-semibold text-[#0F172A]" x-text="detail?.technician_name || '-'"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Tanggal</p>
+                            <p class="text-sm font-semibold text-[#0F172A]" x-text="formatDate(detail?.submitted_at || detail?.created_at)"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3" x-show="detail?.road_plan_id">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Road Plan Ref</p>
+                            <p class="text-sm font-mono text-[#0F172A]" x-text="'#' + (detail?.road_plan_id || '-')"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Jenis Hama</p>
+                            <p class="text-sm font-semibold text-[#0F172A]" x-text="detail?.pest_type || '-'"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-lg p-3">
+                            <p class="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Dibuat</p>
+                            <p class="text-sm text-[#0F172A]" x-text="formatDate(detail?.created_at)"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Findings -->
+                <div>
+                    <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-2">Temuan di Lapangan</p>
+                    <div class="bg-slate-50 rounded-xl p-4 text-sm text-[#0F172A] leading-relaxed whitespace-pre-wrap min-h-[60px]"
+                         x-text="detail?.findings || 'Tidak ada catatan temuan.'"></div>
+                </div>
+
+                <!-- Treatment Applied -->
+                <div>
+                    <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-2">Treatment yang Dilakukan</p>
+                    <div class="bg-slate-50 rounded-xl p-4 text-sm text-[#0F172A] leading-relaxed whitespace-pre-wrap min-h-[60px]"
+                         x-text="detail?.treatment_applied || 'Tidak ada catatan treatment.'"></div>
+                </div>
+
+                <!-- Chemicals Used -->
+                <div>
+                    <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-2">Bahan Kimia yang Digunakan</p>
+                    <div class="bg-slate-50 rounded-xl p-4 text-sm text-[#0F172A] leading-relaxed whitespace-pre-wrap min-h-[40px]"
+                         x-text="detail?.chemicals_used || '—'"></div>
+                </div>
+
+                <!-- Rating & Feedback -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-2">Rating Customer</p>
+                        <div class="bg-slate-50 rounded-xl p-4 flex items-center gap-3">
+                            <span class="text-2xl text-amber-500 tracking-wide" x-text="renderStars(detail?.rating)"></span>
+                            <span class="text-sm font-bold text-[#0F172A]" x-show="detail?.rating" x-text="detail?.rating + ' / 5'"></span>
+                            <span class="text-sm text-[#94A3B8]" x-show="!detail?.rating">Belum dirating</span>
+                        </div>
+                    </div>
+                    <div x-show="detail?.feedback">
+                        <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-2">Feedback Customer</p>
+                        <div class="bg-slate-50 rounded-xl p-4 text-sm text-[#0F172A] italic leading-relaxed"
+                             x-text="detail?.feedback || '—'"></div>
+                    </div>
+                </div>
+
+                <!-- Follow-up Info -->
+                <div x-show="detail?.follow_up_required" class="bg-red-50 border border-red-200 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <p class="text-xs font-bold text-red-700 uppercase tracking-wide">Follow-up Diperlukan</p>
+                    </div>
+                    <p class="text-sm text-red-700">
+                        Tanggal Follow-up:
+                        <span class="font-semibold" x-text="detail?.follow_up_date ? formatDate(detail.follow_up_date) : 'Belum ditentukan'"></span>
+                    </p>
+                </div>
+
+                <!-- Signature -->
+                <div>
+                    <p class="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-2">Tanda Tangan</p>
+                    <div class="bg-slate-50 rounded-xl p-4 flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                        </svg>
+                        <span class="text-sm text-[#64748B]" x-show="detail?.signature_path">Tanda tangan tersimpan di server</span>
+                        <span class="text-sm text-[#94A3B8] italic" x-show="!detail?.signature_path">Tidak ada tanda tangan</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-cloak x-transition
+         class="fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg border text-sm font-medium"
+         :class="toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'">
+        <span x-text="toast.message"></span>
+        <button @click="toast.show = false" class="ml-2 opacity-60 hover:opacity-100">&times;</button>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function serviceFormApp() {
+    const _fetch = (url, opts) => {
+        const auth = window.SanoCareAuth;
+        if (!auth) { window.location.href = '/enterprise/login'; return Promise.reject('No auth'); }
+        return auth.authenticatedFetch(url, opts).then(res => {
+            if (res.status === 401) { window.location.href = '/enterprise/login'; }
+            return res;
+        });
+    };
+
+    const API = '/api/v1/enterprise/service-form';
+    const CUSTOMERS_API = '/api/v1/enterprise/customers';
+
+    return {
+        // Data
+        forms: [],
+        stats: {},
+        customers: [],
+        totalForms: 0,
+        totalPages: 1,
+        currentPage: 1,
+        perPage: 25,
+
+        // Filters
+        filterStatus: '',
+        filterCustomerId: '',
+        filterStart: '',
+        filterEnd: '',
+
+        // Detail modal
+        showDetail: false,
+        detail: null,
+        detailLoading: false,
+
+        // UI State
+        loading: false,
+        toast: { show: false, message: '', type: 'success' },
+
+        async init() {
+            // Set default date range (last 30 days)
+            const end = new Date();
+            const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            this.filterEnd = end.toISOString().split('T')[0];
+            this.filterStart = start.toISOString().split('T')[0];
+
+            await Promise.all([this.loadCustomers(), this.loadForms()]);
+
+            window.addEventListener('refresh-data', (e) => {
+                if (e.detail?.startDate) this.filterStart = e.detail.startDate;
+                if (e.detail?.endDate) this.filterEnd = e.detail.endDate;
+                this.currentPage = 1;
+                this.loadForms();
+            });
+        },
+
+        async loadCustomers() {
+            try {
+                const res = await _fetch(`${CUSTOMERS_API}?per_page=500`);
+                if (!res) return;
+                const data = await res.json();
+                this.customers = data.customers || data.data || [];
+            } catch (e) {
+                console.error('Load customers failed:', e);
+            }
+        },
+
+        async loadForms() {
+            this.loading = true;
+            try {
+                const params = new URLSearchParams({ page: this.currentPage, per_page: this.perPage });
+                if (this.filterStatus) params.set('status', this.filterStatus);
+                if (this.filterCustomerId) params.set('customer_id', this.filterCustomerId);
+                if (this.filterStart) params.set('start', this.filterStart);
+                if (this.filterEnd) params.set('end', this.filterEnd);
+
+                const res = await _fetch(`${API}?${params}`);
+                if (!res) return;
+                const data = await res.json();
+
+                this.forms = data.forms || [];
+                this.totalForms = data.total || 0;
+                this.totalPages = data.pages || 1;
+                this.stats = data.stats || {};
+            } catch (e) {
+                console.error('Load forms failed:', e);
+                this.showToast('Gagal memuat data form', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async openDetail(id) {
+            this.showDetail = true;
+            this.detail = null;
+            this.detailLoading = true;
+            try {
+                const res = await _fetch(`${API}/${id}`);
+                if (!res) return;
+                const data = await res.json();
+                this.detail = data.form || data || null;
+            } catch (e) {
+                console.error('Load form detail failed:', e);
+                this.showToast('Gagal memuat detail form', 'error');
+                this.showDetail = false;
+            } finally {
+                this.detailLoading = false;
+            }
+        },
+
+        closeDetail() {
+            this.showDetail = false;
+            this.detail = null;
+        },
+
+        resetFilters() {
+            this.filterStatus = '';
+            this.filterCustomerId = '';
+            const end = new Date();
+            const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            this.filterEnd = end.toISOString().split('T')[0];
+            this.filterStart = start.toISOString().split('T')[0];
+            this.currentPage = 1;
+            this.loadForms();
+        },
+
+        renderStars(rating) {
+            if (!rating) return '';
+            const r = Math.round(Number(rating));
+            const filled = '★'.repeat(Math.max(0, r));
+            const empty = '☆'.repeat(Math.max(0, 5 - r));
+            return filled + empty;
+        },
+
+        formatDate(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return iso;
+                return d.toLocaleDateString('id-ID', {
+                    day: '2-digit', month: 'short', year: 'numeric'
+                }) + ' ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            } catch { return iso; }
+        },
+
+        showToast(message, type = 'success') {
+            this.toast = { show: true, message, type };
+            setTimeout(() => { this.toast.show = false; }, 4000);
+        },
+    };
+}
+</script>
+{% endblock %}
