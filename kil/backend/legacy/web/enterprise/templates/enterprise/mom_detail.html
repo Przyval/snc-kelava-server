@@ -1,0 +1,473 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Meeting Detail{% endblock %}
+
+{% block content %}
+<div x-data="momDetail()" x-init="init()">
+
+    <!-- Back + Header -->
+    <div class="flex items-center gap-4 mb-6">
+        <a href="/enterprise/mom" class="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        </a>
+        <div class="flex-1">
+            <h1 class="text-xl font-bold text-slate-900" x-text="meeting.title || 'Loading...'"></h1>
+            <div class="flex items-center gap-3 text-sm text-slate-500">
+                <span x-text="formatDate(meeting.meeting_date)"></span>
+                <span x-show="meeting.location" x-text="'| ' + meeting.location"></span>
+                <span class="px-2 py-0.5 rounded text-xs font-bold"
+                      :class="{
+                          'bg-slate-100 text-slate-500': meeting.status === 'draft',
+                          'bg-blue-100 text-blue-700': meeting.status === 'uploaded',
+                          'bg-amber-100 text-amber-700': meeting.status === 'transcribing' || meeting.status === 'summarizing',
+                          'bg-purple-100 text-purple-700': meeting.status === 'transcribed',
+                          'bg-emerald-100 text-emerald-700': meeting.status === 'ready',
+                          'bg-green-100 text-green-700': meeting.status === 'sent'
+                      }"
+                      x-text="statusLabel(meeting.status)"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Peserta -->
+    <div x-show="meeting.participants?.length > 0" class="mb-6 flex flex-wrap gap-2">
+        <template x-for="p in meeting.participants || []" :key="p">
+            <span class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs" x-text="p"></span>
+        </template>
+    </div>
+
+    <!-- Steps / Pipeline -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
+        <!-- Step 1: Audio -->
+        <div class="bg-white rounded-xl border p-4" :class="meeting.audio_filename ? 'border-emerald-200' : 'border-slate-200'">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                     :class="meeting.audio_filename ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">1</div>
+                <h3 class="text-sm font-bold text-slate-700">Rekam Audio</h3>
+            </div>
+            <template x-if="!meeting.audio_filename">
+                <div>
+                    <!-- Live Recorder -->
+                    <div class="mb-3">
+                        <div x-show="!recording" class="flex gap-2">
+                            <button @click="startRecording()" class="flex-1 px-3 py-2 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600 flex items-center justify-center gap-1.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/></svg>
+                                Rekam
+                            </button>
+                            <label class="flex-1 px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 flex items-center justify-center gap-1.5 cursor-pointer">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                Upload
+                                <input type="file" accept="audio/*,video/*" @change="uploadFile($event)" class="hidden">
+                            </label>
+                        </div>
+                        <div x-show="recording" class="text-center">
+                            <div class="flex items-center justify-center gap-2 mb-2">
+                                <span class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
+                                <span class="text-sm font-bold text-red-600" x-text="recordingTime"></span>
+                            </div>
+                            <button @click="stopRecording()" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-medium hover:bg-slate-900">
+                                Stop & Simpan
+                            </button>
+                        </div>
+                    </div>
+                    <p x-show="uploading" class="text-xs text-blue-600 text-center">Uploading...</p>
+                </div>
+            </template>
+            <template x-if="meeting.audio_filename">
+                <div class="text-center">
+                    <p class="text-xs text-emerald-600 font-medium">Audio tersimpan</p>
+                    <p class="text-[10px] text-slate-400 mt-1" x-text="meeting.audio_duration_sec ? Math.round(meeting.audio_duration_sec/60) + ' menit' : ''"></p>
+                </div>
+            </template>
+        </div>
+
+        <!-- Step 2: Transcribe -->
+        <div class="bg-white rounded-xl border p-4" :class="meeting.transcript ? 'border-emerald-200' : 'border-slate-200'">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                     :class="meeting.transcript ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">2</div>
+                <h3 class="text-sm font-bold text-slate-700">Transkripsi</h3>
+            </div>
+            <template x-if="!meeting.transcript && meeting.audio_filename">
+                <button @click="transcribe()" :disabled="processing"
+                        class="w-full px-3 py-2 bg-blue-500 text-white rounded-lg text-xs font-medium hover:bg-blue-600 disabled:opacity-50">
+                    <span x-show="!processing">Transkripsi dengan AI</span>
+                    <span x-show="processing">Memproses...</span>
+                </button>
+            </template>
+            <template x-if="meeting.transcript">
+                <p class="text-xs text-emerald-600 font-medium text-center">Transkripsi selesai</p>
+            </template>
+            <template x-if="!meeting.audio_filename">
+                <p class="text-xs text-slate-400 text-center">Upload audio dulu</p>
+            </template>
+        </div>
+
+        <!-- Step 3: Summarize -->
+        <div class="bg-white rounded-xl border p-4" :class="meeting.summary_json ? 'border-emerald-200' : 'border-slate-200'">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                     :class="meeting.summary_json ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">3</div>
+                <h3 class="text-sm font-bold text-slate-700">Ringkasan AI</h3>
+            </div>
+            <template x-if="!meeting.summary_json && meeting.transcript">
+                <button @click="summarize()" :disabled="processing"
+                        class="w-full px-3 py-2 bg-purple-500 text-white rounded-lg text-xs font-medium hover:bg-purple-600 disabled:opacity-50">
+                    <span x-show="!processing">Buat Ringkasan</span>
+                    <span x-show="processing">Memproses...</span>
+                </button>
+            </template>
+            <template x-if="meeting.summary_json">
+                <p class="text-xs text-emerald-600 font-medium text-center">Ringkasan tersedia</p>
+            </template>
+            <template x-if="!meeting.transcript">
+                <p class="text-xs text-slate-400 text-center">Transkripsi dulu</p>
+            </template>
+        </div>
+
+        <!-- Step 4: Send -->
+        <div class="bg-white rounded-xl border p-4" :class="meeting.status === 'sent' ? 'border-green-200' : 'border-slate-200'">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                     :class="meeting.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'">4</div>
+                <h3 class="text-sm font-bold text-slate-700">Kirim WA</h3>
+            </div>
+            <template x-if="meeting.summary_json">
+                <button @click="showSendModal = true"
+                        class="w-full px-3 py-2 bg-green-500 text-white rounded-lg text-xs font-medium hover:bg-green-600">
+                    Kirim via WhatsApp
+                </button>
+            </template>
+            <template x-if="!meeting.summary_json">
+                <p class="text-xs text-slate-400 text-center">Buat ringkasan dulu</p>
+            </template>
+        </div>
+    </div>
+
+    <!-- Transcript Section -->
+    <div x-show="meeting.transcript" class="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-700">Transkrip</h3>
+            <button @click="editingTranscript = !editingTranscript" class="text-xs text-[#F97316] hover:underline" x-text="editingTranscript ? 'Simpan' : 'Edit'"></button>
+        </div>
+        <div x-show="!editingTranscript" class="text-sm text-slate-600 whitespace-pre-wrap max-h-96 overflow-y-auto leading-relaxed" x-text="meeting.transcript"></div>
+        <textarea x-show="editingTranscript" x-model="meeting.transcript" @blur="saveTranscript()"
+                  class="w-full h-96 px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]"></textarea>
+    </div>
+
+    <!-- Summary Section -->
+    <div x-show="meeting.summary_json" class="bg-white rounded-xl border border-slate-200 p-6 mb-6">
+        <h3 class="text-lg font-bold text-slate-900 mb-4">Notulen Rapat</h3>
+
+        <!-- Executive Summary -->
+        <div x-show="summary.executive_summary" class="bg-[#FFF7ED] rounded-lg border border-[#FFEDD5] p-4 mb-4">
+            <p class="text-sm font-medium text-[#9A3412]" x-text="summary.executive_summary"></p>
+        </div>
+
+        <!-- Key Discussions -->
+        <div x-show="summary.key_discussions?.length > 0" class="mb-4">
+            <h4 class="text-sm font-bold text-slate-700 mb-2">Pembahasan Utama</h4>
+            <div class="space-y-2">
+                <template x-for="(d, i) in summary.key_discussions || []" :key="i">
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-sm font-bold text-slate-800" x-text="(i+1) + '. ' + d.topic"></p>
+                        <p class="text-sm text-slate-600 mt-1" x-text="d.summary"></p>
+                        <p x-show="d.speaker" class="text-xs text-slate-400 mt-1" x-text="'Pembicara: ' + d.speaker"></p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Decisions -->
+        <div x-show="summary.decisions?.length > 0" class="mb-4">
+            <h4 class="text-sm font-bold text-slate-700 mb-2">Keputusan</h4>
+            <ul class="space-y-1">
+                <template x-for="(d, i) in summary.decisions || []" :key="i">
+                    <li class="flex items-start gap-2 text-sm text-slate-700">
+                        <span class="text-emerald-500 mt-0.5">&#10003;</span>
+                        <span x-text="d"></span>
+                    </li>
+                </template>
+            </ul>
+        </div>
+
+        <!-- Action Items -->
+        <div x-show="(meeting.action_items || []).length > 0" class="mb-4">
+            <h4 class="text-sm font-bold text-slate-700 mb-2">Action Items</h4>
+            <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500">Status</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500">Tugas</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500">PIC</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500">Deadline</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="a in meeting.action_items || []" :key="a.id">
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-3 py-2">
+                                    <select x-model="a.status" @change="updateAction(a)"
+                                            class="text-xs rounded border border-slate-200 px-1 py-0.5">
+                                        <option value="open">Open</option>
+                                        <option value="in_progress">In Progress</option>
+                                        <option value="done">Done</option>
+                                    </select>
+                                </td>
+                                <td class="px-3 py-2 text-slate-700" x-text="a.description"></td>
+                                <td class="px-3 py-2 text-slate-600" x-text="a.assignee || '-'"></td>
+                                <td class="px-3 py-2 text-slate-600" x-text="a.due_date ? formatDate(a.due_date) : '-'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Notable Quotes -->
+        <div x-show="summary.notable_quotes?.length > 0" class="mb-4">
+            <h4 class="text-sm font-bold text-slate-700 mb-2">Kutipan Penting</h4>
+            <div class="space-y-2">
+                <template x-for="(q, i) in summary.notable_quotes || []" :key="i">
+                    <blockquote class="border-l-3 border-[#F97316] pl-3 py-1">
+                        <p class="text-sm text-slate-700 italic" x-text="'\"' + q.quote + '\"'"></p>
+                        <p class="text-xs text-slate-400 mt-0.5" x-text="'— ' + q.speaker"></p>
+                    </blockquote>
+                </template>
+            </div>
+        </div>
+
+        <!-- Next Steps -->
+        <div x-show="summary.next_steps?.length > 0">
+            <h4 class="text-sm font-bold text-slate-700 mb-2">Langkah Selanjutnya</h4>
+            <ul class="space-y-1">
+                <template x-for="(n, i) in summary.next_steps || []" :key="i">
+                    <li class="flex items-start gap-2 text-sm text-slate-700">
+                        <span class="text-[#F97316]">&#8594;</span>
+                        <span x-text="n"></span>
+                    </li>
+                </template>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Distribution History -->
+    <div x-show="(meeting.distributions || []).length > 0" class="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+        <h3 class="text-sm font-bold text-slate-700 mb-3">Riwayat Pengiriman</h3>
+        <div class="space-y-2">
+            <template x-for="d in meeting.distributions || []" :key="d.id">
+                <div class="flex items-center justify-between text-sm">
+                    <span class="text-slate-600" x-text="d.recipient"></span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs" :class="d.status === 'sent' ? 'text-green-600' : 'text-red-500'" x-text="d.status === 'sent' ? 'Terkirim' : 'Gagal'"></span>
+                        <span class="text-xs text-slate-400" x-text="d.sent_at ? new Date(d.sent_at).toLocaleString('id-ID') : ''"></span>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Send Modal -->
+    <div x-show="showSendModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showSendModal = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h2 class="text-lg font-bold text-slate-900 mb-4">Kirim via WhatsApp</h2>
+            <div class="space-y-3 mb-4">
+                <template x-for="(r, i) in sendRecipients" :key="i">
+                    <div class="flex gap-2">
+                        <input type="text" x-model="r.name" placeholder="Nama"
+                               class="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <input type="text" x-model="r.phone" placeholder="08xx / 62xx"
+                               class="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <button @click="sendRecipients.splice(i, 1)" class="text-red-400 hover:text-red-600 text-lg">&times;</button>
+                    </div>
+                </template>
+                <button @click="sendRecipients.push({name:'',phone:''})" class="text-xs text-[#F97316] hover:underline">+ Tambah Penerima</button>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button @click="showSendModal = false" class="px-4 py-2 text-sm text-slate-600">Batal</button>
+                <button @click="sendMOM()" :disabled="sending"
+                        class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 disabled:opacity-50">
+                    <span x-show="!sending">Kirim Sekarang</span>
+                    <span x-show="sending">Mengirim...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function momDetail() {
+    const meetingId = {{ meeting_id }};
+
+    return {
+        meeting: {},
+        summary: {},
+        processing: false,
+        uploading: false,
+        editingTranscript: false,
+        showSendModal: false,
+        sending: false,
+        sendRecipients: [{name:'', phone:''}],
+
+        // Recording state
+        recording: false,
+        recordingTime: '00:00',
+        mediaRecorder: null,
+        audioChunks: [],
+        recordingInterval: null,
+        recordingStartTime: null,
+
+        async init() {
+            await this.loadMeeting();
+        },
+
+        async loadMeeting() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.meeting = data.meeting || {};
+                    this.summary = (typeof this.meeting.summary_json === 'string')
+                        ? JSON.parse(this.meeting.summary_json)
+                        : (this.meeting.summary_json || {});
+                }
+            } catch (e) { console.error('Load error:', e); }
+        },
+
+        // Audio recording
+        async startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.mediaRecorder = new MediaRecorder(stream);
+                this.audioChunks = [];
+                this.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this.audioChunks.push(e.data); };
+                this.mediaRecorder.onstop = () => { stream.getTracks().forEach(t => t.stop()); this.uploadRecording(); };
+                this.mediaRecorder.start(1000);
+                this.recording = true;
+                this.recordingStartTime = Date.now();
+                this.recordingInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+                    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                    const s = String(elapsed % 60).padStart(2, '0');
+                    this.recordingTime = `${m}:${s}`;
+                }, 1000);
+            } catch (e) { alert('Tidak bisa mengakses mikrofon: ' + e.message); }
+        },
+
+        stopRecording() {
+            if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                this.mediaRecorder.stop();
+            }
+            this.recording = false;
+            clearInterval(this.recordingInterval);
+        },
+
+        async uploadRecording() {
+            const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('audio', blob, 'recording.webm');
+            this.uploading = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/audio`, { method: 'POST', body: formData });
+                if (res.ok) { await this.loadMeeting(); }
+                else { const err = await res.json(); alert('Upload gagal: ' + (err.error || 'Unknown')); }
+            } catch (e) { alert('Upload error: ' + e.message); }
+            this.uploading = false;
+        },
+
+        async uploadFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('audio', file);
+            this.uploading = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/audio`, { method: 'POST', body: formData });
+                if (res.ok) { await this.loadMeeting(); }
+                else { const err = await res.json(); alert('Upload gagal: ' + (err.error || 'Unknown')); }
+            } catch (e) { alert('Upload error: ' + e.message); }
+            this.uploading = false;
+        },
+
+        async transcribe() {
+            this.processing = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/transcribe`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) { await this.loadMeeting(); }
+                else { alert('Error: ' + (data.error || 'Transcription failed')); }
+            } catch (e) { alert('Error: ' + e.message); }
+            this.processing = false;
+        },
+
+        async summarize() {
+            this.processing = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/summarize`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) { await this.loadMeeting(); }
+                else { alert('Error: ' + (data.error || 'Summarization failed')); }
+            } catch (e) { alert('Error: ' + e.message); }
+            this.processing = false;
+        },
+
+        async saveTranscript() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/transcript`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ transcript: this.meeting.transcript })
+                });
+                this.editingTranscript = false;
+            } catch (e) { console.error('Save transcript error:', e); }
+        },
+
+        async updateAction(action) {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/actions/${action.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: action.status })
+                });
+            } catch (e) { console.error('Update action error:', e); }
+        },
+
+        async sendMOM() {
+            const recipients = this.sendRecipients.filter(r => r.phone);
+            if (recipients.length === 0) { alert('Tambahkan minimal 1 penerima'); return; }
+            this.sending = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings/${meetingId}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ recipients })
+                });
+                const data = await res.json();
+                if (res.ok) { this.showSendModal = false; await this.loadMeeting(); alert(data.message); }
+                else { alert('Error: ' + (data.error || 'Send failed')); }
+            } catch (e) { alert('Error: ' + e.message); }
+            this.sending = false;
+        },
+
+        statusLabel(s) {
+            const map = { draft: 'Draft', uploaded: 'Audio Ready', transcribing: 'Transkripsi...', transcribed: 'Transkripsi OK', summarizing: 'Meringkas...', ready: 'Siap Kirim', sent: 'Terkirim' };
+            return map[s] || s;
+        },
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+    }
+}
+</script>
+{% endblock %}

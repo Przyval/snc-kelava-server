@@ -1,0 +1,386 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Ketepatan Kerja{% endblock %}
+
+{% block content %}
+<div x-data="punctualityDashboard()" x-init="loadData()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <h1 class="text-2xl font-bold text-[#0F172A]">Ketepatan Kerja</h1>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">
+                    Absensi & Keterlambatan
+                </span>
+            </div>
+            <p class="text-sm text-[#64748B]">Station = zero tolerance. Mobile klien pertama = zero tolerance. Mobile klien ke-2+ = 30 min.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <input type="date" x-model="targetDate" @change="loadDaily()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+            <select x-model="segmentFilter" @change="loadDaily()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                <option value="">All Segments</option>
+                <option value="MOBILE">Mobile</option>
+                <option value="STATION">Station</option>
+                <option value="SUPPORT">Support</option>
+                <option value="SUPERVISOR">Supervisor</option>
+            </select>
+            <button @click="exportCSV()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#F97316] transition-colors shadow-sm flex items-center gap-1.5" title="Export CSV">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Export
+            </button>
+            <button @click="showSettings = true; loadKpiRules()" class="px-3 py-2 rounded-lg bg-[#F97316] text-white text-sm font-medium hover:bg-[#EA580C] transition-colors shadow-sm flex items-center gap-1.5" title="Pengaturan Toleransi" x-show="isAdmin">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                Pengaturan
+            </button>
+        </div>
+    </div>
+
+    <!-- Yesterday's Late Alert -->
+    <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 mb-6 shadow-sm" x-show="yesterdayLate.length > 0">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center">
+                <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-[#0F172A]">Kemarin siapa yang telat?</p>
+                <p class="text-xs text-[#64748B]" x-text="yesterdayLate.length + ' teknisi terlambat kemarin'"></p>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <template x-for="r in yesterdayLate" :key="r.technician_id + '-' + r.visit_seq">
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-xs">
+                    <span class="font-bold text-red-700" x-text="r.name"></span>
+                    <span class="text-red-500" x-text="'+' + Math.round(r.delta_minutes) + ' min'"></span>
+                    <span class="text-red-400" x-text="'@ ' + r.customer_name"></span>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Total Check-ins</p>
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="summary.total_checkins || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">On Time</p>
+            <p class="text-2xl font-bold text-green-600" x-text="summary.on_time || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Late</p>
+            <p class="text-2xl font-bold" :class="summary.late > 0 ? 'text-red-600' : 'text-[#0F172A]'" x-text="summary.late || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">On-time Rate</p>
+            <p class="text-2xl font-bold" :class="summary.on_time_rate >= 90 ? 'text-green-600' : summary.on_time_rate >= 75 ? 'text-amber-600' : 'text-red-600'" x-text="(summary.on_time_rate || 100) + '%'"></p>
+        </div>
+    </div>
+
+    <!-- Tabs: Daily / Ranking -->
+    <div class="flex gap-1 mb-4">
+        <button @click="tab = 'daily'" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                :class="tab === 'daily' ? 'bg-[#F97316] text-white' : 'bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]'">
+            Daily View
+        </button>
+        <button @click="tab = 'ranking'; loadRanking()" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                :class="tab === 'ranking' ? 'bg-[#F97316] text-white' : 'bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]'">
+            Lateness Ranking (7d)
+        </button>
+    </div>
+
+    <!-- Daily Table -->
+    <div x-show="tab === 'daily'" class="bg-white rounded-xl shadow-sm border border-[#E2E8F0] overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-bold">Technician</th>
+                        <th class="px-4 py-3 text-center font-bold">Segment</th>
+                        <th class="px-4 py-3 text-left font-bold">Customer</th>
+                        <th class="px-4 py-3 text-center font-bold">Visit #</th>
+                        <th class="px-4 py-3 text-center font-bold">Scheduled</th>
+                        <th class="px-4 py-3 text-center font-bold">Actual</th>
+                        <th class="px-4 py-3 text-center font-bold">Delta</th>
+                        <th class="px-4 py-3 text-center font-bold">Tolerance</th>
+                        <th class="px-4 py-3 text-center font-bold">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#F1F5F9]">
+                    <template x-for="r in records" :key="(r.id || r.technician_id) + '-' + r.visit_sequence">
+                        <tr class="hover:bg-[#F8FAFC] transition-colors" :class="r.is_late ? 'bg-red-50/50' : ''">
+                            <td class="px-4 py-3">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-7 h-7 rounded-full overflow-hidden bg-[#F1F5F9] border border-[#E2E8F0] flex-shrink-0 relative">
+                                        <img :src="'/enterprise/static/img/staff/' + (r.id || r.technician_id) + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="r.name">
+                                        <span class="flex items-center justify-center w-full h-full text-[#475569] text-[10px] font-bold" x-text="r.name?.charAt(0) || '?'"></span>
+                                    </div>
+                                    <p class="font-medium text-[#0F172A]" x-text="r.name"></p>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                      :class="{
+                                          'bg-blue-50 text-blue-600 border-blue-200': r.segment === 'MOBILE',
+                                          'bg-purple-50 text-purple-600 border-purple-200': r.segment === 'STATION',
+                                          'bg-teal-50 text-teal-600 border-teal-200': r.segment === 'SUPPORT',
+                                          'bg-amber-50 text-amber-600 border-amber-200': r.segment === 'SUPERVISOR',
+                                          'bg-slate-50 text-slate-500 border-slate-200': !r.segment || r.segment === 'UNASSIGNED',
+                                      }" x-text="r.segment || 'N/A'"></span>
+                            </td>
+                            <td class="px-4 py-3 text-[#475569]" x-text="r.customer_name || '-'"></td>
+                            <td class="px-4 py-3 text-center font-mono text-xs text-[#64748B]" x-text="'#' + r.visit_sequence"></td>
+                            <td class="px-4 py-3 text-center font-mono text-xs" x-text="r.scheduled_time || '-'"></td>
+                            <td class="px-4 py-3 text-center font-mono text-xs font-medium" x-text="r.actual_checkin_time || '-'"></td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="font-mono text-xs font-bold"
+                                      :class="r.delta_minutes > 0 ? 'text-red-600' : r.delta_minutes < 0 ? 'text-green-600' : 'text-[#64748B]'"
+                                      x-text="r.delta_minutes != null ? (r.delta_minutes > 0 ? '+' : '') + Math.round(r.delta_minutes) + 'm' : '-'"></span>
+                            </td>
+                            <td class="px-4 py-3 text-center font-mono text-xs text-[#64748B]" x-text="r.tolerance_minutes + 'm'"></td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                      :class="r.is_late ? 'bg-red-50 text-red-600 border-red-200' : 'bg-green-50 text-green-600 border-green-200'"
+                                      x-text="r.is_late ? 'LATE' : 'ON TIME'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="records.length === 0">
+                        <td colspan="9" class="px-4 py-12 text-center text-[#94A3B8]">
+                            <p class="text-sm font-medium">No punctuality data for this date</p>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Ranking Table -->
+    <div x-show="tab === 'ranking'" class="bg-white rounded-xl shadow-sm border border-[#E2E8F0] overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-bold">#</th>
+                        <th class="px-4 py-3 text-left font-bold">Technician</th>
+                        <th class="px-4 py-3 text-center font-bold">Segment</th>
+                        <th class="px-4 py-3 text-center font-bold">Late Days</th>
+                        <th class="px-4 py-3 text-center font-bold">Total Days</th>
+                        <th class="px-4 py-3 text-center font-bold">Avg Late (min)</th>
+                        <th class="px-4 py-3 text-center font-bold">Max Late (min)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#F1F5F9]">
+                    <template x-for="(r, idx) in ranking" :key="r.technician_id">
+                        <tr class="hover:bg-[#F8FAFC]">
+                            <td class="px-4 py-3 font-mono text-[#64748B]" x-text="idx + 1"></td>
+                            <td class="px-4 py-3 font-medium text-[#0F172A]" x-text="r.name"></td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-slate-50 text-slate-600 border-slate-200" x-text="r.segment"></span>
+                            </td>
+                            <td class="px-4 py-3 text-center font-bold text-red-600" x-text="r.late_days"></td>
+                            <td class="px-4 py-3 text-center text-[#64748B]" x-text="r.total_days"></td>
+                            <td class="px-4 py-3 text-center font-mono text-amber-600" x-text="r.avg_late_minutes ? Math.round(r.avg_late_minutes) + 'm' : '-'"></td>
+                            <td class="px-4 py-3 text-center font-mono text-red-600" x-text="r.max_late_minutes ? Math.round(r.max_late_minutes) + 'm' : '-'"></td>
+                        </tr>
+                    </template>
+                    <tr x-show="ranking.length === 0">
+                        <td colspan="7" class="px-4 py-12 text-center text-green-600 font-medium">
+                            Semua teknisi tepat waktu minggu ini!
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Settings Modal: KPI Tolerance Configuration -->
+    <div x-show="showSettings" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showSettings = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden" @click.stop>
+            <div class="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between bg-[#F8FAFC]">
+                <div>
+                    <h2 class="text-lg font-bold text-[#0F172A]">Pengaturan Toleransi KPI</h2>
+                    <p class="text-xs text-[#64748B]">Atur threshold hijau/kuning/merah per segment</p>
+                </div>
+                <button @click="showSettings = false" class="p-2 rounded-lg hover:bg-[#F1F5F9] text-[#64748B]">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="px-6 py-4 overflow-y-auto max-h-[60vh]">
+                <!-- Segment Tabs -->
+                <div class="flex gap-1 mb-4">
+                    <template x-for="seg in ['MOBILE','STATION','SUPPORT','SUPERVISOR']" :key="seg">
+                        <button @click="settingsSegment = seg" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-colors uppercase"
+                                :class="settingsSegment === seg ? 'bg-[#F97316] text-white' : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'"
+                                x-text="seg"></button>
+                    </template>
+                </div>
+
+                <!-- Rules Table -->
+                <div class="rounded-xl border border-[#E2E8F0] overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider">
+                            <tr>
+                                <th class="px-4 py-2.5 text-left font-bold">Metric</th>
+                                <th class="px-3 py-2.5 text-center font-bold text-green-600 w-24">Hijau</th>
+                                <th class="px-3 py-2.5 text-center font-bold text-amber-600 w-24">Kuning</th>
+                                <th class="px-3 py-2.5 text-center font-bold text-red-600 w-24">Merah</th>
+                                <th class="px-3 py-2.5 text-center font-bold w-20">Weight</th>
+                                <th class="px-3 py-2.5 text-center w-16"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#F1F5F9]">
+                            <template x-for="rule in filteredRules" :key="rule.id">
+                                <tr class="hover:bg-[#F8FAFC]">
+                                    <td class="px-4 py-2.5">
+                                        <p class="font-medium text-[#0F172A]" x-text="rule.metric_label"></p>
+                                        <p class="text-[10px] text-[#94A3B8]" x-text="rule.unit ? '(' + rule.unit + ')' : ''"></p>
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <input type="number" step="0.1" class="w-full px-2 py-1 text-center text-xs rounded border border-green-200 bg-green-50 focus:ring-green-500 focus:border-green-500"
+                                               :value="rule.threshold_green" @change="rule._green = parseFloat($event.target.value)">
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <input type="number" step="0.1" class="w-full px-2 py-1 text-center text-xs rounded border border-amber-200 bg-amber-50 focus:ring-amber-500 focus:border-amber-500"
+                                               :value="rule.threshold_yellow" @change="rule._yellow = parseFloat($event.target.value)">
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <input type="number" step="0.1" class="w-full px-2 py-1 text-center text-xs rounded border border-red-200 bg-red-50 focus:ring-red-500 focus:border-red-500"
+                                               :value="rule.threshold_red" @change="rule._red = parseFloat($event.target.value)">
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <input type="number" step="0.05" min="0" max="1" class="w-full px-2 py-1 text-center text-xs rounded border border-[#E2E8F0] focus:ring-[#F97316] focus:border-[#F97316]"
+                                               :value="rule.weight" @change="rule._weight = parseFloat($event.target.value)">
+                                    </td>
+                                    <td class="px-3 py-2.5 text-center">
+                                        <button @click="saveRule(rule)" class="px-2 py-1 text-[10px] font-bold rounded bg-[#F97316] text-white hover:bg-[#EA580C] transition-colors"
+                                                :class="rule._saving ? 'opacity-50' : ''">
+                                            <span x-text="rule._saving ? '...' : 'Save'"></span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="filteredRules.length === 0">
+                                <td colspan="6" class="px-4 py-8 text-center text-[#94A3B8] text-sm">
+                                    No KPI rules for this segment
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Save feedback -->
+                <div x-show="settingsSaved" x-transition class="mt-3 px-4 py-2 rounded-lg bg-green-50 border border-green-200 text-green-700 text-xs font-medium">
+                    Pengaturan berhasil disimpan
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function punctualityDashboard() {
+    return {
+        records: [],
+        summary: {},
+        ranking: [],
+        yesterdayLate: [],
+        targetDate: new Date().toISOString().split('T')[0],
+        segmentFilter: '',
+        tab: 'daily',
+
+        // Settings modal
+        showSettings: false,
+        settingsSegment: 'MOBILE',
+        kpiRules: {},
+        settingsSaved: false,
+
+        get isAdmin() {
+            const user = window.SanoCareAuth?.getCachedUser();
+            return user && ['admin', 'koordinator'].includes(user.role);
+        },
+
+        get filteredRules() {
+            return this.kpiRules[this.settingsSegment] || [];
+        },
+
+        async loadData() {
+            await Promise.all([this.loadDaily(), this.loadYesterday()]);
+            window.addEventListener('refresh-data', () => this.loadData());
+        },
+
+        async loadDaily() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const params = new URLSearchParams({ date: this.targetDate });
+            if (this.segmentFilter) params.set('segment', this.segmentFilter);
+
+            const res = await _fetch(`/api/v1/enterprise/punctuality/daily?${params}`);
+            const data = await res.json();
+            this.records = data.records || [];
+            this.summary = data.summary || {};
+        },
+
+        async loadYesterday() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch('/api/v1/enterprise/punctuality/yesterday');
+            const data = await res.json();
+            this.yesterdayLate = data.late_records || [];
+        },
+
+        exportCSV() {
+            const params = new URLSearchParams({ date: this.targetDate, format: 'csv' });
+            if (this.segmentFilter) params.set('segment', this.segmentFilter);
+            window.open(`/api/v1/enterprise/punctuality/daily?${params}`, '_blank');
+        },
+
+        async loadRanking() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const params = new URLSearchParams({ days: 7 });
+            if (this.segmentFilter) params.set('segment', this.segmentFilter);
+
+            const res = await _fetch(`/api/v1/enterprise/punctuality/ranking?${params}`);
+            const data = await res.json();
+            this.ranking = data.ranking || [];
+        },
+
+        async loadKpiRules() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch('/api/v1/enterprise/segments/kpi-rules');
+            const data = await res.json();
+            this.kpiRules = data.kpi_rules || {};
+        },
+
+        async saveRule(rule) {
+            rule._saving = true;
+            this.settingsSaved = false;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+
+            const body = {};
+            if (rule._green != null) body.threshold_green = rule._green;
+            if (rule._yellow != null) body.threshold_yellow = rule._yellow;
+            if (rule._red != null) body.threshold_red = rule._red;
+            if (rule._weight != null) body.weight = rule._weight;
+
+            if (Object.keys(body).length === 0) { rule._saving = false; return; }
+
+            const res = await _fetch(`/api/v1/enterprise/segments/kpi-rules/${rule.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify(body),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                // Update local state
+                Object.assign(rule, data.rule);
+                rule._green = null; rule._yellow = null; rule._red = null; rule._weight = null;
+                this.settingsSaved = true;
+                setTimeout(() => this.settingsSaved = false, 3000);
+            }
+            rule._saving = false;
+        },
+    }
+}
+</script>
+{% endblock %}

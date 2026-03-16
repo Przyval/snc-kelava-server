@@ -1,0 +1,361 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Absensi{% endblock %}
+
+{% block content %}
+<div x-data="attendanceDashboard()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Absensi Fingerprint</h1>
+            <p class="text-slate-500 text-sm">Tracking kehadiran real-time via BioFinger AT-601</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <input type="date" x-model="selectedDate" @change="loadToday()"
+                   class="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+            <select x-model="activeTab" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                <option value="today">Hari Ini</option>
+                <option value="history">Riwayat</option>
+                <option value="devices">Perangkat</option>
+                <option value="mapping">Mapping User</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Total Terdaftar</p>
+            <p class="text-xl font-bold text-slate-900 mt-1" x-text="todayData.total_mapped || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-4">
+            <p class="text-[10px] font-medium text-emerald-500 uppercase">Hadir</p>
+            <p class="text-xl font-bold text-emerald-600 mt-1" x-text="todayData.checked_in || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-red-200 p-4">
+            <p class="text-[10px] font-medium text-red-500 uppercase">Belum Hadir</p>
+            <p class="text-xl font-bold text-red-600 mt-1" x-text="todayData.absent || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
+            <p class="text-[10px] font-medium text-blue-500 uppercase">% Kehadiran</p>
+            <p class="text-xl font-bold text-blue-600 mt-1" x-text="todayData.total_mapped > 0 ? Math.round(todayData.checked_in / todayData.total_mapped * 100) + '%' : '-'"></p>
+        </div>
+    </div>
+
+    <!-- Tab: Today's Board -->
+    <div x-show="activeTab === 'today'">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <template x-for="t in todayData.technicians || []" :key="t.technician_id">
+                <div class="bg-white rounded-xl border p-4 transition-all"
+                     :class="t.is_present ? 'border-emerald-200 hover:shadow-md' : 'border-red-200 bg-red-50/30'">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-10 h-10 rounded-full overflow-hidden bg-slate-100 border-2 flex-shrink-0 relative"
+                             :class="t.is_present ? 'border-emerald-300' : 'border-red-300'">
+                            <img :src="'/enterprise/static/img/staff/' + t.technician_id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="t.name">
+                            <span class="flex items-center justify-center w-full h-full text-xs font-bold text-slate-500" x-text="t.name?.charAt(0) || '?'"></span>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-sm font-bold text-slate-800 truncate" x-text="t.name"></p>
+                            <p class="text-[10px] text-slate-400 truncate" x-text="t.device_location || t.device_name"></p>
+                        </div>
+                    </div>
+                    <template x-if="t.is_present">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-emerald-600" x-text="formatTime(t.first_punch)"></span>
+                            <span x-show="t.punch_count > 1" class="text-[10px] text-slate-400" x-text="'→ ' + formatTime(t.last_punch)"></span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">HADIR</span>
+                        </div>
+                    </template>
+                    <template x-if="!t.is_present">
+                        <div class="text-center">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">BELUM HADIR</span>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+        <div x-show="(todayData.technicians || []).length === 0" class="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+            <p class="text-sm">Belum ada data absensi</p>
+            <p class="text-xs mt-1">Daftarkan perangkat dan mapping user di tab "Perangkat" dan "Mapping User"</p>
+        </div>
+    </div>
+
+    <!-- Tab: History -->
+    <div x-show="activeTab === 'history'">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-100 flex gap-3">
+                <input type="date" x-model="historyStart" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                <input type="date" x-model="historyEnd" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                <button @click="loadHistory()" class="px-3 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C]">Filter</button>
+            </div>
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Waktu</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Teknisi</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Tipe</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Metode</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Perangkat</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    <template x-for="l in historyLogs" :key="l.id">
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3 text-slate-600 whitespace-nowrap" x-text="new Date(l.punch_time).toLocaleString('id-ID')"></td>
+                            <td class="px-4 py-3 font-medium text-slate-800" x-text="l.tech_name || l.finger_user_id"></td>
+                            <td class="px-4 py-3">
+                                <span class="px-2 py-1 rounded text-xs font-bold"
+                                      :class="l.punch_type === 'check_in' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'"
+                                      x-text="l.punch_type === 'check_in' ? 'Masuk' : 'Keluar'"></span>
+                            </td>
+                            <td class="px-4 py-3 text-slate-500 text-xs" x-text="l.verify_method || '-'"></td>
+                            <td class="px-4 py-3 text-slate-500 text-xs" x-text="l.device_name || l.device_sn"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div x-show="historyLogs.length === 0" class="p-8 text-center text-slate-400 text-sm">Tidak ada log untuk periode ini</div>
+        </div>
+    </div>
+
+    <!-- Tab: Devices -->
+    <div x-show="activeTab === 'devices'" x-data="{ role: (window.SanoCareAuth?.getCachedUser()?.role || 'viewer') }">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-bold text-slate-700">Perangkat Terdaftar</h3>
+            <button x-show="['admin','koordinator'].includes(role)" @click="showDeviceModal = true"
+                    class="px-3 py-1.5 bg-[#F97316] text-white rounded-lg text-xs font-medium hover:bg-[#EA580C]">+ Tambah Perangkat</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <template x-for="d in devices" :key="d.id">
+                <div class="bg-white rounded-xl border border-slate-200 p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-bold text-slate-800" x-text="d.device_name"></h4>
+                        <span class="w-2 h-2 rounded-full" :class="d.is_active ? 'bg-emerald-400' : 'bg-slate-300'"></span>
+                    </div>
+                    <div class="space-y-1 text-xs text-slate-500">
+                        <p>SN: <span class="font-mono text-slate-700" x-text="d.device_sn"></span></p>
+                        <p x-show="d.location">Lokasi: <span class="text-slate-700" x-text="d.location"></span></p>
+                        <p>User terdaftar: <span class="font-bold text-slate-700" x-text="d.mapped_users || 0"></span></p>
+                        <p>Punch hari ini: <span class="font-bold text-slate-700" x-text="d.today_punches || 0"></span></p>
+                    </div>
+                </div>
+            </template>
+        </div>
+        <div x-show="devices.length === 0" class="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-sm">
+            Belum ada perangkat. Klik "Tambah Perangkat" untuk mendaftarkan BioFinger AT-601.
+        </div>
+    </div>
+
+    <!-- Tab: Mapping -->
+    <div x-show="activeTab === 'mapping'" x-data="{ role: (window.SanoCareAuth?.getCachedUser()?.role || 'viewer') }">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-bold text-slate-700">Mapping Fingerprint → Teknisi</h3>
+            <button x-show="['admin','koordinator'].includes(role)" @click="showMapModal = true"
+                    class="px-3 py-1.5 bg-[#F97316] text-white rounded-lg text-xs font-medium hover:bg-[#EA580C]">+ Tambah Mapping</button>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Perangkat</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">ID Fingerprint</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Nama di Mesin</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Teknisi SanoCare</th>
+                        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    <template x-for="m in mappings" :key="m.id">
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3 text-slate-600" x-text="m.device_name || m.device_sn"></td>
+                            <td class="px-4 py-3 font-mono text-slate-700" x-text="m.finger_user_id"></td>
+                            <td class="px-4 py-3 text-slate-600" x-text="m.finger_user_name || '-'"></td>
+                            <td class="px-4 py-3 font-medium text-slate-800" x-text="m.tech_name"></td>
+                            <td class="px-4 py-3 text-right">
+                                <button x-show="['admin','koordinator'].includes(role)" @click="deleteMapping(m.id)"
+                                        class="text-xs text-red-500 hover:text-red-700">Hapus</button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div x-show="mappings.length === 0" class="p-8 text-center text-slate-400 text-sm">Belum ada mapping</div>
+        </div>
+    </div>
+
+    <!-- Add Device Modal -->
+    <div x-show="showDeviceModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showDeviceModal = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h2 class="text-lg font-bold text-slate-900 mb-4">Tambah Perangkat</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Serial Number (SN) *</label>
+                    <input type="text" x-model="newDevice.device_sn" placeholder="Lihat di mesin BioFinger"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Nama Perangkat *</label>
+                    <input type="text" x-model="newDevice.device_name" placeholder="Contoh: PM Lobby, PTC Entrance"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Lokasi</label>
+                    <input type="text" x-model="newDevice.location" placeholder="Pakuwon Mall / PTC"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showDeviceModal = false" class="px-4 py-2 text-sm text-slate-600">Batal</button>
+                <button @click="addDevice()" class="px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C]">Daftarkan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Mapping Modal -->
+    <div x-show="showMapModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showMapModal = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h2 class="text-lg font-bold text-slate-900 mb-4">Mapping Fingerprint → Teknisi</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Perangkat *</label>
+                    <select x-model="newMap.device_sn" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <option value="">Pilih perangkat...</option>
+                        <template x-for="d in devices" :key="d.device_sn">
+                            <option :value="d.device_sn" x-text="d.device_name + ' (' + d.device_sn + ')'"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">ID User di Mesin *</label>
+                    <input type="text" x-model="newMap.finger_user_id" placeholder="Nomor ID di mesin fingerprint"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Nama di Mesin</label>
+                    <input type="text" x-model="newMap.finger_user_name" placeholder="Opsional"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Teknisi SanoCare *</label>
+                    <input type="number" x-model="newMap.technician_id" placeholder="ID teknisi (p_user.id)"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showMapModal = false" class="px-4 py-2 text-sm text-slate-600">Batal</button>
+                <button @click="addMapping()" class="px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C]">Simpan</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function attendanceDashboard() {
+    return {
+        activeTab: 'today',
+        selectedDate: new Date().toISOString().split('T')[0],
+        todayData: {},
+        historyLogs: [],
+        historyStart: new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0],
+        historyEnd: new Date().toISOString().split('T')[0],
+        devices: [],
+        mappings: [],
+        showDeviceModal: false,
+        showMapModal: false,
+        newDevice: { device_sn: '', device_name: '', location: '' },
+        newMap: { device_sn: '', finger_user_id: '', finger_user_name: '', technician_id: '' },
+
+        async init() {
+            await Promise.all([this.loadToday(), this.loadDevices(), this.loadMappings()]);
+        },
+
+        async loadToday() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/attendance/today?date=${this.selectedDate}`);
+                if (res.ok) { this.todayData = await res.json(); }
+            } catch (e) { console.error('Today error:', e); }
+        },
+
+        async loadHistory() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/attendance/history?start_date=${this.historyStart}&end_date=${this.historyEnd}&per_page=100`);
+                if (res.ok) { const d = await res.json(); this.historyLogs = d.logs || []; }
+            } catch (e) { console.error('History error:', e); }
+        },
+
+        async loadDevices() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/attendance/devices');
+                if (res.ok) { const d = await res.json(); this.devices = d.devices || []; }
+            } catch (e) { console.error('Devices error:', e); }
+        },
+
+        async loadMappings() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/attendance/user-map');
+                if (res.ok) { const d = await res.json(); this.mappings = d.mappings || []; }
+            } catch (e) { console.error('Mappings error:', e); }
+        },
+
+        async addDevice() {
+            if (!this.newDevice.device_sn || !this.newDevice.device_name) { alert('SN dan Nama wajib diisi'); return; }
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/attendance/devices', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.newDevice)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Perangkat terdaftar!\n\nAPI Key: ' + data.api_key + '\n\nSimpan API Key ini untuk konfigurasi BioClock.id\nWebhook URL: ' + data.webhook_url);
+                    this.showDeviceModal = false;
+                    this.newDevice = { device_sn: '', device_name: '', location: '' };
+                    await this.loadDevices();
+                } else { alert('Error: ' + (data.error || 'Unknown')); }
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        async addMapping() {
+            if (!this.newMap.device_sn || !this.newMap.finger_user_id || !this.newMap.technician_id) {
+                alert('Perangkat, ID Fingerprint, dan Teknisi wajib diisi'); return;
+            }
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/attendance/user-map', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.newMap)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    this.showMapModal = false;
+                    this.newMap = { device_sn: '', finger_user_id: '', finger_user_name: '', technician_id: '' };
+                    await this.loadMappings();
+                } else { alert('Error: ' + (data.error || 'Unknown')); }
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        async deleteMapping(id) {
+            if (!confirm('Hapus mapping ini?')) return;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                await _fetch(`/api/v1/enterprise/attendance/user-map/${id}`, { method: 'DELETE' });
+                await this.loadMappings();
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        formatTime(t) {
+            if (!t) return '-';
+            return new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+    }
+}
+</script>
+{% endblock %}

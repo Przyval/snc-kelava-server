@@ -1,0 +1,697 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Sales Pipeline{% endblock %}
+
+{% block content %}
+<div x-data="pipelineDashboard()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Sales Pipeline</h1>
+            <p class="text-slate-500 text-sm mt-0.5">GetFound SDR outreach funnel &amp; lead tracking</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] text-slate-400" x-text="importDate ? 'Import: ' + importDate : ''"></span>
+            <button @click="init()" class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 mb-6 bg-white rounded-lg p-1 border border-slate-200 shadow-sm w-fit">
+        <template x-for="tab in tabs" :key="tab.key">
+            <button @click="switchTab(tab.key)"
+                    class="px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                    :class="activeTab === tab.key ? 'bg-[#F97316] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+                    x-text="tab.label + (tab.count !== null ? ' (' + formatNum(tab.count) + ')' : '')">
+            </button>
+        </template>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" x-cloak class="flex items-center justify-center py-20">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#F97316]"></div>
+        <span class="ml-3 text-sm text-slate-500">Loading pipeline data...</span>
+    </div>
+
+    <div x-show="!loading" x-cloak>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <p class="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Total Prospects</p>
+                <p class="text-2xl font-bold text-slate-900 mt-1" x-text="formatNum(kpis.total)"></p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <p class="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Outreached</p>
+                <p class="text-2xl font-bold text-blue-600 mt-1" x-text="formatNum(kpis.outreached)"></p>
+                <p class="text-[10px] text-slate-400 mt-0.5" x-text="kpis.outreachPct + '% of total'"></p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <p class="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Replied</p>
+                <p class="text-2xl font-bold text-indigo-600 mt-1" x-text="formatNum(kpis.replied)"></p>
+                <p class="text-[10px] text-slate-400 mt-0.5" x-text="kpis.replyRate + '% reply rate'"></p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <p class="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Meetings Booked</p>
+                <p class="text-2xl font-bold text-[#F97316] mt-1" x-text="kpis.meetings"></p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-4">
+                <p class="text-[10px] font-medium text-emerald-500 uppercase tracking-wide">Surveys Done</p>
+                <p class="text-2xl font-bold text-emerald-600 mt-1" x-text="kpis.surveysCompleted + '/' + kpis.surveysTotal"></p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-red-200 p-4">
+                <p class="text-[10px] font-medium text-red-400 uppercase tracking-wide">Closed Lost</p>
+                <p class="text-2xl font-bold text-red-500 mt-1" x-text="kpis.closedLost"></p>
+            </div>
+        </div>
+
+        <!-- Funnel Charts (not on survey tab) -->
+        <div x-show="activeTab !== 'survey'" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <template x-for="ch in displayChannels" :key="ch.key">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-slate-700" x-text="ch.label"></h3>
+                        <span class="text-xs font-medium text-slate-400" x-text="formatNum(ch.total) + ' total'"></span>
+                    </div>
+                    <div class="space-y-2.5">
+                        <template x-for="s in ch.stages" :key="s.key">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-slate-500 w-20 text-right truncate" x-text="s.label"></span>
+                                <div class="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+                                    <div class="h-full rounded-full transition-all duration-700" :class="s.color" :style="'width:' + s.pct + '%'"></div>
+                                </div>
+                                <span class="text-xs font-bold text-slate-700 w-12 text-right" x-text="formatNum(s.count)"></span>
+                                <span class="text-[10px] text-slate-400 w-10 text-right" x-text="s.pct + '%'"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Conversion by Channel -->
+        <div x-show="activeTab === 'all'" class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">Conversion Rates by Channel</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-[10px] text-slate-400 uppercase tracking-wide">
+                            <th class="px-6 py-3 font-medium">Channel</th>
+                            <th class="px-6 py-3 font-medium text-right">Total</th>
+                            <th class="px-6 py-3 font-medium text-right">Outreached</th>
+                            <th class="px-6 py-3 font-medium text-right">Replied</th>
+                            <th class="px-6 py-3 font-medium text-right">Reply Rate</th>
+                            <th class="px-6 py-3 font-medium text-right">Meetings</th>
+                            <th class="px-6 py-3 font-medium text-right">Meeting Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="c in conversionData" :key="c.channel">
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-6 py-3 font-medium text-slate-900">
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium" :class="channelBadge(c.channel).cls" x-text="channelBadge(c.channel).label"></span>
+                                </td>
+                                <td class="px-6 py-3 text-right text-slate-700" x-text="formatNum(c.total)"></td>
+                                <td class="px-6 py-3 text-right text-slate-700" x-text="formatNum(c.outreached)"></td>
+                                <td class="px-6 py-3 text-right font-medium text-indigo-600" x-text="formatNum(c.replied)"></td>
+                                <td class="px-6 py-3 text-right">
+                                    <span class="px-2 py-0.5 rounded text-xs font-bold" :class="c.reply_rate_pct >= 20 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'" x-text="(c.reply_rate_pct || 0) + '%'"></span>
+                                </td>
+                                <td class="px-6 py-3 text-right font-medium text-[#F97316]" x-text="c.meetings"></td>
+                                <td class="px-6 py-3 text-right text-slate-500" x-text="(c.meeting_rate_pct || 0) + '%'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SDR Performance (All + Survey tabs) -->
+        <div x-show="activeTab === 'all' || activeTab === 'survey'" class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">SDR Performance (Survey Stage)</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-[10px] text-slate-400 uppercase tracking-wide">
+                            <th class="px-6 py-3 font-medium">SDR</th>
+                            <th class="px-6 py-3 font-medium text-center">Total</th>
+                            <th class="px-6 py-3 font-medium text-center">Completed</th>
+                            <th class="px-6 py-3 font-medium text-center">Reschedule</th>
+                            <th class="px-6 py-3 font-medium text-center">Cancelled</th>
+                            <th class="px-6 py-3 font-medium text-center">Pending</th>
+                            <th class="px-6 py-3 font-medium text-center">Completion</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="s in sdrData" :key="s.sdr_name">
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-6 py-3 font-medium text-slate-900" x-text="s.sdr_name"></td>
+                                <td class="px-6 py-3 text-center" x-text="s.total_surveys"></td>
+                                <td class="px-6 py-3 text-center font-semibold text-emerald-600" x-text="s.completed"></td>
+                                <td class="px-6 py-3 text-center text-amber-500" x-text="s.reschedule"></td>
+                                <td class="px-6 py-3 text-center text-red-500" x-text="s.cancelled"></td>
+                                <td class="px-6 py-3 text-center text-slate-400" x-text="s.pending"></td>
+                                <td class="px-6 py-3 text-center">
+                                    <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                          :class="s.completion_rate_pct >= 40 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'"
+                                          x-text="s.completion_rate_pct + '%'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Survey Details (Survey tab) -->
+        <div x-show="activeTab === 'survey'" class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-semibold text-slate-700">All Surveys</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-[10px] text-slate-400 uppercase tracking-wide">
+                            <th class="px-4 py-3 font-medium">Location</th>
+                            <th class="px-4 py-3 font-medium">Area</th>
+                            <th class="px-4 py-3 font-medium">Industry</th>
+                            <th class="px-4 py-3 font-medium">PIC</th>
+                            <th class="px-4 py-3 font-medium">SDR</th>
+                            <th class="px-4 py-3 font-medium">SNC PIC</th>
+                            <th class="px-4 py-3 font-medium">Date</th>
+                            <th class="px-4 py-3 font-medium">Status</th>
+                            <th class="px-4 py-3 font-medium">Hama/Concern</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="sv in pendingSurveys" :key="sv.id || sv.location_name">
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-4 py-3 font-medium text-slate-900 max-w-[200px] truncate" x-text="sv.location_name"></td>
+                                <td class="px-4 py-3 text-slate-600" x-text="sv.area || '-'"></td>
+                                <td class="px-4 py-3 text-slate-600" x-text="sv.industry || '-'"></td>
+                                <td class="px-4 py-3 text-slate-600" x-text="sv.pic_name || '-'"></td>
+                                <td class="px-4 py-3 text-slate-600" x-text="sv.getfound_sdr || '-'"></td>
+                                <td class="px-4 py-3 text-slate-600" x-text="sv.snc_pic_name || '-'"></td>
+                                <td class="px-4 py-3 text-slate-500 text-xs" x-text="formatDate(sv.survey_date) || formatDate(sv.meeting_booked_date) || '-'"></td>
+                                <td class="px-4 py-3">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                                          :class="{
+                                              'bg-emerald-50 text-emerald-700': sv.survey_status === 'Completed',
+                                              'bg-amber-50 text-amber-700': sv.survey_status === 'Reschedule',
+                                              'bg-red-50 text-red-700': sv.survey_status === 'Cancelled',
+                                              'bg-slate-100 text-slate-500': !sv.survey_status
+                                          }"
+                                          x-text="sv.survey_status || 'Pending'"></span>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-slate-500 max-w-[200px] truncate" x-text="sv.context || '-'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Trend Chart (not on survey tab) -->
+        <div x-show="activeTab !== 'survey'" class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Monthly Outreach Volume</h3>
+            <div style="height: 250px;">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Lead Table (not on survey tab) -->
+        <div x-show="activeTab !== 'survey'" class="bg-white rounded-xl shadow-sm border border-slate-200">
+            <div class="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+                <h3 class="text-sm font-semibold text-slate-700">Leads
+                    <span class="text-slate-400 font-normal" x-text="'(' + formatNum(leadTotal) + ')'"></span>
+                </h3>
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <input type="text" x-model="leadSearch" @input.debounce.300ms="loadLeads(1)"
+                               placeholder="Search..."
+                               class="pl-8 pr-4 py-1.5 rounded-lg border border-slate-300 text-sm w-56 focus:ring-[#F97316] focus:border-[#F97316]">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                    </div>
+                    <select x-model="leadStageFilter" @change="loadLeads(1)"
+                            class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                        <option value="">All Stages</option>
+                        <option value="prospect">Prospect</option>
+                        <option value="outreach">Outreach</option>
+                        <option value="replied">Replied</option>
+                        <option value="pic_contacted">PIC Contacted</option>
+                        <option value="meeting_booked">Meeting Booked</option>
+                        <option value="meeting_done">Meeting Done</option>
+                        <option value="closed_lost">Closed Lost</option>
+                    </select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-[10px] text-slate-400 uppercase tracking-wide">
+                            <th class="px-4 py-3 font-medium">Channel</th>
+                            <th class="px-4 py-3 font-medium">Name</th>
+                            <th class="px-4 py-3 font-medium">Contact / PIC</th>
+                            <th class="px-4 py-3 font-medium">1st Outreach</th>
+                            <th class="px-4 py-3 font-medium">Replied</th>
+                            <th class="px-4 py-3 font-medium">Meeting</th>
+                            <th class="px-4 py-3 font-medium">Stage</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="lead in leads" :key="lead.id">
+                            <tr class="hover:bg-slate-50 cursor-pointer" @click="showDetail(lead.id)">
+                                <td class="px-4 py-3">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-medium" :class="channelBadge(lead.channel).cls" x-text="channelBadge(lead.channel).label"></span>
+                                </td>
+                                <td class="px-4 py-3 max-w-[220px]">
+                                    <p class="font-medium text-slate-900 truncate" x-text="lead.name"></p>
+                                    <p class="text-[10px] text-slate-400 truncate" x-text="lead.company_name || lead.contact_title || ''"></p>
+                                </td>
+                                <td class="px-4 py-3 max-w-[180px]">
+                                    <p class="text-slate-700 truncate" x-text="lead.pic_name || lead.contact_name || '-'"></p>
+                                    <p class="text-[10px] text-slate-400 truncate" x-text="lead.pic_phone || lead.phone || ''"></p>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-slate-500" x-text="formatDate(lead.outreach_1st_date)"></td>
+                                <td class="px-4 py-3 text-xs text-slate-500" x-text="formatDate(lead.replied_date || lead.pic_replied_date)"></td>
+                                <td class="px-4 py-3 text-xs text-slate-500" x-text="formatDate(lead.meeting_booked_date)"></td>
+                                <td class="px-4 py-3">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase" :class="stageBadge(lead.funnel_stage).cls" x-text="stageBadge(lead.funnel_stage).label"></span>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="leads.length === 0">
+                            <td colspan="7" class="px-4 py-8 text-center text-slate-400">No leads found</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Pagination -->
+            <div class="px-6 py-3 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-xs text-slate-400" x-text="'Page ' + leadPage + ' of ' + Math.max(1, Math.ceil(leadTotal / leadPerPage))"></span>
+                <div class="flex gap-2">
+                    <button @click="loadLeads(leadPage - 1)" :disabled="leadPage <= 1"
+                            class="px-3 py-1 rounded text-xs border border-slate-300 hover:bg-slate-50 disabled:opacity-40 transition-colors">Prev</button>
+                    <button @click="loadLeads(leadPage + 1)" :disabled="leadPage * leadPerPage >= leadTotal"
+                            class="px-3 py-1 rounded text-xs border border-slate-300 hover:bg-slate-50 disabled:opacity-40 transition-colors">Next</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights (All tab) -->
+        <div x-show="activeTab === 'all'" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <!-- Hot Prospects -->
+            <div class="bg-white rounded-xl shadow-sm border border-orange-200 p-5">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
+                    </div>
+                    <h3 class="text-sm font-semibold text-slate-700">Hot Prospects
+                        <span class="text-slate-400 font-normal" x-text="'(' + (hotProspects.length) + ')'"></span>
+                    </h3>
+                </div>
+                <p class="text-[10px] text-slate-400 mb-3">Replied but no meeting booked yet - needs follow-up</p>
+                <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    <template x-for="h in hotProspects.slice(0, 15)" :key="h.id">
+                        <div class="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 hover:bg-orange-50 transition-colors">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-slate-800 truncate" x-text="h.name"></p>
+                                <p class="text-[10px] text-slate-400" x-text="(h.pic_name || h.contact_name || '-') + ' | replied ' + formatDate(h.replied_date)"></p>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-medium ml-2 flex-shrink-0" :class="channelBadge(h.channel).cls" x-text="channelBadge(h.channel).label"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Closed Lost Reasons -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-7 h-7 rounded-lg bg-red-100 text-red-600 flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                    </div>
+                    <h3 class="text-sm font-semibold text-slate-700">Closed Lost Reasons</h3>
+                </div>
+                <div class="space-y-2.5">
+                    <template x-for="r in closedReasons" :key="r.closed_lost_reason">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-slate-600 w-44 truncate" x-text="r.closed_lost_reason"></span>
+                            <div class="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
+                                <div class="h-full rounded-full bg-red-400 transition-all duration-500"
+                                     :style="'width:' + Math.round(r.count / Math.max(...closedReasons.map(x => x.count)) * 100) + '%'"></div>
+                            </div>
+                            <span class="text-xs font-bold text-slate-700 w-8 text-right" x-text="r.count"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Lead Detail Modal -->
+    <div x-show="detailOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="detailOpen = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto" @click.stop>
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between z-10">
+                <h3 class="text-lg font-bold text-slate-900">Lead Detail</h3>
+                <button @click="detailOpen = false" class="p-2 hover:bg-slate-50 rounded-lg text-slate-400">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-4" x-show="detailLead">
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium" :class="channelBadge(detailLead?.channel).cls" x-text="channelBadge(detailLead?.channel).label"></span>
+                    <span class="px-2 py-0.5 rounded text-xs font-bold uppercase" :class="stageBadge(detailLead?.funnel_stage).cls" x-text="stageBadge(detailLead?.funnel_stage).label"></span>
+                </div>
+                <h4 class="text-xl font-bold text-slate-900" x-text="detailLead?.name"></h4>
+
+                <template x-for="section in detailSections" :key="section.title">
+                    <div x-show="section.items.some(i => i.value)">
+                        <h5 class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2" x-text="section.title"></h5>
+                        <div class="space-y-1.5">
+                            <template x-for="item in section.items.filter(i => i.value)" :key="item.label">
+                                <div class="flex gap-2 text-sm">
+                                    <span class="text-slate-400 w-28 flex-shrink-0" x-text="item.label"></span>
+                                    <span class="text-slate-700 font-medium" x-text="item.value"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pipelineDashboard() {
+    return {
+        loading: true,
+        activeTab: 'all',
+        tabs: [
+            { key: 'all', label: 'All Channels', count: null },
+            { key: 'cold_call', label: 'Cold Call', count: null },
+            { key: 'linkedin', label: 'LinkedIn', count: null },
+            { key: 'hubexo', label: 'Hubexo', count: null },
+            { key: 'survey', label: 'Survey', count: null },
+        ],
+        kpis: { total: 0, outreached: 0, outreachPct: 0, replied: 0, replyRate: 0, meetings: 0, closedLost: 0, surveysCompleted: 0, surveysTotal: 0 },
+        _allChannels: [],
+        conversionData: [],
+        sdrData: [],
+        trendData: [],
+        hotProspects: [],
+        closedReasons: [],
+        pendingSurveys: [],
+        leads: [],
+        leadSearch: '',
+        leadStageFilter: '',
+        leadPage: 1,
+        leadPerPage: 50,
+        leadTotal: 0,
+        importDate: null,
+        trendChart: null,
+        detailOpen: false,
+        detailLead: null,
+
+        get displayChannels() {
+            if (this.activeTab === 'all' || this.activeTab === 'survey') return this._allChannels;
+            return this._allChannels.filter(c => c.key === this.activeTab);
+        },
+
+        get detailSections() {
+            const d = this.detailLead;
+            if (!d) return [];
+            return [
+                { title: 'Contact Info', items: [
+                    { label: 'Phone', value: d.phone || d.pic_phone },
+                    { label: 'Contact', value: d.contact_name },
+                    { label: 'Title', value: d.contact_title || d.pic_title },
+                    { label: 'Company', value: d.company_name },
+                    { label: 'Email', value: d.pic_email },
+                    { label: 'Rating', value: d.rating },
+                    { label: 'Price Range', value: d.price_range },
+                ]},
+                { title: 'PIC', items: [
+                    { label: 'PIC Name', value: d.pic_name },
+                    { label: 'PIC Title', value: d.pic_title },
+                    { label: 'PIC Phone', value: d.pic_phone },
+                ]},
+                { title: 'Outreach', items: [
+                    { label: 'Channel', value: d.outreach_channel },
+                    { label: '1st Attempt', value: d.outreach_1st_date },
+                    { label: '2nd Attempt', value: d.outreach_2nd_date },
+                    { label: '3rd Attempt', value: d.outreach_3rd_date },
+                    { label: 'Notes', value: d.outreach_notes },
+                ]},
+                { title: 'Response', items: [
+                    { label: 'Replied', value: d.replied_date },
+                    { label: 'Reply Notes', value: d.replied_notes },
+                    { label: 'PIC Replied', value: d.pic_replied_date },
+                ]},
+                { title: 'Meeting', items: [
+                    { label: 'Booked', value: d.meeting_booked_date },
+                    { label: 'Date', value: d.meeting_date },
+                    { label: 'Time', value: d.meeting_time },
+                    { label: 'Result', value: d.meeting_result_status },
+                    { label: 'Notes', value: d.meeting_notes || d.meeting_result_notes },
+                ]},
+                { title: 'Closed Lost', items: [
+                    { label: 'Date', value: d.closed_lost_date },
+                    { label: 'Reason', value: d.closed_lost_reason },
+                    { label: 'Notes', value: d.closed_lost_notes },
+                ]},
+                { title: 'Project (Hubexo)', items: [
+                    { label: 'Type', value: d.project_type },
+                    { label: 'Stage', value: d.project_stage },
+                    { label: 'Address', value: d.project_address },
+                ]},
+            ];
+        },
+
+        async init() {
+            this.loading = true;
+            await Promise.all([
+                this.loadFunnel(),
+                this.loadLeads(1),
+                this.loadSdr(),
+                this.loadTrends(),
+                this.loadInsights(),
+            ]);
+            this.loading = false;
+        },
+
+        switchTab(key) {
+            this.activeTab = key;
+            if (key !== 'survey') {
+                this.loadLeads(1);
+                this.$nextTick(() => this.renderTrendChart());
+            }
+        },
+
+        async loadFunnel() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/pipeline/funnel');
+                if (!res.ok) return;
+                const data = await res.json();
+                this.importDate = data.last_import;
+
+                // KPIs
+                const agg = data.aggregate || {};
+                this.kpis.total = agg.total || 0;
+                this.kpis.outreached = agg.outreached || 0;
+                this.kpis.outreachPct = this.kpis.total ? Math.round(this.kpis.outreached / this.kpis.total * 100) : 0;
+                this.kpis.replied = agg.replied || 0;
+                this.kpis.replyRate = this.kpis.outreached ? Math.round(this.kpis.replied / this.kpis.outreached * 1000) / 10 : 0;
+                this.kpis.meetings = agg.meetings || 0;
+                this.kpis.closedLost = agg.closed_lost || 0;
+
+                const sv = data.survey || {};
+                this.kpis.surveysCompleted = sv.completed || 0;
+                this.kpis.surveysTotal = sv.total || 0;
+
+                // Tab counts
+                const totals = {};
+                (data.channel_totals || []).forEach(t => totals[t.channel] = t.total);
+                this.tabs[0].count = this.kpis.total;
+                this.tabs[1].count = totals.cold_call || 0;
+                this.tabs[2].count = totals.linkedin || 0;
+                this.tabs[3].count = totals.hubexo || 0;
+                this.tabs[4].count = sv.total || 0;
+
+                // Funnel viz
+                const funnel = data.funnel_by_channel || [];
+                const stageOrder = ['prospect','outreach','replied','pic_contacted','meeting_booked','meeting_done','closed_lost'];
+                const stageLabels = { prospect:'Prospect', outreach:'Outreach', replied:'Replied', pic_contacted:'PIC Contact', meeting_booked:'Meeting', meeting_done:'Done', closed_lost:'Lost' };
+                const stageColors = { prospect:'bg-slate-300', outreach:'bg-blue-400', replied:'bg-indigo-400', pic_contacted:'bg-purple-400', meeting_booked:'bg-amber-400', meeting_done:'bg-emerald-400', closed_lost:'bg-red-400' };
+                const channelLabels = { cold_call:'Cold Call', linkedin:'LinkedIn', hubexo:'Hubexo' };
+
+                const channels = ['cold_call','linkedin','hubexo'];
+                this._allChannels = channels.map(ch => {
+                    const chTotal = totals[ch] || 1;
+                    const rows = funnel.filter(f => f.channel === ch);
+                    const stageMap = {};
+                    rows.forEach(r => stageMap[r.funnel_stage] = r.count);
+                    return {
+                        key: ch,
+                        label: channelLabels[ch] || ch,
+                        total: totals[ch] || 0,
+                        stages: stageOrder.filter(s => stageMap[s]).map(s => ({
+                            key: s,
+                            label: stageLabels[s],
+                            count: stageMap[s] || 0,
+                            pct: Math.round((stageMap[s] || 0) / chTotal * 100),
+                            color: stageColors[s],
+                        })),
+                    };
+                });
+            } catch (e) { console.error('loadFunnel error:', e); }
+        },
+
+        async loadLeads(page) {
+            this.leadPage = Math.max(1, page || 1);
+            const params = new URLSearchParams({ page: this.leadPage, per_page: this.leadPerPage });
+            if (this.leadSearch) params.set('search', this.leadSearch);
+            if (this.leadStageFilter) params.set('stage', this.leadStageFilter);
+            if (this.activeTab !== 'all' && this.activeTab !== 'survey') params.set('channel', this.activeTab);
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/pipeline/leads?' + params);
+                if (!res.ok) return;
+                const data = await res.json();
+                this.leads = data.leads || [];
+                this.leadTotal = data.pagination?.total || 0;
+            } catch (e) { console.error('loadLeads error:', e); }
+        },
+
+        async loadSdr() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/pipeline/sdr-performance');
+                if (!res.ok) return;
+                const data = await res.json();
+                this.sdrData = data.sdr_survey_performance || [];
+            } catch (e) { console.error('loadSdr error:', e); }
+        },
+
+        async loadTrends() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/pipeline/trends');
+                if (!res.ok) return;
+                const data = await res.json();
+                this.trendData = data.monthly || [];
+                this.$nextTick(() => this.renderTrendChart());
+            } catch (e) { console.error('loadTrends error:', e); }
+        },
+
+        async loadInsights() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/pipeline/insights');
+                if (!res.ok) return;
+                const data = await res.json();
+                this.hotProspects = data.hot_prospects || [];
+                this.closedReasons = data.closed_lost_reasons || [];
+                this.conversionData = data.conversion_by_channel || [];
+                this.pendingSurveys = data.pending_surveys || [];
+            } catch (e) { console.error('loadInsights error:', e); }
+        },
+
+        renderTrendChart() {
+            const ctx = document.getElementById('trendChart');
+            if (!ctx) return;
+            if (this.trendChart) this.trendChart.destroy();
+
+            const months = [...new Set(this.trendData.map(r => r.month))].sort();
+            const channels = { cold_call: { label: 'Cold Call', color: '#F97316' }, linkedin: { label: 'LinkedIn', color: '#3b82f6' }, hubexo: { label: 'Hubexo', color: '#22c55e' } };
+
+            const datasets = Object.entries(channels).map(([ch, cfg]) => ({
+                label: cfg.label,
+                data: months.map(m => {
+                    const row = this.trendData.find(r => r.month === m && r.channel === ch);
+                    return row ? row.total : 0;
+                }),
+                borderColor: cfg.color,
+                backgroundColor: cfg.color + '20',
+                fill: true,
+                tension: 0.4,
+                borderWidth: 2,
+                pointRadius: 3,
+            }));
+
+            this.trendChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: months, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 16, font: { size: 11 } } } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+                        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                    },
+                },
+            });
+        },
+
+        async showDetail(id) {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/pipeline/leads/' + id);
+                if (!res.ok) return;
+                const data = await res.json();
+                this.detailLead = data.lead;
+                this.detailOpen = true;
+            } catch (e) { console.error('showDetail error:', e); }
+        },
+
+        channelBadge(ch) {
+            const map = {
+                cold_call: { label: 'Cold Call', cls: 'bg-orange-50 text-orange-600 border border-orange-200' },
+                linkedin: { label: 'LinkedIn', cls: 'bg-blue-50 text-blue-600 border border-blue-200' },
+                hubexo: { label: 'Hubexo', cls: 'bg-emerald-50 text-emerald-600 border border-emerald-200' },
+            };
+            return map[ch] || { label: ch || '-', cls: 'bg-slate-100 text-slate-500' };
+        },
+
+        stageBadge(stage) {
+            const map = {
+                prospect: { label: 'Prospect', cls: 'bg-slate-100 text-slate-600' },
+                outreach: { label: 'Outreach', cls: 'bg-blue-50 text-blue-600' },
+                replied: { label: 'Replied', cls: 'bg-indigo-50 text-indigo-700' },
+                pic_contacted: { label: 'PIC', cls: 'bg-purple-50 text-purple-600' },
+                meeting_booked: { label: 'Meeting', cls: 'bg-amber-50 text-amber-700' },
+                meeting_done: { label: 'Done', cls: 'bg-emerald-50 text-emerald-700' },
+                closed_lost: { label: 'Lost', cls: 'bg-red-50 text-red-600' },
+            };
+            return map[stage] || { label: stage || '-', cls: 'bg-slate-100 text-slate-500' };
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }); }
+            catch { return d; }
+        },
+
+        formatNum(n) {
+            if (n == null) return '0';
+            return Number(n).toLocaleString('id-ID');
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,665 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Rapor Teknisi{% endblock %}
+
+{% block head %}
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+    .rapor-paper {
+        background: white;
+        border: 2px solid #1a1a1a;
+        box-shadow: 4px 4px 0 rgba(0,0,0,0.08);
+        font-family: 'Inter', sans-serif;
+    }
+    .rapor-header {
+        font-family: 'Merriweather', serif;
+    }
+    .rapor-table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    .rapor-table th, .rapor-table td {
+        border: 1.5px solid #1a1a1a;
+        padding: 8px 12px;
+        text-align: center;
+        font-size: 13px;
+    }
+    .rapor-table th {
+        background: #f8f4ee;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+    }
+    .rapor-table td.label-cell {
+        text-align: left;
+        font-weight: 600;
+        background: #fafaf8;
+        width: 160px;
+    }
+    .identity-table td {
+        border: 1px solid #ccc;
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    .identity-table td.label {
+        background: #f8f4ee;
+        font-weight: 600;
+        width: 140px;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+    }
+    .grade-seal {
+        width: 100px;
+        height: 100px;
+        border: 4px double #1a1a1a;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Merriweather', serif;
+        font-size: 48px;
+        font-weight: 900;
+        position: relative;
+    }
+    .grade-seal::before {
+        content: '';
+        position: absolute;
+        inset: 4px;
+        border: 2px solid #1a1a1a;
+        border-radius: 50%;
+    }
+    .signature-line {
+        border-bottom: 1px solid #1a1a1a;
+        min-width: 200px;
+        height: 60px;
+    }
+    .section-title {
+        font-family: 'Merriweather', serif;
+        font-size: 14px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        border-bottom: 2px solid #1a1a1a;
+        padding-bottom: 4px;
+        margin-bottom: 12px;
+    }
+    .nilai-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        font-weight: 800;
+        font-size: 16px;
+        border: 2px solid;
+    }
+    .bar-fill {
+        height: 16px;
+        border-radius: 2px;
+        transition: width 0.6s ease;
+    }
+    @media print {
+        aside, header, .no-print, .fixed { display: none !important; }
+        .lg\\:ml-64 { margin-left: 0 !important; }
+        main { padding: 0 !important; background: white !important; }
+        body { background: white !important; }
+        .rapor-paper { border: 2px solid black; box-shadow: none; }
+        .page-break { page-break-before: always; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="raporPage()" x-init="loadData()">
+
+    <!-- Top Bar (no print) -->
+    <div class="flex items-center justify-between mb-6 no-print">
+        <div>
+            <a href="/enterprise/technicians/{{ tech_id }}" class="text-sm text-[#F97316] hover:underline mb-1 inline-block">&larr; Kembali ke Detail Teknisi</a>
+            <h1 class="text-xl font-bold text-[#0F172A]">Rapor Kinerja Teknisi</h1>
+        </div>
+        <div class="flex items-center gap-2">
+            <select x-model="months" @change="loadData()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm">
+                <option value="3">3 Bulan</option>
+                <option value="6">6 Bulan</option>
+                <option value="12">12 Bulan</option>
+            </select>
+            <button onclick="window.print()" class="px-4 py-2 rounded-lg bg-[#0F172A] text-white text-sm font-medium hover:bg-[#1E293B] transition-colors shadow-sm flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                Cetak Rapor
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- THE RAPOR DOCUMENT                              -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div class="rapor-paper max-w-[800px] mx-auto p-8">
+
+        <!-- ── HEADER ── -->
+        <div class="text-center mb-6">
+            <div class="flex items-center justify-center gap-4 mb-3">
+                <img src="/enterprise/static/img/logo_snc.webp" alt="SnC Pest Control" class="h-14 w-auto">
+            </div>
+            <h1 class="rapor-header text-2xl font-black tracking-wider text-[#0F172A]">PT. SAFE AND CARE</h1>
+            <p class="text-xs text-[#64748B] tracking-widest uppercase mt-0.5">Pest Control & Hygiene Services</p>
+            <div class="w-full border-t-2 border-[#1a1a1a] mt-3"></div>
+            <div class="w-full border-t border-[#1a1a1a] mt-0.5 mb-3"></div>
+            <h2 class="rapor-header text-lg font-bold tracking-[0.2em] uppercase text-[#0F172A]">Laporan Kinerja Teknisi</h2>
+            <p class="text-xs text-[#64748B] mt-1">Periode: <span x-text="reportPeriod"></span></p>
+        </div>
+
+        <!-- ── IDENTITY + GRADE ── -->
+        <div class="flex gap-6 mb-8">
+            <!-- Identity Table -->
+            <div class="flex-1">
+                <table class="identity-table w-full border-collapse" style="border: 1.5px solid #1a1a1a;">
+                    <tr>
+                        <td class="label">Nama</td>
+                        <td x-text="tech.name || '-'" class="font-bold"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">NIK / ID</td>
+                        <td x-text="techId"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Email</td>
+                        <td class="text-xs" x-text="tech.email || '-'"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Segment</td>
+                        <td>
+                            <span class="px-2 py-0.5 rounded text-xs font-bold border"
+                                  :class="{
+                                      'bg-blue-50 text-blue-700 border-blue-300': tech.segment === 'MOBILE',
+                                      'bg-purple-50 text-purple-700 border-purple-300': tech.segment === 'STATION',
+                                      'bg-teal-50 text-teal-700 border-teal-300': tech.segment === 'SUPPORT',
+                                      'bg-amber-50 text-amber-700 border-amber-300': tech.segment === 'SUPERVISOR',
+                                  }" x-text="tech.segment || 'UNASSIGNED'"></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label">Tipe Shift</td>
+                        <td x-text="tech.shift_type || 'REGULAR'"></td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Grade Seal -->
+            <div class="flex flex-col items-center justify-center">
+                <div class="grade-seal"
+                     :class="{
+                         'text-green-700 border-green-700': grade === 'A',
+                         'text-blue-700 border-blue-700': grade === 'B',
+                         'text-amber-700 border-amber-700': grade === 'C',
+                         'text-red-700 border-red-700': grade === 'D',
+                     }">
+                    <span x-text="grade" style="position:relative; z-index:1;"></span>
+                </div>
+                <p class="text-xs font-bold uppercase tracking-widest mt-2 text-[#64748B]">Nilai Akhir</p>
+                <p class="text-[10px] text-[#94A3B8] mt-0.5" x-text="gradeLabel"></p>
+            </div>
+        </div>
+
+        <!-- ── SECTION A: RINGKASAN KINERJA (90 HARI) ── -->
+        <div class="mb-8">
+            <div class="section-title">A. Ringkasan Kinerja (90 Hari Terakhir)</div>
+            <table class="rapor-table">
+                <thead>
+                    <tr>
+                        <th>Indikator</th>
+                        <th>Nilai</th>
+                        <th>Target</th>
+                        <th>Pencapaian</th>
+                        <th>Predikat</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="label-cell">Visit per Hari</td>
+                        <td class="font-bold text-lg" x-text="overall.visits_per_day || '0'"></td>
+                        <td class="text-[#64748B]">&ge; 3.0</td>
+                        <td>
+                            <div class="w-full bg-gray-100 rounded-sm h-4 relative overflow-hidden">
+                                <div class="bar-fill bg-[#F97316]"
+                                     :style="'width:' + Math.min((overall.visits_per_day || 0) / 4 * 100, 100) + '%'"></div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="nilai-badge"
+                                  :class="{
+                                      'bg-green-50 text-green-700 border-green-400': (overall.visits_per_day || 0) >= 3,
+                                      'bg-amber-50 text-amber-700 border-amber-400': (overall.visits_per_day || 0) >= 2 && (overall.visits_per_day || 0) < 3,
+                                      'bg-red-50 text-red-700 border-red-400': (overall.visits_per_day || 0) < 2,
+                                  }"
+                                  x-text="(overall.visits_per_day || 0) >= 3 ? 'A' : (overall.visits_per_day || 0) >= 2 ? 'B' : 'C'"></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label-cell">Completion Rate</td>
+                        <td class="font-bold text-lg" x-text="(overall.completion_rate || '0') + '%'"></td>
+                        <td class="text-[#64748B]">&ge; 90%</td>
+                        <td>
+                            <div class="w-full bg-gray-100 rounded-sm h-4 relative overflow-hidden">
+                                <div class="bar-fill bg-green-500"
+                                     :style="'width:' + Math.min(overall.completion_rate || 0, 100) + '%'"></div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="nilai-badge"
+                                  :class="{
+                                      'bg-green-50 text-green-700 border-green-400': (overall.completion_rate || 0) >= 90,
+                                      'bg-amber-50 text-amber-700 border-amber-400': (overall.completion_rate || 0) >= 75 && (overall.completion_rate || 0) < 90,
+                                      'bg-red-50 text-red-700 border-red-400': (overall.completion_rate || 0) < 75,
+                                  }"
+                                  x-text="(overall.completion_rate || 0) >= 90 ? 'A' : (overall.completion_rate || 0) >= 75 ? 'B' : 'C'"></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label-cell">Total Kunjungan</td>
+                        <td class="font-bold text-lg" x-text="overall.total_visits || '0'"></td>
+                        <td class="text-[#64748B]">-</td>
+                        <td class="text-sm text-[#64748B]" x-text="(overall.active_days || 0) + ' hari aktif'"></td>
+                        <td>
+                            <span class="text-xs font-medium text-[#64748B]">Info</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ── SECTION B: DETAIL KPI BULANAN ── -->
+        <div class="mb-8">
+            <div class="section-title">B. Detail KPI Bulanan</div>
+            <table class="rapor-table">
+                <thead>
+                    <tr>
+                        <th>Bulan</th>
+                        <th>Total Visit</th>
+                        <th>Visit/Hari</th>
+                        <th>Completion</th>
+                        <th>Rata-rata Durasi</th>
+                        <th>Hari Aktif</th>
+                        <th>Predikat</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="m in monthlyKpi" :key="m.month">
+                        <tr>
+                            <td class="label-cell" x-text="formatMonth(m.month)"></td>
+                            <td class="font-bold" x-text="m.total_visits"></td>
+                            <td :class="m.visits_per_day >= 3 ? 'text-green-700 font-bold' : m.visits_per_day < 2 ? 'text-red-700 font-bold' : 'font-bold'"
+                                x-text="m.visits_per_day"></td>
+                            <td>
+                                <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                      :class="m.completion_rate >= 90 ? 'bg-green-100 text-green-700' : m.completion_rate >= 75 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'"
+                                      x-text="m.completion_rate + '%'"></span>
+                            </td>
+                            <td class="text-[#64748B]" x-text="Math.round(m.avg_duration_min) + ' menit'"></td>
+                            <td x-text="m.active_days"></td>
+                            <td>
+                                <span class="nilai-badge text-sm"
+                                      :class="monthGrade(m)"
+                                      x-text="monthGradeLetter(m)"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="monthlyKpi.length === 0">
+                        <td colspan="7" class="text-center text-[#94A3B8] py-6">Tidak ada data KPI untuk periode ini</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ── SECTION C: KEDISIPLINAN & KETEPATAN WAKTU ── -->
+        <div class="mb-8">
+            <div class="section-title">C. Kedisiplinan & Ketepatan Waktu</div>
+            <table class="rapor-table">
+                <thead>
+                    <tr>
+                        <th>Bulan</th>
+                        <th>Total Hari</th>
+                        <th>Tepat Waktu</th>
+                        <th>Terlambat</th>
+                        <th>Rate</th>
+                        <th>Offset Rata-rata</th>
+                        <th>Predikat</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="p in punctuality" :key="p.month">
+                        <tr>
+                            <td class="label-cell" x-text="formatMonth(p.month)"></td>
+                            <td x-text="p.total_days"></td>
+                            <td class="text-green-700 font-bold" x-text="p.on_time_days"></td>
+                            <td :class="p.late_days > 0 ? 'text-red-700 font-bold' : 'text-[#64748B]'" x-text="p.late_days"></td>
+                            <td>
+                                <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                      :class="punctRate(p) >= 90 ? 'bg-green-100 text-green-700' : punctRate(p) >= 75 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'"
+                                      x-text="punctRate(p) + '%'"></span>
+                            </td>
+                            <td class="text-[#64748B]">
+                                <span x-text="(p.avg_arrival_offset_min || 0) > 0 ? '+' + p.avg_arrival_offset_min + ' mnt' : p.avg_arrival_offset_min + ' mnt'"></span>
+                            </td>
+                            <td>
+                                <span class="nilai-badge text-sm"
+                                      :class="punctRate(p) >= 90 ? 'bg-green-50 text-green-700 border-green-400' : punctRate(p) >= 75 ? 'bg-amber-50 text-amber-700 border-amber-400' : 'bg-red-50 text-red-700 border-red-400'"
+                                      x-text="punctRate(p) >= 90 ? 'A' : punctRate(p) >= 75 ? 'B' : 'C'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="punctuality.length === 0">
+                        <td colspan="7" class="text-center text-[#94A3B8] py-6">Tidak ada data ketepatan waktu</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ── SECTION D: GRAFIK TREN ── -->
+        <div class="mb-8">
+            <div class="section-title">D. Grafik Tren Kinerja</div>
+            <div class="border border-[#1a1a1a] p-4 rounded">
+                <canvas id="kpiTrendChart" height="180"></canvas>
+            </div>
+        </div>
+
+        <!-- ── SECTION E: CATATAN & ISSUE ── -->
+        <div class="mb-8">
+            <div class="section-title">E. Catatan & Riwayat Tindakan</div>
+            <template x-if="issues.length > 0">
+                <table class="rapor-table">
+                    <thead>
+                        <tr>
+                            <th style="width:30px">No</th>
+                            <th>Tanggal</th>
+                            <th>Jenis</th>
+                            <th>Tingkat</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(i, idx) in issues" :key="i.created_at">
+                            <tr>
+                                <td x-text="idx + 1"></td>
+                                <td class="text-xs" x-text="(i.created_at || '').slice(0,10)"></td>
+                                <td class="text-left font-medium" x-text="i.issue_type"></td>
+                                <td>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                                          :class="{
+                                              'bg-red-100 text-red-700': i.severity === 'critical' || i.severity === 'high',
+                                              'bg-amber-100 text-amber-700': i.severity === 'medium',
+                                              'bg-slate-100 text-slate-600': i.severity === 'low',
+                                          }" x-text="i.severity"></span>
+                                </td>
+                                <td>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                                          :class="i.status === 'resolved' ? 'bg-green-100 text-green-700' : i.status === 'dismissed' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'"
+                                          x-text="i.status"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </template>
+            <template x-if="issues.length === 0">
+                <div class="border border-[#1a1a1a] p-4 text-center">
+                    <p class="text-green-700 font-medium text-sm">Tidak ada catatan issue. Pertahankan kinerja baik!</p>
+                </div>
+            </template>
+        </div>
+
+        <!-- ── RINGKASAN NILAI ── -->
+        <div class="mb-8">
+            <div class="section-title">F. Ringkasan Penilaian</div>
+            <table class="rapor-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40%">Aspek Penilaian</th>
+                        <th style="width: 15%">Bobot</th>
+                        <th style="width: 15%">Skor</th>
+                        <th style="width: 15%">Nilai</th>
+                        <th style="width: 15%">Predikat</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="label-cell">Produktivitas (Visit/Hari)</td>
+                        <td>40%</td>
+                        <td class="font-bold" x-text="overallScore.productivityScore"></td>
+                        <td class="font-bold" x-text="overallScore.productivityWeighted"></td>
+                        <td>
+                            <span class="nilai-badge text-sm"
+                                  :class="overallScore.productivityScore >= 80 ? 'bg-green-50 text-green-700 border-green-400' : overallScore.productivityScore >= 60 ? 'bg-amber-50 text-amber-700 border-amber-400' : 'bg-red-50 text-red-700 border-red-400'"
+                                  x-text="overallScore.productivityScore >= 80 ? 'A' : overallScore.productivityScore >= 60 ? 'B' : 'C'"></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label-cell">Completion Rate</td>
+                        <td>60%</td>
+                        <td class="font-bold" x-text="overallScore.completionScore"></td>
+                        <td class="font-bold" x-text="overallScore.completionWeighted"></td>
+                        <td>
+                            <span class="nilai-badge text-sm"
+                                  :class="overallScore.completionScore >= 90 ? 'bg-green-50 text-green-700 border-green-400' : overallScore.completionScore >= 75 ? 'bg-amber-50 text-amber-700 border-amber-400' : 'bg-red-50 text-red-700 border-red-400'"
+                                  x-text="overallScore.completionScore >= 90 ? 'A' : overallScore.completionScore >= 75 ? 'B' : 'C'"></span>
+                        </td>
+                    </tr>
+                    <tr style="background: #f8f4ee;">
+                        <td class="label-cell font-black text-[#0F172A]" style="font-size: 14px;">TOTAL NILAI</td>
+                        <td class="font-bold">100%</td>
+                        <td class="font-black text-lg text-[#0F172A]" colspan="1" x-text="overallScore.total"></td>
+                        <td colspan="2">
+                            <div class="flex items-center justify-center gap-2">
+                                <span class="nilai-badge text-lg"
+                                      :class="{
+                                          'bg-green-100 text-green-800 border-green-500': grade === 'A',
+                                          'bg-blue-100 text-blue-800 border-blue-500': grade === 'B',
+                                          'bg-amber-100 text-amber-800 border-amber-500': grade === 'C',
+                                          'bg-red-100 text-red-800 border-red-500': grade === 'D',
+                                      }" x-text="grade"></span>
+                                <span class="font-bold text-sm" x-text="gradeLabel"></span>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="mt-2 text-[10px] text-[#94A3B8] border border-dashed border-[#CBD5E1] rounded px-3 py-2">
+                <strong>Keterangan Predikat:</strong> A = Sangat Baik (&ge;80) | B = Baik (65-79) | C = Cukup (50-64) | D = Perlu Perbaikan (&lt;50)
+            </div>
+        </div>
+
+        <!-- ── TANDA TANGAN ── -->
+        <div class="mt-12 pt-4">
+            <div class="flex justify-between items-start px-8">
+                <div class="text-center">
+                    <p class="text-xs text-[#64748B] mb-1">Mengetahui,</p>
+                    <p class="text-xs font-bold">Koordinator Operasional</p>
+                    <div class="signature-line mt-1"></div>
+                    <p class="text-xs font-bold mt-1">( ________________________ )</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-xs text-[#64748B] mb-1" x-text="'Surabaya, ' + todayFormatted"></p>
+                    <p class="text-xs font-bold">Supervisor</p>
+                    <div class="signature-line mt-1"></div>
+                    <p class="text-xs font-bold mt-1">( ________________________ )</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-8 pt-3 border-t border-[#1a1a1a] text-center">
+            <p class="text-[9px] text-[#94A3B8]">Dokumen ini digenerate otomatis oleh SanoCare Enterprise Intelligence Platform</p>
+            <p class="text-[9px] text-[#94A3B8]" x-text="'Generated: ' + generatedAt"></p>
+        </div>
+
+    </div><!-- end rapor-paper -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function raporPage() {
+    return {
+        techId: {{ tech_id }},
+        tech: {},
+        grade: '-',
+        gradeLabel: '',
+        overall: {},
+        overallScore: { productivityScore: 0, completionScore: 0, productivityWeighted: 0, completionWeighted: 0, total: 0 },
+        monthlyKpi: [],
+        punctuality: [],
+        issues: [],
+        months: 3,
+        chart: null,
+        generatedAt: '',
+        reportPeriod: '',
+        todayFormatted: '',
+
+        formatMonth(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toLocaleString('id-ID', { year: 'numeric', month: 'long' });
+        },
+
+        punctRate(p) {
+            if (!p.total_days || p.total_days === 0) return 0;
+            return Math.round(p.on_time_days / p.total_days * 100);
+        },
+
+        monthGrade(m) {
+            const vpd = m.visits_per_day || 0;
+            const cr = m.completion_rate || 0;
+            const score = (vpd / 4 * 40) + (cr / 100 * 60);
+            if (score >= 80) return 'bg-green-50 text-green-700 border-green-400';
+            if (score >= 65) return 'bg-blue-50 text-blue-700 border-blue-400';
+            if (score >= 50) return 'bg-amber-50 text-amber-700 border-amber-400';
+            return 'bg-red-50 text-red-700 border-red-400';
+        },
+
+        monthGradeLetter(m) {
+            const vpd = m.visits_per_day || 0;
+            const cr = m.completion_rate || 0;
+            const score = (vpd / 4 * 40) + (cr / 100 * 60);
+            if (score >= 80) return 'A';
+            if (score >= 65) return 'B';
+            if (score >= 50) return 'C';
+            return 'D';
+        },
+
+        calcOverallScore() {
+            const vpd = parseFloat(this.overall.visits_per_day) || 0;
+            const cr = parseFloat(this.overall.completion_rate) || 0;
+
+            const prodScore = Math.round(Math.min(vpd / 4 * 100, 100));
+            const compScore = Math.round(cr);
+
+            this.overallScore = {
+                productivityScore: prodScore,
+                completionScore: compScore,
+                productivityWeighted: Math.round(prodScore * 0.4),
+                completionWeighted: Math.round(compScore * 0.6),
+                total: Math.round(prodScore * 0.4 + compScore * 0.6),
+            };
+        },
+
+        async loadData() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch(`/api/v1/enterprise/technicians/${this.techId}/rapor?months=${this.months}`);
+            const data = await res.json();
+
+            this.tech = data.technician || {};
+            this.grade = data.grade || '-';
+            this.overall = data.overall_metrics || {};
+            this.monthlyKpi = data.monthly_kpi || [];
+            this.punctuality = data.punctuality || [];
+            this.issues = data.issues || [];
+            this.generatedAt = data.generated_at || new Date().toISOString();
+
+            // Grade label
+            const labels = { A: 'Sangat Baik', B: 'Baik', C: 'Cukup', D: 'Perlu Perbaikan' };
+            this.gradeLabel = labels[this.grade] || '';
+
+            // Period text
+            const now = new Date();
+            const start = new Date(now);
+            start.setMonth(start.getMonth() - this.months);
+            this.reportPeriod = start.toLocaleString('id-ID', { month: 'long', year: 'numeric' }) + ' - ' + now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+
+            // Today formatted
+            this.todayFormatted = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+            this.calcOverallScore();
+            this.$nextTick(() => this.renderChart());
+        },
+
+        renderChart() {
+            const ctx = document.getElementById('kpiTrendChart');
+            if (!ctx) return;
+            if (this.chart) this.chart.destroy();
+
+            const months = this.monthlyKpi.slice().reverse();
+            const labels = months.map(m => this.formatMonth(m.month));
+
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Visit/Hari',
+                            data: months.map(m => m.visits_per_day),
+                            borderColor: '#F97316',
+                            backgroundColor: 'rgba(249,115,22,0.08)',
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#F97316',
+                            borderWidth: 2,
+                            yAxisID: 'y',
+                        },
+                        {
+                            label: 'Completion %',
+                            data: months.map(m => m.completion_rate),
+                            borderColor: '#22C55E',
+                            backgroundColor: 'rgba(34,197,94,0.08)',
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#22C55E',
+                            borderWidth: 2,
+                            yAxisID: 'y1',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { intersect: false, mode: 'index' },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { font: { family: 'Inter', size: 11 }, usePointStyle: true }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            position: 'left',
+                            title: { display: true, text: 'Visit/Hari', font: { size: 11 } },
+                            beginAtZero: true,
+                            grid: { color: 'rgba(0,0,0,0.05)' },
+                        },
+                        y1: {
+                            position: 'right',
+                            title: { display: true, text: 'Completion %', font: { size: 11 } },
+                            min: 0, max: 100,
+                            grid: { drawOnChartArea: false },
+                        }
+                    },
+                }
+            });
+        },
+    }
+}
+</script>
+{% endblock %}

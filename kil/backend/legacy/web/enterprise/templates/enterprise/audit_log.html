@@ -1,0 +1,269 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Audit Log{% endblock %}
+
+{% block content %}
+<div x-data="auditLog()" x-init="init()" class="p-6 max-w-7xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Universal Audit Log</h1>
+            <p class="text-sm text-gray-500 mt-1">Track every action across all modules</p>
+        </div>
+        <select x-model="days" @change="loadAll()" class="border rounded-lg px-3 py-2 text-sm">
+            <option value="1">Last 24 hours</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+        </select>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs font-medium text-gray-400 uppercase">Total Events</p>
+            <p class="text-2xl font-bold text-gray-900 mt-1" x-text="stats?.total_events || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs font-medium text-green-500 uppercase">Logins</p>
+            <p class="text-2xl font-bold text-green-600 mt-1" x-text="stats?.login_count || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs font-medium text-red-500 uppercase">Failed Logins</p>
+            <p class="text-2xl font-bold text-red-600 mt-1" x-text="stats?.failed_login_count || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs font-medium text-blue-500 uppercase">Creates</p>
+            <p class="text-2xl font-bold text-blue-600 mt-1" x-text="stats?.create_count || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs font-medium text-purple-500 uppercase">Active Users</p>
+            <p class="text-2xl font-bold text-purple-600 mt-1" x-text="stats?.unique_actors || 0"></p>
+        </div>
+    </div>
+
+    <!-- Two Column: Activity by Module + Security Events -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- By Module -->
+        <div class="bg-white rounded-xl border shadow-sm">
+            <div class="px-5 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Activity by Module</h3>
+            </div>
+            <div class="p-5">
+                <template x-for="m in byModule" :key="m.module">
+                    <div class="flex items-center justify-between py-2">
+                        <div class="flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full" :class="moduleColor(m.module)"></div>
+                            <span class="text-sm font-medium text-gray-700 capitalize" x-text="m.module"></span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-24 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                <div class="h-full rounded-full transition-all" :class="moduleColor(m.module)" :style="'width:' + Math.min(100, (m.count / (stats?.total_events || 1)) * 100) + '%'"></div>
+                            </div>
+                            <span class="text-sm text-gray-500 w-12 text-right" x-text="m.count"></span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="byModule.length === 0" class="text-center py-4 text-gray-400 text-sm">No data yet</div>
+            </div>
+        </div>
+
+        <!-- Security Events -->
+        <div class="bg-white rounded-xl border shadow-sm">
+            <div class="px-5 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Security Events</h3>
+            </div>
+            <div class="divide-y max-h-64 overflow-y-auto">
+                <template x-for="s in securityEvents" :key="s.id">
+                    <div class="px-5 py-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full" :class="s.action === 'login_failed' ? 'bg-red-500' : 'bg-yellow-500'"></span>
+                                <span class="text-sm font-medium text-gray-700" x-text="s.action.replace('_', ' ')"></span>
+                            </div>
+                            <span class="text-xs text-gray-400" x-text="formatTime(s.created_at)"></span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1" x-text="(s.actor_name || 'Unknown') + (s.detail ? ' — ' + s.detail : '')"></p>
+                    </div>
+                </template>
+                <div x-show="securityEvents.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">No security events</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity by Hour -->
+    <div class="bg-white rounded-xl border shadow-sm mb-6">
+        <div class="px-5 py-4 border-b">
+            <h3 class="font-semibold text-gray-900">Activity by Hour</h3>
+        </div>
+        <div class="p-5">
+            <div class="flex items-end gap-1 h-24">
+                <template x-for="h in 24" :key="h-1">
+                    <div class="flex-1 flex flex-col items-center gap-1">
+                        <div class="w-full bg-orange-200 rounded-t transition-all" :style="'height:' + getHourHeight(h-1) + 'px'"></div>
+                        <span class="text-[9px] text-gray-400" x-text="(h-1) + 'h'" x-show="(h-1) % 3 === 0"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full Log Table -->
+    <div class="bg-white rounded-xl border shadow-sm">
+        <div class="px-5 py-4 border-b flex items-center justify-between flex-wrap gap-3">
+            <h3 class="font-semibold text-gray-900">Event Log</h3>
+            <div class="flex items-center gap-2">
+                <input type="text" x-model="search" @input.debounce.300ms="loadLogs()" placeholder="Search..." class="border rounded-lg px-3 py-1.5 text-sm w-48">
+                <select x-model="filterModule" @change="loadLogs()" class="border rounded-lg px-3 py-1.5 text-sm">
+                    <option value="">All Modules</option>
+                    <template x-for="m in byModule" :key="m.module">
+                        <option :value="m.module" x-text="m.module"></option>
+                    </template>
+                </select>
+                <select x-model="filterAction" @change="loadLogs()" class="border rounded-lg px-3 py-1.5 text-sm">
+                    <option value="">All Actions</option>
+                    <option value="login">Login</option>
+                    <option value="login_failed">Login Failed</option>
+                    <option value="create">Create</option>
+                    <option value="update">Update</option>
+                    <option value="delete">Delete</option>
+                    <option value="export">Export</option>
+                    <option value="status_change">Status Change</option>
+                </select>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+                    <tr>
+                        <th class="px-4 py-3 text-left">Time</th>
+                        <th class="px-4 py-3 text-left">Module</th>
+                        <th class="px-4 py-3 text-left">Action</th>
+                        <th class="px-4 py-3 text-left">Entity</th>
+                        <th class="px-4 py-3 text-left">Detail</th>
+                        <th class="px-4 py-3 text-left">Actor</th>
+                        <th class="px-4 py-3 text-left">IP</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    <template x-for="log in logs" :key="log.id">
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap" x-text="formatTime(log.created_at)"></td>
+                            <td class="px-4 py-2.5">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium" :class="moduleBadge(log.module)" x-text="log.module"></span>
+                            </td>
+                            <td class="px-4 py-2.5">
+                                <span class="text-xs font-medium" :class="actionColor(log.action)" x-text="log.action.replace('_', ' ')"></span>
+                            </td>
+                            <td class="px-4 py-2.5 text-gray-600" x-text="log.entity_type ? log.entity_type + ' #' + log.entity_id : '—'"></td>
+                            <td class="px-4 py-2.5 text-gray-600 max-w-xs truncate" x-text="log.detail || '—'"></td>
+                            <td class="px-4 py-2.5 text-gray-700 font-medium" x-text="log.actor_name || '—'"></td>
+                            <td class="px-4 py-2.5 text-gray-400 text-xs" x-text="log.ip_address || '—'"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div x-show="logs.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">No events found</div>
+        </div>
+        <!-- Pagination -->
+        <div x-show="totalLogs > perPage" class="px-5 py-3 border-t flex items-center justify-between">
+            <span class="text-sm text-gray-500" x-text="`Showing ${(page-1)*perPage + 1}–${Math.min(page*perPage, totalLogs)} of ${totalLogs}`"></span>
+            <div class="flex gap-2">
+                <button @click="page--; loadLogs()" :disabled="page <= 1" class="px-3 py-1 border rounded text-sm disabled:opacity-30">Prev</button>
+                <button @click="page++; loadLogs()" :disabled="page * perPage >= totalLogs" class="px-3 py-1 border rounded text-sm disabled:opacity-30">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function auditLog() {
+    return {
+        stats: null,
+        byModule: [],
+        byHour: [],
+        securityEvents: [],
+        topActors: [],
+        logs: [],
+        totalLogs: 0,
+        days: '30',
+        page: 1,
+        perPage: 50,
+        search: '',
+        filterModule: '',
+        filterAction: '',
+
+        async init() {
+            await this.loadAll();
+        },
+
+        async loadAll() {
+            this.page = 1;
+            await Promise.all([this.loadStats(), this.loadLogs()]);
+        },
+
+        async loadStats() {
+            try {
+                const resp = await authenticatedFetch(`/api/v1/enterprise/audit-log/stats?days=${this.days}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.stats = data.stats || {};
+                    this.byModule = data.by_module || [];
+                    this.byHour = data.by_hour || [];
+                    this.securityEvents = data.security_events || [];
+                    this.topActors = data.top_actors || [];
+                }
+            } catch (e) { console.error('Stats error:', e); }
+        },
+
+        async loadLogs() {
+            try {
+                let url = `/api/v1/enterprise/audit-log?days=${this.days}&page=${this.page}&per_page=${this.perPage}`;
+                if (this.filterModule) url += `&module=${this.filterModule}`;
+                if (this.filterAction) url += `&action=${this.filterAction}`;
+                if (this.search) url += `&q=${encodeURIComponent(this.search)}`;
+                const resp = await authenticatedFetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.logs = data.logs || [];
+                    this.totalLogs = data.total || 0;
+                }
+            } catch (e) { console.error('Logs error:', e); }
+        },
+
+        getHourHeight(hour) {
+            const entry = this.byHour.find(h => h.hour === hour);
+            if (!entry) return 2;
+            const max = Math.max(...this.byHour.map(h => h.count), 1);
+            return Math.max(2, (entry.count / max) * 80);
+        },
+
+        moduleColor(mod) {
+            const colors = { auth: 'bg-green-500', complaints: 'bg-red-500', contracts: 'bg-blue-500', scheduling: 'bg-purple-500', mobile: 'bg-orange-500' };
+            return colors[mod] || 'bg-gray-500';
+        },
+
+        moduleBadge(mod) {
+            const badges = { auth: 'bg-green-100 text-green-700', complaints: 'bg-red-100 text-red-700', contracts: 'bg-blue-100 text-blue-700', scheduling: 'bg-purple-100 text-purple-700', mobile: 'bg-orange-100 text-orange-700' };
+            return badges[mod] || 'bg-gray-100 text-gray-700';
+        },
+
+        actionColor(action) {
+            if (action.includes('failed')) return 'text-red-600';
+            if (action === 'create') return 'text-green-600';
+            if (action === 'update') return 'text-blue-600';
+            if (action === 'delete') return 'text-red-600';
+            if (action === 'login') return 'text-green-600';
+            return 'text-gray-600';
+        },
+
+        formatTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) + ' ' +
+                   d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>
+{% endblock %}

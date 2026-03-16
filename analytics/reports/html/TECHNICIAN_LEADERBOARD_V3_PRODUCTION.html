@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SanoCare Technician Leaderboard V3 (Production)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #667eea;
+            --success: #48bb78;
+            --warning: #ed8936;
+            --danger: #f56565;
+            --gray-600: #718096;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1c2e 0%, #2d1b4e 50%, #1a2a4a 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 25px 0;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header .badge {
+            display: inline-block;
+            background: var(--success);
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            margin-top: 8px;
+        }
+
+        .header .subtitle {
+            color: var(--gray-600);
+            font-size: 0.9rem;
+            margin-top: 8px;
+        }
+
+        .formula-box {
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+
+        .formula-box h4 {
+            color: var(--primary);
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .formula-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .formula-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .formula-item span {
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+
+        .stat-card .value.green {
+            color: var(--success);
+        }
+
+        .stat-card .value.yellow {
+            color: var(--warning);
+        }
+
+        .stat-card .label {
+            color: var(--gray-600);
+            font-size: 0.75rem;
+            margin-top: 4px;
+            text-transform: uppercase;
+        }
+
+        .leaderboard {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .leaderboard h2 {
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px 8px;
+            color: var(--gray-600);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        td {
+            padding: 12px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+
+        .rank-1 {
+            background: linear-gradient(135deg, #ffd700, #ffaa00);
+            color: #000;
+        }
+
+        .rank-2 {
+            background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+            color: #000;
+        }
+
+        .rank-3 {
+            background: linear-gradient(135deg, #cd7f32, #b87333);
+            color: #fff;
+        }
+
+        .rank-default {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .grade {
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        .grade-A {
+            background: rgba(72, 187, 120, 0.2);
+            color: #48bb78;
+        }
+
+        .grade-B {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+        }
+
+        .grade-C {
+            background: rgba(237, 137, 54, 0.2);
+            color: #ed8936;
+        }
+
+        .bar {
+            height: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            width: 60px;
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 5px;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        .bar-green {
+            background: var(--success);
+        }
+
+        .bar-yellow {
+            background: var(--warning);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--gray-600);
+            font-size: 0.75rem;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .formula-items {
+                flex-direction: column;
+            }
+
+            table {
+                font-size: 0.75rem;
+            }
+
+            th,
+            td {
+                padding: 8px 4px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏆 Technician Leaderboard</h1>
+            <span class="badge">V3 PRODUCTION</span>
+            <p class="subtitle">SanoCare Pest Control | Data: Jan 2025 - Present</p>
+        </div>
+
+        <div class="formula-box">
+            <h4>📐 Scoring Formula (V3 Final)</h4>
+            <div class="formula-items">
+                <div class="formula-item"><span>35%</span> Completion Rate</div>
+                <div class="formula-item"><span>20%</span> Schedule Discipline</div>
+                <div class="formula-item"><span>25%</span> Productivity (VPD)</div>
+                <div class="formula-item"><span>10%</span> Duration Efficiency</div>
+                <div class="formula-item"><span>10%</span> Photo Compliance</div>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="value green">41</div>
+                <div class="label">Technicians</div>
+            </div>
+            <div class="stat-card">
+                <div class="value green">99.5%</div>
+                <div class="label">Avg Completion</div>
+            </div>
+            <div class="stat-card">
+                <div class="value yellow">82.3%</div>
+                <div class="label">Avg Schedule Disc.</div>
+            </div>
+            <div class="stat-card">
+                <div class="value green">90.1%</div>
+                <div class="label">Avg Photo Compl.</div>
+            </div>
+            <div class="stat-card">
+                <div class="value green">13</div>
+                <div class="label">Grade A</div>
+            </div>
+        </div>
+
+        <div class="leaderboard">
+            <h2>🏅 Full Leaderboard</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Technician</th>
+                        <th>Assigned</th>
+                        <th>Compl.</th>
+                        <th>Schedule</th>
+                        <th>VPD</th>
+                        <th>Dur (p50)</th>
+                        <th>Photo</th>
+                        <th>Score</th>
+                        <th>Grade</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            <p>SanoCare Technician Leaderboard V3 (Production) | Validated & Approved</p>
+            <p>Scoring: Assigned-first | Schedule = Same-day adherence | Duration = Median (p50)</p>
+        </div>
+    </div>
+    <script>
+        const data = [
+            { rank: 1, name: "Andik Noroyan F.", assigned: 924, compl: 99.9, sched: 94.2, vpd: 3.20, dur: 81, foto: 88.5, score: 97.7, grade: "A" },
+            { rank: 2, name: "Akbar Rohmatulah", assigned: 913, compl: 100.0, sched: 86.5, vpd: 2.99, dur: 99, foto: 89.6, score: 96.2, grade: "A" },
+            { rank: 3, name: "Ananda Almas", assigned: 814, compl: 100.0, sched: 88.8, vpd: 2.74, dur: 83, foto: 98.9, score: 95.5, grade: "A" },
+            { rank: 4, name: "Choirul Anam", assigned: 1059, compl: 99.9, sched: 89.3, vpd: 3.54, dur: 96, foto: 74.0, score: 95.2, grade: "A" },
+            { rank: 5, name: "Moh. Mahrus", assigned: 882, compl: 99.5, sched: 83.7, vpd: 2.99, dur: 96, foto: 82.3, score: 94.7, grade: "A" },
+            { rank: 6, name: "Suparman", assigned: 884, compl: 99.8, sched: 74.8, vpd: 2.97, dur: 103, foto: 92.0, score: 93.8, grade: "A" },
+            { rank: 7, name: "Lucky Adi Putra", assigned: 817, compl: 99.8, sched: 79.4, vpd: 2.85, dur: 110, foto: 90.3, score: 93.6, grade: "A" },
+            { rank: 8, name: "Hendra Mulalinda", assigned: 287, compl: 98.6, sched: 93.4, vpd: 2.02, dur: 112, foto: 98.3, score: 89.9, grade: "A" },
+            { rank: 9, name: "M. Abu Samsudin", assigned: 736, compl: 99.9, sched: 85.7, vpd: 2.20, dur: 202, foto: 91.0, score: 89.5, grade: "A" },
+            { rank: 10, name: "Muhammad Haselmi", assigned: 175, compl: 100.0, sched: 89.7, vpd: 1.72, dur: 66, foto: 100.0, score: 87.3, grade: "A" },
+            { rank: 10, name: "Dwi Cipto Kurniawan", assigned: 73, compl: 100.0, sched: 93.2, vpd: 1.66, dur: 90, foto: 98.6, score: 87.3, grade: "A" },
+            { rank: 12, name: "Adam Abdillah", assigned: 404, compl: 98.3, sched: 60.4, vpd: 2.38, dur: 99, foto: 93.8, score: 85.7, grade: "A" },
+            { rank: 13, name: "Rohandy Sujoko", assigned: 321, compl: 99.7, sched: 91.3, vpd: 1.55, dur: 90, foto: 91.9, score: 85.3, grade: "A" },
+            { rank: 14, name: "Tegar Patria Anugra", assigned: 394, compl: 99.7, sched: 73.6, vpd: 1.84, dur: 155, foto: 96.4, score: 84.6, grade: "B" },
+            { rank: 15, name: "Abdul Rahman Soleh", assigned: 152, compl: 100.0, sched: 67.1, vpd: 1.92, dur: 140, foto: 95.4, score: 84.0, grade: "B" },
+            { rank: 16, name: "Ibad Qurthubi", assigned: 287, compl: 100.0, sched: 76.9, vpd: 1.97, dur: 171, foto: 89.5, score: 83.5, grade: "B" },
+            { rank: 17, name: "Petra Saputra", assigned: 207, compl: 100.0, sched: 74.4, vpd: 1.84, dur: 164, foto: 91.8, score: 82.6, grade: "B" },
+            { rank: 18, name: "Moch Maulana", assigned: 221, compl: 96.8, sched: 69.3, vpd: 1.83, dur: 141, foto: 95.0, score: 82.4, grade: "B" },
+            { rank: 19, name: "I Wayan Rendy", assigned: 133, compl: 100.0, sched: 91.7, vpd: 1.73, dur: 161, foto: 78.9, score: 82.2, grade: "B" },
+            { rank: 20, name: "Mahesa Ramadhan", assigned: 205, compl: 99.0, sched: 60.9, vpd: 1.82, dur: 135, foto: 94.1, score: 81.1, grade: "B" }
+        ];
+
+        document.getElementById('tbody').innerHTML = data.map(t => `
+<tr>
+    <td><span class="rank-badge ${t.rank <= 3 ? 'rank-' + t.rank : 'rank-default'}">${t.rank}</span></td>
+    <td><strong>${t.name}</strong></td>
+    <td>${t.assigned}</td>
+    <td>${t.compl}%</td>
+    <td>${t.sched}% <div class="bar"><div class="bar-fill ${t.sched >= 80 ? 'bar-green' : 'bar-yellow'}" style="width:${t.sched}%"></div></div></td>
+    <td>${t.vpd}</td>
+    <td>${t.dur} m</td>
+    <td>${t.foto}%</td>
+    <td><strong>${t.score}</strong></td>
+    <td><span class="grade grade-${t.grade}">${t.grade}</span></td>
+</tr>`).join('');
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SanoCare Technician Leaderboard V2</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5a67d8;
+            --success: #48bb78;
+            --warning: #ed8936;
+            --danger: #f56565;
+            --dark: #1a202c;
+            --gray-100: #f7fafc;
+            --gray-200: #edf2f7;
+            --gray-300: #e2e8f0;
+            --gray-600: #718096;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1c2e 0%, #2d1b4e 50%, #1a2a4a 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 2.2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header .version {
+            color: var(--warning);
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        .header .subtitle {
+            color: var(--gray-600);
+            font-size: 1rem;
+        }
+
+        /* Alert Banner */
+        .alert-banner {
+            background: rgba(245, 101, 101, 0.2);
+            border: 1px solid rgba(245, 101, 101, 0.5);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .alert-icon {
+            font-size: 1.5rem;
+        }
+
+        .alert-content h4 {
+            color: #f56565;
+            margin-bottom: 5px;
+        }
+
+        .alert-content p {
+            color: var(--gray-300);
+            font-size: 0.9rem;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stat-card .label {
+            color: var(--gray-600);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+
+        .stat-card .value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-top: 5px;
+        }
+
+        .stat-card .value.warning {
+            color: var(--warning);
+        }
+
+        .stat-card .value.danger {
+            color: var(--danger);
+        }
+
+        .stat-card .value.success {
+            color: var(--success);
+        }
+
+        /* Comparison Table */
+        .comparison-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .comparison-section h3 {
+            margin-bottom: 15px;
+            color: var(--gray-300);
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .comparison-table th {
+            color: var(--gray-600);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .old-value {
+            color: var(--danger);
+            text-decoration: line-through;
+        }
+
+        .new-value {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        /* Leaderboard */
+        .leaderboard-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 25px;
+        }
+
+        .leaderboard-section h2 {
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .leaderboard-table th {
+            text-align: left;
+            padding: 12px 10px;
+            color: var(--gray-600);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .leaderboard-table td {
+            padding: 14px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .leaderboard-table tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+
+        .rank-1 {
+            background: linear-gradient(135deg, #ffd700, #ffaa00);
+            color: #000;
+        }
+
+        .rank-2 {
+            background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+            color: #000;
+        }
+
+        .rank-3 {
+            background: linear-gradient(135deg, #cd7f32, #b87333);
+            color: #fff;
+        }
+
+        .rank-default {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .grade-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .grade-A {
+            background: rgba(72, 187, 120, 0.2);
+            color: #48bb78;
+        }
+
+        .grade-B {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+        }
+
+        .grade-C {
+            background: rgba(237, 137, 54, 0.2);
+            color: #ed8936;
+        }
+
+        .grade-D {
+            background: rgba(245, 101, 101, 0.2);
+            color: #f56565;
+        }
+
+        .grade-F {
+            background: rgba(160, 174, 192, 0.2);
+            color: #a0aec0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        .progress-fill.low {
+            background: linear-gradient(90deg, #f56565, #e53e3e);
+        }
+
+        .progress-fill.medium {
+            background: linear-gradient(90deg, #ed8936, #dd6b20);
+        }
+
+        .progress-fill.high {
+            background: linear-gradient(90deg, #48bb78, #38a169);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--gray-600);
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.6rem;
+            }
+
+            .leaderboard-table {
+                font-size: 0.75rem;
+            }
+
+            .leaderboard-table th,
+            .leaderboard-table td {
+                padding: 8px 5px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏆 Technician Leaderboard</h1>
+            <p class="version">V2 - Corrected (Assigned-First Approach)</p>
+            <p class="subtitle">SanoCare Pest Control | Data: Jan 2025 - Present</p>
+        </div>
+
+        <!-- Alert Banner -->
+        <div class="alert-banner">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-content">
+                <h4>On-Time Rate Issue Detected</h4>
+                <p>Average on-time rate is only <strong>~8%</strong>. Most technicians arrive outside the scheduled
+                    window (-30/+15 min). This requires operational review.</p>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Active Technicians</div>
+                <div class="value success">41</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Avg Completion</div>
+                <div class="value success">99.5%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Avg On-Time</div>
+                <div class="value danger">8.2%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Grade C+</div>
+                <div class="value warning">8</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Grade D</div>
+                <div class="value">24</div>
+            </div>
+        </div>
+
+        <!-- V1 vs V2 Comparison -->
+        <div class="comparison-section">
+            <h3>📊 V1 vs V2 Correction Impact</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>V1 (Wrong)</th>
+                        <th>V2 (Correct)</th>
+                        <th>Why Changed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Total Assigned Basis</td>
+                        <td class="old-value">t_visit (realized)</td>
+                        <td class="new-value">t_road_plan (assigned)</td>
+                        <td>Includes unvisited road_plans</td>
+                    </tr>
+                    <tr>
+                        <td>On-Time Definition</td>
+                        <td class="old-value">≤ scheduled = on-time</td>
+                        <td class="new-value">-30 to +15 min window</td>
+                        <td>Too early is also wrong</td>
+                    </tr>
+                    <tr>
+                        <td>Top On-Time Rate</td>
+                        <td class="old-value">100%</td>
+                        <td class="new-value">33.1%</td>
+                        <td>Real punctuality measured</td>
+                    </tr>
+                    <tr>
+                        <td>Top Score</td>
+                        <td class="old-value">100.0</td>
+                        <td class="new-value">77.1</td>
+                        <td>Reflects actual performance</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Leaderboard Table V2 -->
+        <div class="leaderboard-section">
+            <h2>🏅 Leaderboard (Corrected V2)</h2>
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Technician</th>
+                        <th>Assigned</th>
+                        <th>Completed</th>
+                        <th>Completion</th>
+                        <th>On-Time</th>
+                        <th>Avg Duration</th>
+                        <th>VPD</th>
+                        <th>Score</th>
+                        <th>Grade</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody"></tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            <p>SanoCare Technician Leaderboard V2 | Corrected Assigned-First Approach</p>
+            <p>Generated by Antigravity | PostgreSQL @ app.kelava.id</p>
+        </div>
+    </div>
+
+    <script>
+        const leaderboardData = [
+            { rank: 1, name: "Ananda Almas", assigned: 814, completed: 814, completion: 100.0, ontime: 15.6, duration: 107, vpd: 2.78, score: 77.1, grade: "C" },
+            { rank: 2, name: "Suparman", assigned: 884, completed: 882, completion: 99.8, ontime: 6.8, duration: 175, vpd: 3.05, score: 76.6, grade: "C" },
+            { rank: 3, name: "Akbar Rohmatulah", assigned: 913, completed: 913, completion: 100.0, ontime: 5.3, duration: 130, vpd: 3.07, score: 76.3, grade: "C" },
+            { rank: 4, name: "Moh. Mahrus", assigned: 882, completed: 878, completion: 99.5, ontime: 5.7, duration: 164, vpd: 3.18, score: 76.3, grade: "C" },
+            { rank: 5, name: "Choirul Anam", assigned: 1059, completed: 1058, completion: 99.9, ontime: 2.2, duration: 153, vpd: 3.77, score: 75.5, grade: "C" },
+            { rank: 6, name: "Andik Noroyan F.", assigned: 924, completed: 923, completion: 99.9, ontime: 1.4, duration: 98, vpd: 3.22, score: 75.3, grade: "C" },
+            { rank: 7, name: "Lucky Adi Putra", assigned: 817, completed: 815, completion: 99.8, ontime: 3.5, duration: 182, vpd: 2.84, score: 74.5, grade: "C" },
+            { rank: 8, name: "M. Abu Samsudin", assigned: 736, completed: 735, completion: 99.9, ontime: 6.8, duration: 182, vpd: 2.51, score: 72.6, grade: "C" },
+            { rank: 9, name: "I Wayan Rendy", assigned: 133, completed: 133, completion: 100.0, ontime: 33.1, duration: 268, vpd: 1.71, score: 69.5, grade: "D" },
+            { rank: 10, name: "Muhammad Haselmi", assigned: 175, completed: 175, completion: 100.0, ontime: 16.0, duration: 91, vpd: 1.67, score: 67.9, grade: "D" },
+            { rank: 11, name: "Bustomi", assigned: 21, completed: 21, completion: 100.0, ontime: 23.8, duration: 177, vpd: 1.40, score: 67.6, grade: "D" },
+            { rank: 12, name: "Hendra Mulalinda", assigned: 287, completed: 283, completion: 98.6, ontime: 8.0, duration: 229, vpd: 1.93, score: 67.6, grade: "D" },
+            { rank: 13, name: "Fandi Aprilianto", assigned: 35, completed: 35, completion: 100.0, ontime: 31.4, duration: 156, vpd: 1.13, score: 67.3, grade: "D" },
+            { rank: 14, name: "Dwi Cipto Kurniawan", assigned: 73, completed: 73, completion: 100.0, ontime: 15.1, duration: 106, vpd: 1.59, score: 67.0, grade: "D" },
+            { rank: 15, name: "Abdul Rahman Soleh", assigned: 152, completed: 152, completion: 100.0, ontime: 5.9, duration: 172, vpd: 1.83, score: 66.7, grade: "D" },
+            { rank: 16, name: "Rohandy Sujoko", assigned: 321, completed: 320, completion: 99.7, ontime: 12.5, duration: 222, vpd: 1.55, score: 65.9, grade: "D" },
+            { rank: 17, name: "Moch Maulana", assigned: 221, completed: 214, completion: 96.8, ontime: 11.8, duration: 185, vpd: 1.62, score: 65.3, grade: "D" },
+            { rank: 18, name: "Tegar Patria Anugra", assigned: 394, completed: 393, completion: 99.7, ontime: 3.6, duration: 230, vpd: 1.69, score: 64.9, grade: "D" },
+            { rank: 19, name: "Adam Abdillah", assigned: 404, completed: 397, completion: 98.3, ontime: 8.4, duration: 232, vpd: 1.61, score: 64.9, grade: "D" },
+            { rank: 20, name: "Dicky Darmawan", assigned: 64, completed: 64, completion: 100.0, ontime: 4.7, duration: 162, vpd: 1.60, score: 64.5, grade: "D" }
+        ];
+
+        function populateTable() {
+            document.getElementById('leaderboardBody').innerHTML = leaderboardData.map(t => `
+                <tr>
+                    <td><span class="rank-badge ${t.rank <= 3 ? 'rank-' + t.rank : 'rank-default'}">${t.rank}</span></td>
+                    <td><strong>${t.name}</strong></td>
+                    <td>${t.assigned}</td>
+                    <td>${t.completed}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span>${t.completion}%</span>
+                            <div class="progress-bar" style="width: 50px;">
+                                <div class="progress-fill high" style="width: ${t.completion}%"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span>${t.ontime}%</span>
+                            <div class="progress-bar" style="width: 50px;">
+                                <div class="progress-fill ${t.ontime >= 20 ? 'medium' : 'low'}" style="width: ${Math.min(t.ontime * 3, 100)}%"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${t.duration} min</td>
+                    <td>${t.vpd}</td>
+                    <td><strong>${t.score}</strong></td>
+                    <td><span class="grade-badge grade-${t.grade}">${t.grade}</span></td>
+                </tr>
+            `).join('');
+        }
+        populateTable();
+    </script>
+</body>
+
+</html>

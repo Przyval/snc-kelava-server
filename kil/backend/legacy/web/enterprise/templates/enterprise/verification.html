@@ -1,0 +1,723 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Photo & GPS Verification{% endblock %}
+
+{% block content %}
+<div x-data="verificationApp()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Photo & GPS Verification</h1>
+            <p class="text-sm text-slate-500 mt-1">Service evidence compliance, anomaly detection & resolution</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <select x-model="days" @change="loadDashboard()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="60">Last 60 days</option>
+                <option value="90">Last 90 days</option>
+            </select>
+            <button @click="runScan()" :disabled="scanning"
+                    class="flex items-center gap-2 px-4 py-2 bg-[#F97316] hover:bg-[#EA580C] text-white text-sm font-semibold rounded-lg shadow transition-all disabled:opacity-50">
+                <svg x-show="!scanning" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <svg x-show="scanning" class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                <span x-text="scanning ? 'Scanning...' : 'Run Scan'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Scan Result Banner -->
+    <div x-show="scanResult" x-cloak x-transition class="mb-6 p-4 rounded-xl border"
+         :class="scanResult?.flags_created > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-800'">
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="text-sm font-medium" x-text="scanResult?.message"></span>
+            <button @click="scanResult = null" class="ml-auto text-current opacity-50 hover:opacity-100">&times;</button>
+        </div>
+    </div>
+
+    <!-- ── Dashboard Stats Cards ──────────────────────────── -->
+    <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
+        <template x-for="card in statsCards" :key="card.key">
+            <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm hover:shadow-md transition-shadow">
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2" x-text="card.label"></p>
+                <p class="text-2xl font-bold" :class="card.color" x-text="card.value"></p>
+                <template x-if="card.sub">
+                    <p class="text-xs text-slate-400 mt-1" x-text="card.sub"></p>
+                </template>
+            </div>
+        </template>
+    </div>
+
+    <!-- ── Tabs ───────────────────────────────────────────── -->
+    <div class="border-b border-slate-200 mb-6">
+        <nav class="flex gap-6">
+            <button @click="tab = 'anomalies'" class="py-3 text-sm font-semibold border-b-2 transition-colors"
+                    :class="tab === 'anomalies' ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-slate-500 hover:text-slate-700'">
+                Flagged Visits
+                <span class="ml-1.5 px-2 py-0.5 rounded-full text-xs font-bold"
+                      :class="tab === 'anomalies' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-600'"
+                      x-text="anomalyTotal"></span>
+            </button>
+            <button @click="tab = 'scorecards'; if(!scorecards.length) loadScorecards()" class="py-3 text-sm font-semibold border-b-2 transition-colors"
+                    :class="tab === 'scorecards' ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-slate-500 hover:text-slate-700'">
+                Technician Scorecards
+            </button>
+            <button @click="tab = 'trend'; $nextTick(() => buildTrendChart())" class="py-3 text-sm font-semibold border-b-2 transition-colors"
+                    :class="tab === 'trend' ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-slate-500 hover:text-slate-700'">
+                Daily Trend
+            </button>
+        </nav>
+    </div>
+
+    <!-- ═══════════════ TAB: Flagged Visits ═══════════════ -->
+    <div x-show="tab === 'anomalies'">
+
+        <!-- Filters -->
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+            <template x-for="ft in flagTypes" :key="ft.value">
+                <button @click="filterType = ft.value; anomalyPage = 1; loadAnomalies()"
+                        class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
+                        :class="filterType === ft.value
+                            ? 'bg-[#F97316] text-white border-[#F97316]'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-[#F97316] hover:text-[#F97316]'">
+                    <span x-text="ft.label"></span>
+                </button>
+            </template>
+        </div>
+
+        <!-- Anomaly Table -->
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            <th class="px-4 py-3">Visit</th>
+                            <th class="px-4 py-3">Technician</th>
+                            <th class="px-4 py-3">Customer</th>
+                            <th class="px-4 py-3">Check-in</th>
+                            <th class="px-4 py-3 text-right">Duration</th>
+                            <th class="px-4 py-3 text-right">Drift (m)</th>
+                            <th class="px-4 py-3 text-right">Photos</th>
+                            <th class="px-4 py-3">Flags</th>
+                            <th class="px-4 py-3 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="v in anomalies" :key="v.visit_id">
+                            <tr class="hover:bg-slate-50/50 transition-colors">
+                                <td class="px-4 py-3">
+                                    <span class="text-xs font-mono text-slate-400" x-text="'#' + v.visit_id"></span>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <a :href="'/enterprise/technicians/' + v.technician_id"
+                                       class="text-sm font-medium text-slate-900 hover:text-[#F97316]" x-text="v.technician_name || '-'"></a>
+                                </td>
+                                <td class="px-4 py-3 text-slate-600 text-xs max-w-[160px] truncate" x-text="v.customer_name || '-'"></td>
+                                <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap" x-text="formatDate(v.check_in)"></td>
+                                <td class="px-4 py-3 text-right font-mono text-xs"
+                                    :class="v.flag_too_short ? 'text-red-600 font-bold' : v.flag_too_long ? 'text-amber-600 font-bold' : 'text-slate-600'"
+                                    x-text="v.duration_minutes ? v.duration_minutes + ' min' : '-'"></td>
+                                <td class="px-4 py-3 text-right font-mono text-xs"
+                                    :class="v.flag_gps_drift ? (v.drift_meters > 2000 ? 'text-red-600 font-bold' : 'text-amber-600 font-bold') : 'text-slate-600'"
+                                    x-text="v.drift_meters ? Number(v.drift_meters).toLocaleString() : '-'"></td>
+                                <td class="px-4 py-3 text-right font-mono text-xs"
+                                    :class="v.flag_no_photo ? 'text-red-600 font-bold' : 'text-slate-600'"
+                                    x-text="v.photo_count ?? 0"></td>
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-wrap gap-1">
+                                        <span x-show="v.flag_no_photo" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">NO PHOTO</span>
+                                        <span x-show="v.flag_gps_drift" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">GPS DRIFT</span>
+                                        <span x-show="v.flag_too_short" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">TOO SHORT</span>
+                                        <span x-show="v.flag_too_long" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">TOO LONG</span>
+                                        <span x-show="v.flag_no_gps" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-700">NO GPS</span>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    <button @click="openDetail(v.visit_id)"
+                                            class="px-3 py-1.5 text-xs font-semibold text-[#F97316] bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors">
+                                        Detail
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-if="anomalies.length === 0 && !loading">
+                            <tr>
+                                <td colspan="9" class="px-4 py-12 text-center text-slate-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <p class="font-medium">No anomalies found</p>
+                                    <p class="text-xs mt-1">All visits look clean for the selected period</p>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <p class="text-xs text-slate-500">
+                    Showing <span class="font-semibold" x-text="((anomalyPage - 1) * 30) + 1"></span>-<span class="font-semibold" x-text="Math.min(anomalyPage * 30, anomalyTotal)"></span>
+                    of <span class="font-semibold" x-text="anomalyTotal"></span>
+                </p>
+                <div class="flex gap-2">
+                    <button @click="anomalyPage--; loadAnomalies()" :disabled="anomalyPage <= 1"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-white transition-colors">
+                        Previous
+                    </button>
+                    <button @click="anomalyPage++; loadAnomalies()" :disabled="anomalyPage * 30 >= anomalyTotal"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-white transition-colors">
+                        Next
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ TAB: Scorecards ═══════════════════ -->
+    <div x-show="tab === 'scorecards'">
+        <div class="flex items-center justify-between mb-4">
+            <p class="text-sm text-slate-500">30-day rolling compliance window</p>
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-400">Sort:</span>
+                <select x-model="scoreSort" @change="loadScorecards()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+                    <option value="compliance_pct">Compliance %</option>
+                    <option value="total_visits">Total Visits</option>
+                    <option value="no_photo_visits">No Photo</option>
+                    <option value="gps_drift_visits">GPS Drift</option>
+                </select>
+                <select x-model="scoreOrder" @change="loadScorecards()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+                    <option value="asc">Low to High</option>
+                    <option value="desc">High to Low</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            <th class="px-4 py-3">#</th>
+                            <th class="px-4 py-3">Technician</th>
+                            <th class="px-4 py-3 text-right">Visits</th>
+                            <th class="px-4 py-3 text-right">No Photo</th>
+                            <th class="px-4 py-3 text-right">GPS Drift</th>
+                            <th class="px-4 py-3 text-right">Too Short</th>
+                            <th class="px-4 py-3 text-right">Too Long</th>
+                            <th class="px-4 py-3">Compliance</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="(s, idx) in scorecards" :key="s.technician_id">
+                            <tr class="hover:bg-slate-50/50 transition-colors">
+                                <td class="px-4 py-3 text-xs text-slate-400 font-mono" x-text="idx + 1"></td>
+                                <td class="px-4 py-3">
+                                    <a :href="'/enterprise/technicians/' + s.technician_id"
+                                       class="font-medium text-slate-900 hover:text-[#F97316]" x-text="s.technician_name"></a>
+                                </td>
+                                <td class="px-4 py-3 text-right font-mono" x-text="s.total_visits"></td>
+                                <td class="px-4 py-3 text-right font-mono"
+                                    :class="s.no_photo_visits > 0 ? 'text-red-600 font-bold' : 'text-slate-400'"
+                                    x-text="s.no_photo_visits"></td>
+                                <td class="px-4 py-3 text-right font-mono"
+                                    :class="s.gps_drift_visits > 0 ? 'text-amber-600 font-bold' : 'text-slate-400'"
+                                    x-text="s.gps_drift_visits"></td>
+                                <td class="px-4 py-3 text-right font-mono"
+                                    :class="s.too_short_visits > 0 ? 'text-purple-600 font-bold' : 'text-slate-400'"
+                                    x-text="s.too_short_visits"></td>
+                                <td class="px-4 py-3 text-right font-mono"
+                                    :class="s.too_long_visits > 0 ? 'text-blue-600 font-bold' : 'text-slate-400'"
+                                    x-text="s.too_long_visits"></td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full rounded-full transition-all duration-500"
+                                                 :class="s.compliance_pct >= 90 ? 'bg-emerald-500' : s.compliance_pct >= 70 ? 'bg-amber-500' : 'bg-red-500'"
+                                                 :style="'width: ' + (s.compliance_pct ?? 0) + '%'"></div>
+                                        </div>
+                                        <span class="text-xs font-bold w-10 text-right"
+                                              :class="s.compliance_pct >= 90 ? 'text-emerald-600' : s.compliance_pct >= 70 ? 'text-amber-600' : 'text-red-600'"
+                                              x-text="(s.compliance_pct ?? 0).toFixed(0) + '%'"></span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ TAB: Daily Trend ═════════════════ -->
+    <div x-show="tab === 'trend'">
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
+            <h3 class="text-sm font-bold text-slate-700 mb-4">Daily Anomaly Trend</h3>
+            <canvas id="trendChart" height="100"></canvas>
+        </div>
+    </div>
+
+    <!-- ═══════════════ Visit Detail Modal ════════════════ -->
+    <div x-show="showDetail" x-cloak
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="showDetail = false" @keydown.escape.window="showDetail = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" @click.stop>
+            <!-- Modal Header -->
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between z-10">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900">Visit Verification Detail</h2>
+                    <p class="text-xs text-slate-500" x-text="'Visit #' + (detailVisit?.visit_id || '')"></p>
+                </div>
+                <button @click="showDetail = false" class="p-2 rounded-lg hover:bg-slate-100 text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <div class="p-6" x-show="detailVisit">
+                <!-- Visit Info Grid -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Technician</p>
+                        <p class="text-sm font-semibold text-slate-900" x-text="detailVisit?.technician_name || '-'"></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Customer</p>
+                        <p class="text-sm font-semibold text-slate-900" x-text="detailVisit?.customer_name || '-'"></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Check-in</p>
+                        <p class="text-sm font-semibold text-slate-900" x-text="formatDate(detailVisit?.check_in)"></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Check-out</p>
+                        <p class="text-sm font-semibold text-slate-900" x-text="formatDate(detailVisit?.check_out)"></p>
+                    </div>
+                </div>
+
+                <!-- GPS & Metrics -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Duration</p>
+                        <p class="text-lg font-bold" :class="detailVisit?.flag_too_short ? 'text-red-600' : detailVisit?.flag_too_long ? 'text-amber-600' : 'text-slate-900'"
+                           x-text="(detailVisit?.duration_minutes || 0) + ' min'"></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">GPS Drift</p>
+                        <p class="text-lg font-bold" :class="detailVisit?.flag_gps_drift ? 'text-amber-600' : 'text-slate-900'"
+                           x-text="(detailVisit?.drift_meters ? Number(detailVisit.drift_meters).toLocaleString() + ' m' : 'N/A')"></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Photos</p>
+                        <p class="text-lg font-bold" :class="detailVisit?.flag_no_photo ? 'text-red-600' : 'text-emerald-600'"
+                           x-text="detailVisit?.photo_count ?? 0"></p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Check-in GPS</p>
+                        <p class="text-xs font-mono text-slate-600" x-text="detailVisit?.checkin_lat && detailVisit?.checkin_lng ? (Number(detailVisit.checkin_lat).toFixed(5) + ', ' + Number(detailVisit.checkin_lng).toFixed(5)) : 'N/A'"></p>
+                    </div>
+                </div>
+
+                <!-- Flags -->
+                <div class="mb-6">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Anomaly Flags</p>
+                    <div class="flex flex-wrap gap-2">
+                        <span x-show="detailVisit?.flag_no_photo" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700 border border-red-200">NO PHOTO</span>
+                        <span x-show="detailVisit?.flag_gps_drift" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200">GPS DRIFT</span>
+                        <span x-show="detailVisit?.flag_too_short" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">TOO SHORT</span>
+                        <span x-show="detailVisit?.flag_too_long" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">TOO LONG</span>
+                        <span x-show="detailVisit?.flag_no_gps" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 text-slate-700 border border-slate-300">NO GPS</span>
+                        <span x-show="!detailVisit?.flag_no_photo && !detailVisit?.flag_gps_drift && !detailVisit?.flag_too_short && !detailVisit?.flag_too_long && !detailVisit?.flag_no_gps"
+                              class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">ALL CLEAR</span>
+                    </div>
+                </div>
+
+                <!-- Photo Gallery -->
+                <div class="mb-6">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                        Photo Evidence
+                        <span class="ml-1 text-slate-400" x-text="'(' + (detailPhotos?.length || 0) + ')'"></span>
+                    </p>
+                    <div x-show="detailPhotos?.length > 0" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <template x-for="photo in detailPhotos" :key="photo.id">
+                            <div class="relative group rounded-lg overflow-hidden border border-slate-200 bg-slate-50 aspect-square cursor-pointer"
+                                 @click="openPhotoFull(photo.path)">
+                                <img :src="photoUrl(photo.path, 'thumb')"
+                                     :alt="'Photo #' + photo.id"
+                                     class="w-full h-full object-cover"
+                                     loading="lazy"
+                                     onerror="this.parentElement.innerHTML='<div class=\'flex items-center justify-center h-full text-slate-300\'><svg xmlns=\'http://www.w3.org/2000/svg\' class=\'w-8 h-8\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'currentColor\'><path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z\'/></svg></div>'">
+                                <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-end justify-center pb-2 opacity-0 group-hover:opacity-100">
+                                    <span class="px-2 py-1 bg-white/90 rounded text-[10px] font-bold text-slate-700">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+                                        ID: <span x-text="photo.id"></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <div x-show="!detailPhotos || detailPhotos.length === 0" class="py-8 text-center bg-red-50 rounded-lg border-2 border-dashed border-red-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 mx-auto text-red-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <p class="text-sm font-bold text-red-600">No photos uploaded</p>
+                        <p class="text-xs text-red-400 mt-1">This visit has zero photo evidence</p>
+                    </div>
+                </div>
+
+                <!-- Existing Flags / Resolution History -->
+                <div class="mb-6" x-show="detailFlags?.length > 0">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Flag History</p>
+                    <div class="space-y-2">
+                        <template x-for="f in detailFlags" :key="f.id">
+                            <div class="flex items-center justify-between p-3 rounded-lg border"
+                                 :class="f.resolved ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'">
+                                <div class="flex items-center gap-3">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                                          :class="f.severity === 'critical' ? 'bg-red-100 text-red-700' : f.severity === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'"
+                                          x-text="f.severity?.toUpperCase()"></span>
+                                    <span class="text-xs font-semibold text-slate-700" x-text="f.flag_type"></span>
+                                    <span class="text-xs text-slate-500" x-text="f.detail"></span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <template x-if="f.resolved">
+                                        <span class="text-xs text-emerald-600 font-medium">
+                                            Resolved by <span x-text="f.resolved_by"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="!f.resolved">
+                                        <button @click="resolveFlag(f.id)"
+                                                class="px-3 py-1 text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors">
+                                            Resolve
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Manual Flag Creation -->
+                <div class="border-t border-slate-100 pt-6">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Create Manual Flag</p>
+                    <div class="flex flex-wrap gap-3 items-end">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase block mb-1">Type</label>
+                            <select x-model="newFlagType" class="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
+                                <option value="SUSPICIOUS">Suspicious</option>
+                                <option value="MANUAL">Manual Review</option>
+                                <option value="NO_PHOTO">No Photo</option>
+                                <option value="GPS_DRIFT">GPS Drift</option>
+                                <option value="TOO_SHORT">Too Short</option>
+                                <option value="TOO_LONG">Too Long</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase block mb-1">Severity</label>
+                            <select x-model="newFlagSeverity" class="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
+                                <option value="info">Info</option>
+                                <option value="warning">Warning</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase block mb-1">Detail</label>
+                            <input x-model="newFlagDetail" type="text" placeholder="Optional note..."
+                                   class="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316]">
+                        </div>
+                        <button @click="createFlag()" class="px-4 py-2 text-xs font-bold bg-[#F97316] hover:bg-[#EA580C] text-white rounded-lg transition-colors">
+                            Create Flag
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div x-show="!detailVisit && showDetail" class="p-12 text-center">
+                <svg class="w-8 h-8 mx-auto animate-spin text-[#F97316]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                <p class="text-sm text-slate-500 mt-3">Loading visit detail...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo Lightbox -->
+    <div x-show="lightboxUrl" x-cloak
+         class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"
+         @click.self="lightboxUrl = null" @keydown.escape.window="lightboxUrl = null">
+        <button @click="lightboxUrl = null" class="absolute top-4 right-4 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white z-10">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <img :src="lightboxUrl" class="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain" loading="eager">
+    </div>
+
+    <!-- Loading Overlay -->
+    <div x-show="loading" x-cloak class="fixed inset-0 bg-white/50 z-40 flex items-center justify-center">
+        <div class="flex items-center gap-3 bg-white px-6 py-3 rounded-xl shadow-lg border border-slate-100">
+            <svg class="w-5 h-5 animate-spin text-[#F97316]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            <span class="text-sm font-medium text-slate-600">Loading...</span>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function verificationApp() {
+    const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+    const API = '/api/v1/enterprise/verification';
+
+    return {
+        // State
+        loading: false,
+        tab: 'anomalies',
+        days: 30,
+        scanning: false,
+        scanResult: null,
+
+        // Dashboard
+        dashboard: {},
+        statsCards: [],
+
+        // Anomalies
+        anomalies: [],
+        anomalyTotal: 0,
+        anomalyPage: 1,
+        filterType: '',
+        flagTypes: [
+            { value: '', label: 'All Flags' },
+            { value: 'no_photo', label: 'No Photo' },
+            { value: 'gps_drift', label: 'GPS Drift' },
+            { value: 'too_short', label: 'Too Short' },
+            { value: 'too_long', label: 'Too Long' },
+            { value: 'no_gps', label: 'No GPS' },
+        ],
+
+        // Scorecards
+        scorecards: [],
+        scoreSort: 'compliance_pct',
+        scoreOrder: 'asc',
+
+        // Detail modal
+        showDetail: false,
+        detailVisit: null,
+        detailPhotos: [],
+        detailFlags: [],
+        newFlagType: 'SUSPICIOUS',
+        newFlagSeverity: 'warning',
+        newFlagDetail: '',
+
+        // Photo lightbox
+        lightboxUrl: null,
+
+        // Trend chart
+        trendChart: null,
+
+        async init() {
+            await Promise.all([this.loadDashboard(), this.loadAnomalies()]);
+        },
+
+        async loadDashboard() {
+            try {
+                const res = await _fetch(`${API}/dashboard?days=${this.days}`);
+                this.dashboard = await res.json();
+                this.buildStatsCards();
+                this.buildTrendChart();
+            } catch (e) {
+                console.error('Dashboard load failed:', e);
+            }
+        },
+
+        buildStatsCards() {
+            const d = this.dashboard;
+            const total = d.total_visits || 0;
+            const noPhoto = d.no_photo || 0;
+            const gpsDrift = d.gps_drift || 0;
+            const tooShort = d.too_short || 0;
+            const tooLong = d.too_long || 0;
+            const noGps = d.no_gps || 0;
+            const clean = total - noPhoto - gpsDrift - tooShort - tooLong;
+            const compliancePct = total > 0 ? ((clean / total) * 100).toFixed(1) : '0.0';
+
+            this.statsCards = [
+                { key: 'total', label: 'Total Visits', value: total.toLocaleString(), color: 'text-slate-900', sub: `Last ${this.days} days` },
+                { key: 'compliance', label: 'Compliance', value: compliancePct + '%', color: parseFloat(compliancePct) >= 90 ? 'text-emerald-600' : parseFloat(compliancePct) >= 70 ? 'text-amber-600' : 'text-red-600' },
+                { key: 'no_photo', label: 'No Photo', value: noPhoto.toLocaleString(), color: noPhoto > 0 ? 'text-red-600' : 'text-emerald-600' },
+                { key: 'gps_drift', label: 'GPS Drift', value: gpsDrift.toLocaleString(), color: gpsDrift > 0 ? 'text-amber-600' : 'text-emerald-600' },
+                { key: 'too_short', label: 'Too Short', value: tooShort.toLocaleString(), color: tooShort > 0 ? 'text-purple-600' : 'text-emerald-600' },
+                { key: 'too_long', label: 'Too Long', value: tooLong.toLocaleString(), color: tooLong > 0 ? 'text-blue-600' : 'text-emerald-600' },
+                { key: 'no_gps', label: 'No GPS', value: noGps.toLocaleString(), color: noGps > 0 ? 'text-slate-600' : 'text-emerald-600' },
+                { key: 'unresolved', label: 'Unresolved', value: (d.unresolved_flags || 0).toLocaleString(), color: (d.unresolved_flags || 0) > 0 ? 'text-red-600' : 'text-emerald-600', sub: 'Open flags' },
+            ];
+        },
+
+        buildTrendChart() {
+            const trend = (this.dashboard.daily_trend || []).reverse();
+            if (!trend.length) return;
+
+            const ctx = document.getElementById('trendChart');
+            if (!ctx) return;
+
+            if (this.trendChart) {
+                this.trendChart.destroy();
+            }
+
+            this.trendChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: trend.map(d => d.day),
+                    datasets: [
+                        {
+                            label: 'Total Visits',
+                            data: trend.map(d => d.visits),
+                            backgroundColor: '#E2E8F0',
+                            borderRadius: 4,
+                            order: 2,
+                        },
+                        {
+                            label: 'No Photo',
+                            data: trend.map(d => d.no_photo),
+                            backgroundColor: '#EF4444',
+                            borderRadius: 4,
+                            order: 1,
+                        },
+                        {
+                            label: 'GPS Drift',
+                            data: trend.map(d => d.gps_drift),
+                            backgroundColor: '#F59E0B',
+                            borderRadius: 4,
+                            order: 1,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'rectRounded' } } },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { beginAtZero: true, grid: { color: '#F1F5F9' } },
+                    },
+                },
+            });
+        },
+
+        async loadAnomalies() {
+            try {
+                const params = new URLSearchParams({
+                    days: this.days,
+                    page: this.anomalyPage,
+                    per_page: 30,
+                });
+                if (this.filterType) params.set('type', this.filterType);
+                const res = await _fetch(`${API}/anomalies?${params}`);
+                const data = await res.json();
+                this.anomalies = data.anomalies || [];
+                this.anomalyTotal = data.total || 0;
+            } catch (e) {
+                console.error('Anomalies load failed:', e);
+            }
+        },
+
+        async loadScorecards() {
+            try {
+                const res = await _fetch(`${API}/scorecards?sort=${this.scoreSort}&order=${this.scoreOrder}`);
+                const data = await res.json();
+                this.scorecards = data.scorecards || [];
+            } catch (e) {
+                console.error('Scorecards load failed:', e);
+            }
+        },
+
+        async openDetail(visitId) {
+            this.showDetail = true;
+            this.detailVisit = null;
+            this.detailPhotos = [];
+            this.detailFlags = [];
+            this.newFlagDetail = '';
+
+            try {
+                const res = await _fetch(`${API}/visit/${visitId}`);
+                const data = await res.json();
+                this.detailVisit = data.visit;
+                this.detailPhotos = data.photos || [];
+                this.detailFlags = data.flags || [];
+            } catch (e) {
+                console.error('Visit detail load failed:', e);
+            }
+        },
+
+        async createFlag() {
+            if (!this.detailVisit) return;
+            try {
+                const res = await _fetch(`${API}/flag`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        visit_id: this.detailVisit.visit_id,
+                        flag_type: this.newFlagType,
+                        severity: this.newFlagSeverity,
+                        detail: this.newFlagDetail,
+                    }),
+                });
+                if (res.ok) {
+                    // Reload detail
+                    await this.openDetail(this.detailVisit.visit_id);
+                    this.newFlagDetail = '';
+                }
+            } catch (e) {
+                console.error('Create flag failed:', e);
+            }
+        },
+
+        async resolveFlag(flagId) {
+            const note = prompt('Resolution note (optional):') || '';
+            try {
+                await _fetch(`${API}/flag/${flagId}/resolve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ note }),
+                });
+                // Reload detail
+                if (this.detailVisit) {
+                    await this.openDetail(this.detailVisit.visit_id);
+                }
+                await this.loadDashboard();
+            } catch (e) {
+                console.error('Resolve flag failed:', e);
+            }
+        },
+
+        async runScan() {
+            this.scanning = true;
+            this.scanResult = null;
+            try {
+                const res = await _fetch(`${API}/scan?days=${this.days}`, { method: 'POST' });
+                this.scanResult = await res.json();
+                await Promise.all([this.loadDashboard(), this.loadAnomalies()]);
+            } catch (e) {
+                console.error('Scan failed:', e);
+                this.scanResult = { message: 'Scan failed: ' + e.message, flags_created: 0 };
+            } finally {
+                this.scanning = false;
+            }
+        },
+
+        photoUrl(path, size = 'medium') {
+            return `${API}/photo-proxy?path=${encodeURIComponent(path)}&size=${size}`;
+        },
+
+        openPhotoFull(path) {
+            this.lightboxUrl = this.photoUrl(path, 'full');
+        },
+
+        formatDate(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                       ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            } catch { return iso; }
+        },
+    };
+}
+</script>
+{% endblock %}

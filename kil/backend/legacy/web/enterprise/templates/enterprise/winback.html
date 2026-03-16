@@ -1,0 +1,416 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Winback Campaigns{% endblock %}
+
+{% block content %}
+<div x-data="winbackDashboard()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Winback Engine</h1>
+            <p class="text-slate-500 text-sm">Recover dormant and churned customers</p>
+        </div>
+        <button @click="showCreateModal = true"
+                class="px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] transition-colors flex items-center gap-2 shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Campaign
+        </button>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wide">Eligible Pool</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1" x-text="stats.eligible_pool || 0"></p>
+            <p class="text-xs text-slate-400 mt-1">Dormant + Churned</p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wide">Active Campaigns</p>
+            <p class="text-2xl font-bold text-[#F97316] mt-1" x-text="stats.campaigns?.active_campaigns || 0"></p>
+            <p class="text-xs text-slate-400 mt-1">In progress</p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wide">Win Rate</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1" x-text="(stats.funnel?.overall_win_rate || 0) + '%'"></p>
+            <p class="text-xs text-slate-400 mt-1" x-text="(stats.funnel?.won || 0) + ' recovered'"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wide">Recovered Value</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1" x-text="formatCurrency(stats.funnel?.total_recovered_value || 0)"></p>
+            <p class="text-xs text-slate-400 mt-1">Monthly revenue</p>
+        </div>
+    </div>
+
+    <!-- Funnel Visualization -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6" x-show="stats.funnel?.total_entries > 0">
+        <h3 class="text-sm font-semibold text-slate-700 mb-4">Recovery Funnel</h3>
+        <div class="flex items-end gap-2 h-24">
+            <template x-for="stage in funnelStages" :key="stage.key">
+                <div class="flex-1 flex flex-col items-center gap-1">
+                    <span class="text-xs font-bold" :class="stage.color" x-text="stage.count"></span>
+                    <div class="w-full rounded-t" :class="stage.bg"
+                         :style="'height: ' + Math.max(4, (stage.count / Math.max(stats.funnel?.total_entries || 1, 1)) * 80) + 'px'"></div>
+                    <span class="text-[10px] text-slate-400 text-center leading-tight" x-text="stage.label"></span>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Campaigns List -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-slate-700">Campaigns</h3>
+            <div class="flex gap-2">
+                <button @click="statusFilter = ''" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                        :class="statusFilter === '' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">All</button>
+                <button @click="statusFilter = 'ACTIVE'" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                        :class="statusFilter === 'ACTIVE' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">Active</button>
+                <button @click="statusFilter = 'DRAFT'" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                        :class="statusFilter === 'DRAFT' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">Draft</button>
+                <button @click="statusFilter = 'COMPLETED'" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                        :class="statusFilter === 'COMPLETED' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">Completed</button>
+            </div>
+        </div>
+
+        <div class="divide-y divide-slate-50">
+            <template x-for="c in filteredCampaigns" :key="c.campaign_id">
+                <a :href="'/enterprise/winback/' + c.campaign_id"
+                   class="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer group">
+                    <!-- Status Icon -->
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center text-lg"
+                         :class="{
+                             'bg-blue-50': c.status === 'DRAFT',
+                             'bg-orange-50': c.status === 'ACTIVE',
+                             'bg-emerald-50': c.status === 'COMPLETED',
+                             'bg-slate-50': c.status === 'CANCELLED'
+                         }">
+                        <span x-text="c.status === 'DRAFT' ? '📝' : c.status === 'ACTIVE' ? '🔥' : c.status === 'COMPLETED' ? '✅' : '⛔'"></span>
+                    </div>
+
+                    <!-- Campaign Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h4 class="font-semibold text-slate-900 truncate" x-text="c.name"></h4>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                                  :class="{
+                                      'bg-blue-100 text-blue-700': c.status === 'DRAFT',
+                                      'bg-orange-100 text-orange-700': c.status === 'ACTIVE',
+                                      'bg-emerald-100 text-emerald-700': c.status === 'COMPLETED',
+                                      'bg-slate-100 text-slate-500': c.status === 'CANCELLED'
+                                  }"
+                                  x-text="c.status"></span>
+                        </div>
+                        <div class="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                            <span x-text="'Target: ' + (c.target_segment || 'Mixed')"></span>
+                            <span x-text="'Team: ' + (c.assigned_team || '-')"></span>
+                            <span x-text="formatDate(c.created_at)"></span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Metrics -->
+                    <div class="flex items-center gap-6 text-right">
+                        <div>
+                            <p class="text-xs text-slate-400">Targets</p>
+                            <p class="text-sm font-bold text-slate-700" x-text="c.total_entries || 0"></p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">Contacted</p>
+                            <p class="text-sm font-bold text-blue-600" x-text="(c.contacted_count || 0) + (c.interested_count || 0)"></p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">Won</p>
+                            <p class="text-sm font-bold text-emerald-600" x-text="c.won_count || 0"></p>
+                        </div>
+                        <div class="w-16">
+                            <p class="text-xs text-slate-400">Win Rate</p>
+                            <p class="text-sm font-bold" :class="(c.win_rate_pct || 0) > 10 ? 'text-emerald-600' : 'text-slate-400'"
+                               x-text="(c.win_rate_pct || 0) + '%'"></p>
+                        </div>
+
+                        <!-- Progress Bar -->
+                        <div class="w-24">
+                            <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all"
+                                     :class="c.status === 'COMPLETED' ? 'bg-emerald-500' : 'bg-[#F97316]'"
+                                     :style="'width: ' + (c.contact_rate_pct || 0) + '%'"></div>
+                            </div>
+                            <p class="text-[10px] text-slate-400 text-center mt-0.5" x-text="(c.contact_rate_pct || 0) + '% processed'"></p>
+                        </div>
+                    </div>
+
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-300 group-hover:text-[#F97316] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </a>
+            </template>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="filteredCampaigns.length === 0" class="px-6 py-12 text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <p class="text-slate-500 font-medium">No campaigns found</p>
+            <p class="text-xs text-slate-400 mt-1">Create your first winback campaign to start recovering customers</p>
+        </div>
+    </div>
+
+    <!-- Create Campaign Modal -->
+    <div x-show="showCreateModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="showCreateModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" @click.stop>
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-slate-900">New Winback Campaign</h3>
+                <button @click="showCreateModal = false" class="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <!-- Campaign Name -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Campaign Name</label>
+                    <input type="text" x-model="newCampaign.name" placeholder="e.g. Q1 2026 Dormant Recovery"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                    <textarea x-model="newCampaign.description" rows="2" placeholder="Campaign objective..."
+                              class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- Target Segment -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Target Segment</label>
+                        <select x-model="newCampaign.target_segment" @change="loadEligible()"
+                                class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                            <option value="">All Eligible</option>
+                            <option value="CHURNED">Churned</option>
+                            <option value="LOW_VALUE">Low Value</option>
+                            <option value="GROWTH">Growth</option>
+                        </select>
+                    </div>
+
+                    <!-- Assigned Team -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Assigned Team</label>
+                        <select x-model="newCampaign.assigned_team"
+                                class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                            <option value="SALES">Sales Team</option>
+                            <option value="SALES_CS">Sales + CS</option>
+                            <option value="OPS">Operations</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Eligible Customers Selection -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm font-medium text-slate-700">Select Customers</label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400" x-text="selectedCustomerIds.length + ' selected'"></span>
+                            <button @click="toggleSelectAll()" class="text-xs text-[#F97316] hover:underline"
+                                    x-text="selectedCustomerIds.length === eligibleCustomers.length ? 'Deselect All' : 'Select All'"></button>
+                        </div>
+                    </div>
+
+                    <div class="border border-slate-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-slate-50">
+                        <template x-for="cust in eligibleCustomers" :key="cust.customer_id">
+                            <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer">
+                                <input type="checkbox" :value="cust.customer_id"
+                                       x-model.number="selectedCustomerIds"
+                                       class="rounded border-slate-300 text-[#F97316] focus:ring-[#F97316]">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-medium text-slate-800 truncate" x-text="cust.name"></p>
+                                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                                        <span x-text="cust.rfm_segment"></span>
+                                        <span x-text="cust.days_since_last_visit + 'd dormant'"></span>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs font-medium px-1.5 py-0.5 rounded"
+                                          :class="{
+                                              'bg-slate-100 text-slate-500': cust.priority === 'P3',
+                                              'bg-emerald-50 text-emerald-600': cust.priority === 'P2',
+                                              'bg-amber-50 text-amber-600': cust.priority === 'P1',
+                                              'bg-red-50 text-red-600': cust.priority === 'P0'
+                                          }"
+                                          x-text="cust.priority"></span>
+                                </div>
+                            </label>
+                        </template>
+
+                        <div x-show="eligibleCustomers.length === 0" class="px-4 py-6 text-center text-slate-400 text-sm">
+                            <p>Loading eligible customers...</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-2">
+                        <button @click="loadMoreEligible()" x-show="eligibleCustomers.length >= eligiblePerPage"
+                                class="text-xs text-[#F97316] hover:underline">Load more...</button>
+                        <span class="text-xs text-slate-400" x-text="eligibleCustomers.length + ' shown'"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button @click="showCreateModal = false"
+                        class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
+                <button @click="createCampaign()" :disabled="!newCampaign.name || selectedCustomerIds.length === 0 || creating"
+                        class="px-6 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                    <template x-if="creating">
+                        <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"></circle><path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" class="opacity-75"></path></svg>
+                    </template>
+                    <span x-text="creating ? 'Creating...' : 'Create Campaign (' + selectedCustomerIds.length + ')'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function winbackDashboard() {
+    return {
+        campaigns: [],
+        stats: {},
+        statusFilter: '',
+        showCreateModal: false,
+        creating: false,
+
+        // Create campaign form
+        newCampaign: { name: '', description: '', target_segment: '', assigned_team: 'SALES' },
+        eligibleCustomers: [],
+        selectedCustomerIds: [],
+        eligiblePage: 1,
+        eligiblePerPage: 50,
+
+        get filteredCampaigns() {
+            if (!this.statusFilter) return this.campaigns;
+            return this.campaigns.filter(c => c.status === this.statusFilter);
+        },
+
+        get funnelStages() {
+            const f = this.stats.funnel || {};
+            return [
+                { key: 'pending', label: 'Pending', count: f.pending || 0, color: 'text-slate-500', bg: 'bg-slate-200' },
+                { key: 'contacted', label: 'Contacted', count: f.contacted || 0, color: 'text-blue-600', bg: 'bg-blue-400' },
+                { key: 'interested', label: 'Interested', count: f.interested || 0, color: 'text-amber-600', bg: 'bg-amber-400' },
+                { key: 'won', label: 'Won', count: f.won || 0, color: 'text-emerald-600', bg: 'bg-emerald-500' },
+                { key: 'lost', label: 'Lost', count: f.lost || 0, color: 'text-red-500', bg: 'bg-red-300' },
+                { key: 'no_response', label: 'No Reply', count: f.no_response || 0, color: 'text-slate-400', bg: 'bg-slate-300' },
+            ];
+        },
+
+        async init() {
+            await Promise.all([this.loadStats(), this.loadCampaigns()]);
+        },
+
+        async loadStats() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/winback/stats');
+                if (res.ok) this.stats = await res.json();
+            } catch (e) { console.error('Stats error:', e); }
+        },
+
+        async loadCampaigns() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/winback/campaigns');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.campaigns = data.campaigns || [];
+                }
+            } catch (e) { console.error('Campaigns error:', e); }
+        },
+
+        async loadEligible() {
+            this.eligiblePage = 1;
+            this.eligibleCustomers = [];
+            this.selectedCustomerIds = [];
+            await this._fetchEligible();
+        },
+
+        async loadMoreEligible() {
+            this.eligiblePage++;
+            await this._fetchEligible();
+        },
+
+        async _fetchEligible() {
+            try {
+                const params = new URLSearchParams({
+                    page: this.eligiblePage,
+                    per_page: this.eligiblePerPage
+                });
+                if (this.newCampaign.target_segment) params.set('segment', this.newCampaign.target_segment);
+
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/winback/eligible?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (this.eligiblePage === 1) {
+                        this.eligibleCustomers = data.customers || [];
+                    } else {
+                        this.eligibleCustomers = [...this.eligibleCustomers, ...(data.customers || [])];
+                    }
+                }
+            } catch (e) { console.error('Eligible error:', e); }
+        },
+
+        toggleSelectAll() {
+            if (this.selectedCustomerIds.length === this.eligibleCustomers.length) {
+                this.selectedCustomerIds = [];
+            } else {
+                this.selectedCustomerIds = this.eligibleCustomers.map(c => c.customer_id);
+            }
+        },
+
+        async createCampaign() {
+            if (!this.newCampaign.name || this.selectedCustomerIds.length === 0) return;
+            this.creating = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/winback/campaigns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...this.newCampaign,
+                        customer_ids: this.selectedCustomerIds
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.showCreateModal = false;
+                    this.newCampaign = { name: '', description: '', target_segment: '', assigned_team: 'SALES' };
+                    this.selectedCustomerIds = [];
+                    await Promise.all([this.loadStats(), this.loadCampaigns()]);
+                    // Navigate to the new campaign
+                    if (data.campaign?.id) {
+                        window.location.href = '/enterprise/winback/' + data.campaign.id;
+                    }
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to create campaign');
+                }
+            } catch (e) {
+                alert('Error creating campaign: ' + e.message);
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        formatCurrency(n) {
+            if (!n) return 'Rp 0';
+            return 'Rp ' + new Intl.NumberFormat('id-ID').format(n);
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+    }
+}
+</script>
+{% endblock %}

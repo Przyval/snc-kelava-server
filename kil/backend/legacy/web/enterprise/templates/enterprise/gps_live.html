@@ -1,0 +1,597 @@
+{% extends "enterprise/base.html" %}
+{% block title %}GPS Live Map{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    #live-map { height: 600px; border-radius: 12px; }
+
+    /* ── Tech Markers ── */
+    .tech-marker {
+        position: relative;
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+        background: #F97316;
+        overflow: hidden;
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+    .tech-marker:hover { transform: scale(1.2); z-index: 9999 !important; }
+    .tech-marker.recent { border-color: #22C55E; box-shadow: 0 0 0 3px rgba(34,197,94,0.3), 0 2px 10px rgba(0,0,0,0.3); }
+    .tech-marker.stale { border-color: #9CA3AF; opacity: 0.7; }
+    .tech-marker img { width: 100%; height: 100%; object-fit: cover; }
+    .tech-marker .initials {
+        width: 100%; height: 100%;
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-size: 13px; font-weight: 700;
+        background: #F97316;
+    }
+    .tech-marker.stale .initials { background: #9CA3AF; }
+    .tech-marker.recent .initials { background: #22C55E; }
+
+    /* Grade badge on marker */
+    .marker-grade {
+        position: absolute; top: -6px; right: -6px;
+        width: 18px; height: 18px; border-radius: 50%;
+        font-size: 9px; font-weight: 800; color: white;
+        display: flex; align-items: center; justify-content: center;
+        border: 2px solid white; z-index: 10;
+    }
+
+    /* ── Rich Popup ── */
+    .rich-popup { min-width: 260px; }
+    .rich-popup .popup-header { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+    .rich-popup .popup-photo { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #f3f4f6; flex-shrink: 0; }
+    .rich-popup .popup-photo-placeholder { width: 48px; height: 48px; border-radius: 50%; background: #F97316; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; }
+    .rich-popup h4 { font-size: 14px; font-weight: 700; color: #111827; margin: 0; line-height: 1.2; }
+    .rich-popup .popup-meta { font-size: 11px; color: #6b7280; }
+    .rich-popup .kpi-bar { display: flex; gap: 6px; margin: 6px 0; }
+    .rich-popup .kpi-pill { padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 600; }
+    .rich-popup .progress-track { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+    .rich-popup .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+    .rich-popup .visit-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #374151; margin-top: 4px; }
+
+    /* ── Playback Controls ── */
+    .playback-bar {
+        background: white; border-radius: 12px; border: 1px solid #e5e7eb;
+        padding: 12px 16px; margin-bottom: 12px;
+    }
+    .timeline-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; background: #e5e7eb; outline: none; }
+    .timeline-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #F97316; cursor: pointer; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+
+    /* ── Visit Trail Line ── */
+    .trail-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+
+    /* Leaflet popup override */
+    .leaflet-popup-content-wrapper { border-radius: 12px; padding: 0; }
+    .leaflet-popup-content { margin: 12px 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="gpsLive()" x-init="init()" class="p-6 max-w-7xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex flex-wrap items-center justify-between mb-4 gap-3">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">GPS Live Map</h1>
+            <p class="text-sm text-gray-500 mt-1" x-text="mode === 'live' ? 'Real-time technician positions' : 'Playback: ' + playbackDate"></p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <!-- Mode Toggle -->
+            <div class="flex bg-gray-100 rounded-lg p-0.5">
+                <button @click="switchMode('live')" class="px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                        :class="mode === 'live' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'">
+                    Live
+                </button>
+                <button @click="switchMode('playback')" class="px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                        :class="mode === 'playback' ? 'bg-white shadow text-orange-600' : 'text-gray-500 hover:text-gray-700'">
+                    Playback
+                </button>
+            </div>
+            <!-- Date Picker (playback) -->
+            <template x-if="mode === 'playback'">
+                <input type="date" x-model="playbackDate" @change="loadPlaybackDate()"
+                       class="px-3 py-1.5 border rounded-lg text-sm" :max="todayStr">
+            </template>
+            <!-- Live controls -->
+            <template x-if="mode === 'live'">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400" x-text="lastRefresh ? 'Updated ' + lastRefresh : ''"></span>
+                    <button @click="refresh()" class="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-sm hover:bg-orange-600">Refresh</button>
+                    <label class="flex items-center gap-1.5 text-sm text-gray-600">
+                        <input type="checkbox" x-model="autoRefresh" @change="toggleAutoRefresh()" class="rounded">
+                        Auto
+                    </label>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Activity Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <div class="bg-white rounded-xl border p-3">
+            <p class="text-xs text-gray-400 uppercase">Tracking</p>
+            <p class="text-xl font-bold text-green-600" x-text="positions.filter(p => p.seconds_ago < 3600).length"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-3">
+            <p class="text-xs text-gray-400 uppercase">Total Techs</p>
+            <p class="text-xl font-bold text-gray-900" x-text="positions.length"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-3">
+            <p class="text-xs text-gray-400 uppercase">Visits</p>
+            <p class="text-xl font-bold text-blue-600" x-text="(activity?.visits?.completed || 0) + '/' + (activity?.visits?.total || 0)"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-3">
+            <p class="text-xs text-gray-400 uppercase">In Progress</p>
+            <p class="text-xl font-bold text-orange-500" x-text="activity?.visits?.in_progress || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-3">
+            <p class="text-xs text-gray-400 uppercase">GPS Active (1h)</p>
+            <p class="text-xl font-bold text-purple-600" x-text="activity?.gps_active_1h || 0"></p>
+        </div>
+    </div>
+
+    <!-- Playback Controls (only in playback mode) -->
+    <template x-if="mode === 'playback' && selectedTech">
+        <div class="playback-bar">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-3">
+                    <button @click="playbackPause()" class="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600">
+                        <svg x-show="!isPlaying" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        <svg x-show="isPlaying" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
+                    </button>
+                    <div>
+                        <span class="text-sm font-semibold text-gray-900" x-text="selectedTech.tech_name"></span>
+                        <span class="text-xs text-gray-400 ml-2" x-text="trailData.trail_points + ' GPS points'"></span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <template x-for="s in [1,2,5]" :key="s">
+                        <button @click="playbackSpeed = s" class="px-2 py-0.5 rounded text-xs font-bold"
+                                :class="playbackSpeed === s ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'"
+                                x-text="s + 'x'"></button>
+                    </template>
+                    <button @click="stopPlayback()" class="ml-2 text-xs text-gray-400 hover:text-red-500">Close</button>
+                </div>
+            </div>
+            <input type="range" class="timeline-slider" min="0" :max="Math.max(0, (trailData.gps_trail||[]).length - 1)"
+                   x-model.number="playbackIndex" @input="seekPlayback()">
+            <div class="flex justify-between text-[10px] text-gray-400 mt-1">
+                <span x-text="trailTimeAt(0)"></span>
+                <span class="font-medium text-gray-600" x-text="trailTimeAt(playbackIndex)"></span>
+                <span x-text="trailTimeAt((trailData.gps_trail||[]).length - 1)"></span>
+            </div>
+        </div>
+    </template>
+
+    <!-- Map -->
+    <div class="bg-white rounded-xl border shadow-sm mb-4 overflow-hidden">
+        <div id="live-map"></div>
+    </div>
+
+    <!-- Technician List -->
+    <div class="bg-white rounded-xl border shadow-sm">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+            <h3 class="font-semibold text-gray-900">Technicians</h3>
+            <span class="text-xs text-gray-400" x-text="positions.length + ' active'"></span>
+        </div>
+        <div class="divide-y max-h-96 overflow-y-auto">
+            <template x-for="p in positions" :key="p.tech_id">
+                <div class="px-5 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                     @click="focusTech(p)"
+                     :class="selectedTech?.tech_id === p.tech_id ? 'bg-orange-50 border-l-4 border-l-orange-500' : ''">
+                    <div class="flex items-center gap-3">
+                        <!-- Photo or Initials -->
+                        <div class="relative flex-shrink-0">
+                            <img :src="p.photo_url" @error="$el.style.display='none'; $el.nextElementSibling.style.display='flex'"
+                                 class="w-10 h-10 rounded-full object-cover border-2"
+                                 :class="p.seconds_ago < 1800 ? 'border-green-400' : p.seconds_ago < 3600 ? 'border-yellow-400' : 'border-gray-300'">
+                            <div class="w-10 h-10 rounded-full items-center justify-center text-white text-xs font-bold hidden"
+                                 :class="p.seconds_ago < 1800 ? 'bg-green-500' : p.seconds_ago < 3600 ? 'bg-orange-500' : 'bg-gray-400'"
+                                 x-text="(p.tech_name||'?').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase()"></div>
+                            <!-- Grade badge -->
+                            <div x-show="p.kpi_grade" class="absolute -top-1 -right-1 w-5 h-5 rounded-full text-[9px] font-bold text-white flex items-center justify-center border-2 border-white"
+                                 :class="{'A':'bg-green-500','B':'bg-blue-500','C':'bg-yellow-500','D':'bg-orange-500','E':'bg-red-500'}[p.kpi_grade] || 'bg-gray-400'"
+                                 x-text="p.kpi_grade"></div>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold text-gray-800 truncate" x-text="p.tech_name"></span>
+                                <span x-show="p.kpi_score" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                      :class="p.kpi_score >= 80 ? 'bg-green-100 text-green-700' : p.kpi_score >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'"
+                                      x-text="p.kpi_score?.toFixed(0)"></span>
+                            </div>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span x-show="p.current_customer" class="text-xs text-gray-400 truncate" x-text="'@ ' + p.current_customer"></span>
+                            </div>
+                            <!-- Visit progress bar -->
+                            <div x-show="p.visits_planned > 0" class="flex items-center gap-2 mt-1">
+                                <div class="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-green-500 rounded-full" :style="'width:' + Math.round((p.visits_completed||0)/(p.visits_planned||1)*100) + '%'"></div>
+                                </div>
+                                <span class="text-[10px] text-gray-400" x-text="(p.visits_completed||0) + '/' + p.visits_planned + ' visits'"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right flex-shrink-0 ml-2">
+                        <span class="text-xs font-medium" :class="p.seconds_ago < 1800 ? 'text-green-600' : p.seconds_ago < 3600 ? 'text-yellow-600' : 'text-gray-400'"
+                              x-text="formatAgo(p.seconds_ago)"></span>
+                        <p class="text-[10px] text-gray-400 mt-0.5" x-text="parseFloat(p.lat)?.toFixed(4) + ', ' + parseFloat(p.lng)?.toFixed(4)"></p>
+                        <!-- Playback button -->
+                        <button x-show="mode === 'playback'" @click.stop="startPlayback(p)"
+                                class="mt-1 text-[10px] text-orange-500 hover:text-orange-700 font-medium">
+                            Trail &rarr;
+                        </button>
+                    </div>
+                </div>
+            </template>
+            <div x-show="positions.length === 0" class="px-5 py-12 text-center text-gray-400 text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                No GPS data available for this date
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function gpsLive() {
+    return {
+        map: null,
+        markers: {},
+        trailLayer: null,
+        visitMarkers: [],
+        positions: [],
+        activity: null,
+        autoRefresh: true,
+        refreshInterval: null,
+        lastRefresh: null,
+
+        // Mode: 'live' or 'playback'
+        mode: 'live',
+        playbackDate: new Date().toISOString().split('T')[0],
+        todayStr: new Date().toISOString().split('T')[0],
+
+        // Playback state
+        selectedTech: null,
+        trailData: {},
+        playbackIndex: 0,
+        isPlaying: false,
+        playbackSpeed: 1,
+        playbackTimer: null,
+        playbackMarker: null,
+        playbackTrailLine: null,
+
+        // Photo error cache
+        brokenPhotos: new Set(),
+
+        async init() {
+            await new Promise(r => setTimeout(r, 1000));
+
+            this.map = L.map('live-map').setView([-7.28, 112.75], 11);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(this.map);
+
+            setTimeout(() => this.map.invalidateSize(), 200);
+
+            await this.refresh();
+            this.toggleAutoRefresh();
+        },
+
+        // ── Mode Switching ──
+
+        switchMode(m) {
+            this.mode = m;
+            this.stopPlayback();
+            if (m === 'live') {
+                this.playbackDate = this.todayStr;
+                this.refresh();
+                this.toggleAutoRefresh();
+            } else {
+                if (this.refreshInterval) clearInterval(this.refreshInterval);
+                this.refreshInterval = null;
+                this.loadPlaybackDate();
+            }
+        },
+
+        async loadPlaybackDate() {
+            this.stopPlayback();
+            try {
+                const [posResp, actResp] = await Promise.all([
+                    authenticatedFetch('/api/v1/enterprise/gps-live/positions?date=' + this.playbackDate),
+                    authenticatedFetch('/api/v1/enterprise/gps-live/activity?date=' + this.playbackDate),
+                ]);
+                if (posResp.ok) {
+                    const data = await posResp.json();
+                    this.positions = (data.positions || []).sort((a,b) => (b.visits_completed||0) - (a.visits_completed||0));
+                    this.updateMarkers();
+                }
+                if (actResp.ok) {
+                    this.activity = await actResp.json();
+                }
+            } catch (e) { console.error('Playback load error:', e); }
+        },
+
+        // ── Live Refresh ──
+
+        async refresh() {
+            try {
+                const dateParam = this.mode === 'playback' ? '?date=' + this.playbackDate : '';
+                const [posResp, actResp] = await Promise.all([
+                    authenticatedFetch('/api/v1/enterprise/gps-live/positions' + dateParam),
+                    authenticatedFetch('/api/v1/enterprise/gps-live/activity' + dateParam),
+                ]);
+                if (posResp.ok) {
+                    const data = await posResp.json();
+                    this.positions = (data.positions || []).sort((a,b) => (a.seconds_ago||0) - (b.seconds_ago||0));
+                    this.updateMarkers();
+                }
+                if (actResp.ok) {
+                    this.activity = await actResp.json();
+                }
+                this.lastRefresh = new Date().toLocaleTimeString('id-ID');
+            } catch (e) { console.error('GPS refresh error:', e); }
+        },
+
+        // ── Marker Rendering ──
+
+        updateMarkers() {
+            Object.values(this.markers).forEach(m => this.map.removeLayer(m));
+            this.markers = {};
+
+            const bounds = [];
+            this.positions.forEach(p => {
+                if (!p.lat || !p.lng) return;
+                const lat = parseFloat(p.lat);
+                const lng = parseFloat(p.lng);
+                if (isNaN(lat) || isNaN(lng)) return;
+
+                const isRecent = p.seconds_ago < 1800;
+                const isStale = p.seconds_ago > 3600;
+                const initials = (p.tech_name || '?').split(' ').map(w => w[0]).join('').substring(0,2).toUpperCase();
+                const statusClass = isRecent ? 'recent' : isStale ? 'stale' : '';
+
+                // Grade badge
+                const gradeColors = {A:'#22c55e',B:'#3b82f6',C:'#eab308',D:'#f97316',E:'#ef4444'};
+                const gradeHtml = p.kpi_grade
+                    ? `<div class="marker-grade" style="background:${gradeColors[p.kpi_grade]||'#9ca3af'}">${p.kpi_grade}</div>`
+                    : '';
+
+                // Photo or initials
+                const photoHtml = `<img src="${p.photo_url}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:100%;height:100%;object-fit:cover"><div class="initials" style="display:none">${initials}</div>`;
+
+                const icon = L.divIcon({
+                    className: '',
+                    html: `<div class="tech-marker ${statusClass}">${photoHtml}${gradeHtml}</div>`,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20],
+                });
+
+                // Rich popup content
+                const popupHtml = this.buildPopupHtml(p, initials);
+
+                const marker = L.marker([lat, lng], { icon })
+                    .addTo(this.map)
+                    .bindPopup(popupHtml, { maxWidth: 300, className: '' });
+
+                this.markers[p.tech_id] = marker;
+                bounds.push([lat, lng]);
+            });
+
+            if (bounds.length > 0) {
+                this.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+            }
+        },
+
+        buildPopupHtml(p, initials) {
+            const completionPct = p.visits_planned > 0 ? Math.round((p.visits_completed||0) / p.visits_planned * 100) : 0;
+            const barColor = completionPct >= 80 ? '#22c55e' : completionPct >= 50 ? '#f97316' : '#ef4444';
+            const gradeColors = {A:'#dcfce7;color:#166534',B:'#dbeafe;color:#1e40af',C:'#fef9c3;color:#854d0e',D:'#ffedd5;color:#9a3412',E:'#fee2e2;color:#991b1b'};
+
+            let html = `<div class="rich-popup">`;
+            // Header with photo
+            html += `<div class="popup-header">`;
+            html += `<img src="${p.photo_url}" class="popup-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`;
+            html += `<div class="popup-photo-placeholder" style="display:none">${initials}</div>`;
+            html += `<div>`;
+            html += `<h4>${p.tech_name || '—'}</h4>`;
+            html += `<div class="popup-meta">${this.formatAgo(p.seconds_ago)}`;
+            if (p.current_customer) html += ` &middot; @ ${p.current_customer}`;
+            html += `</div>`;
+            // KPI pills
+            if (p.kpi_grade || p.kpi_score) {
+                html += `<div class="kpi-bar">`;
+                if (p.kpi_grade) html += `<span class="kpi-pill" style="background:${gradeColors[p.kpi_grade] || '#f3f4f6;color:#6b7280'}">Grade ${p.kpi_grade}</span>`;
+                if (p.kpi_score) html += `<span class="kpi-pill" style="background:#f3f4f6;color:#374151">Skor ${p.kpi_score.toFixed(0)}</span>`;
+                html += `</div>`;
+            }
+            html += `</div></div>`;
+
+            // Visit progress
+            if (p.visits_planned > 0) {
+                html += `<div class="visit-row"><span>Visit hari ini</span><span style="font-weight:600">${p.visits_completed||0}/${p.visits_planned}</span></div>`;
+                html += `<div class="progress-track"><div class="progress-fill" style="width:${completionPct}%;background:${barColor}"></div></div>`;
+                if (p.visits_in_progress > 0) {
+                    html += `<div class="visit-row"><span style="color:#f97316">Sedang dikerjakan</span><span style="font-weight:600;color:#f97316">${p.visits_in_progress}</span></div>`;
+                }
+            }
+
+            // GPS coords
+            html += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #f3f4f6;font-size:10px;color:#9ca3af">`;
+            html += `${parseFloat(p.lat)?.toFixed(5)}, ${parseFloat(p.lng)?.toFixed(5)}`;
+            html += `</div>`;
+
+            html += `</div>`;
+            return html;
+        },
+
+        // ── Focus & Interaction ──
+
+        focusTech(p) {
+            if (!p.lat || !p.lng) return;
+            this.map.setView([parseFloat(p.lat), parseFloat(p.lng)], 15);
+            const marker = this.markers[p.tech_id];
+            if (marker) marker.openPopup();
+        },
+
+        // ── Playback Engine ──
+
+        async startPlayback(tech) {
+            this.stopPlayback();
+            this.selectedTech = tech;
+            this.playbackIndex = 0;
+
+            try {
+                const resp = await authenticatedFetch(`/api/v1/enterprise/gps-live/trail/${tech.tech_id}?date=${this.playbackDate}`);
+                if (!resp.ok) return;
+                this.trailData = await resp.json();
+
+                if (!this.trailData.gps_trail?.length && !this.trailData.visit_points?.length) {
+                    this.trailData = { gps_trail: [], visit_points: [], trail_points: 0 };
+                    return;
+                }
+
+                this.renderTrail();
+            } catch (e) { console.error('Trail load error:', e); }
+        },
+
+        renderTrail() {
+            this.clearTrailLayers();
+            const trail = this.trailData.gps_trail || [];
+            const visits = this.trailData.visit_points || [];
+
+            if (trail.length === 0 && visits.length === 0) return;
+
+            // Draw trail polyline
+            const coords = trail.map(t => [parseFloat(t.lat), parseFloat(t.lng)]).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+            if (coords.length > 1) {
+                this.playbackTrailLine = L.polyline(coords, {
+                    color: '#F97316', weight: 3, opacity: 0.7, dashArray: '8 4'
+                }).addTo(this.map);
+            }
+
+            // Visit point markers (numbered)
+            visits.forEach((v, i) => {
+                if (!v.lat_in || !v.lng_in) return;
+                const lat = parseFloat(v.lat_in);
+                const lng = parseFloat(v.lng_in);
+                if (isNaN(lat) || isNaN(lng)) return;
+
+                const isDone = v.status === 'Selesai';
+                const icon = L.divIcon({
+                    className: '',
+                    html: `<div style="width:24px;height:24px;border-radius:50%;background:${isDone?'#22c55e':'#3b82f6'};color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3)">${i+1}</div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12],
+                });
+
+                const dur = v.duration_min ? ` (${v.duration_min} min)` : '';
+                const m = L.marker([lat, lng], { icon })
+                    .addTo(this.map)
+                    .bindPopup(`<b>${v.customer_name || 'Visit ' + (i+1)}</b><br>${v.address || ''}<br><span style="color:${isDone?'#16a34a':'#2563eb'}">${v.status || ''}${dur}</span>`);
+                this.visitMarkers.push(m);
+            });
+
+            // Playback position marker (big orange dot)
+            if (coords.length > 0) {
+                const playIcon = L.divIcon({
+                    className: '',
+                    html: `<div style="width:16px;height:16px;border-radius:50%;background:#F97316;border:3px solid white;box-shadow:0 0 0 4px rgba(249,115,22,0.3), 0 2px 8px rgba(0,0,0,0.3)"></div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8],
+                });
+                this.playbackMarker = L.marker(coords[0], { icon: playIcon, zIndexOffset: 1000 }).addTo(this.map);
+            }
+
+            // Fit view
+            const allCoords = [...coords];
+            visits.forEach(v => {
+                if (v.lat_in && v.lng_in) allCoords.push([parseFloat(v.lat_in), parseFloat(v.lng_in)]);
+            });
+            if (allCoords.length > 0) {
+                this.map.fitBounds(allCoords, { padding: [40, 40], maxZoom: 15 });
+            }
+        },
+
+        seekPlayback() {
+            const trail = this.trailData.gps_trail || [];
+            if (!trail[this.playbackIndex] || !this.playbackMarker) return;
+            const pt = trail[this.playbackIndex];
+            const lat = parseFloat(pt.lat);
+            const lng = parseFloat(pt.lng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                this.playbackMarker.setLatLng([lat, lng]);
+            }
+        },
+
+        playbackPause() {
+            if (this.isPlaying) {
+                clearInterval(this.playbackTimer);
+                this.playbackTimer = null;
+                this.isPlaying = false;
+            } else {
+                this.isPlaying = true;
+                const trail = this.trailData.gps_trail || [];
+                if (this.playbackIndex >= trail.length - 1) this.playbackIndex = 0;
+
+                this.playbackTimer = setInterval(() => {
+                    if (this.playbackIndex >= trail.length - 1) {
+                        this.isPlaying = false;
+                        clearInterval(this.playbackTimer);
+                        this.playbackTimer = null;
+                        return;
+                    }
+                    this.playbackIndex++;
+                    this.seekPlayback();
+                }, 200 / this.playbackSpeed);
+            }
+        },
+
+        stopPlayback() {
+            this.isPlaying = false;
+            if (this.playbackTimer) { clearInterval(this.playbackTimer); this.playbackTimer = null; }
+            this.selectedTech = null;
+            this.trailData = {};
+            this.playbackIndex = 0;
+            this.clearTrailLayers();
+        },
+
+        clearTrailLayers() {
+            if (this.playbackMarker) { this.map.removeLayer(this.playbackMarker); this.playbackMarker = null; }
+            if (this.playbackTrailLine) { this.map.removeLayer(this.playbackTrailLine); this.playbackTrailLine = null; }
+            this.visitMarkers.forEach(m => this.map.removeLayer(m));
+            this.visitMarkers = [];
+        },
+
+        trailTimeAt(idx) {
+            const trail = this.trailData.gps_trail || [];
+            if (!trail[idx]?.captured_at) return '--:--';
+            try {
+                const d = new Date(trail[idx].captured_at);
+                return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            } catch { return '--:--'; }
+        },
+
+        // ── Utilities ──
+
+        toggleAutoRefresh() {
+            if (this.refreshInterval) clearInterval(this.refreshInterval);
+            this.refreshInterval = null;
+            if (this.autoRefresh && this.mode === 'live') {
+                this.refreshInterval = setInterval(() => this.refresh(), 30000);
+            }
+        },
+
+        formatAgo(seconds) {
+            if (!seconds && seconds !== 0) return '—';
+            if (seconds < 60) return seconds + 's lalu';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm lalu';
+            return Math.floor(seconds / 3600) + 'j lalu';
+        }
+    };
+}
+</script>
+{% endblock %}

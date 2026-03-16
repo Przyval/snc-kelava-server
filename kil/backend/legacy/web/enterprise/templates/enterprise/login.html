@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Access | SanoCare Ops</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/enterprise/static/js/auth.js" defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .auth-gradient {
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Enterprise Login Container -->
+    <div class="max-w-4xl w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row min-h-[600px]">
+        
+        <!-- Left Column: Identity & Authority -->
+        <div class="md:w-1/2 auth-gradient p-12 text-white flex flex-col justify-between relative overflow-hidden">
+            <!-- Subtle Texture/Pattern -->
+            <div class="absolute inset-0 opacity-10 pointer-events-none">
+                <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" stroke-width="1"/>
+                        </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#grid)" />
+                </svg>
+            </div>
+
+            <div class="relative z-10">
+                <div class="bg-white rounded-2xl p-3 inline-block mb-8 shadow-xl">
+                    <img src="/enterprise/static/img/logo_snc.webp" alt="SnC Pest Control" class="h-10 w-auto">
+                </div>
+                <h1 class="text-4xl font-bold tracking-tight mb-4 leading-tight">
+                    Safe & Care<br/>
+                    <span class="text-slate-400">Enterprise Operations</span>
+                </h1>
+                <p class="text-slate-400 text-lg leading-relaxed max-w-sm">
+                    Access the operational intelligence console. Real-time fleet management and resource dispatching.
+                </p>
+            </div>
+
+            <div class="relative z-10 space-y-4">
+                <div class="flex items-center gap-3 text-slate-400 text-sm">
+                    <div class="w-1.5 h-1.5 rounded-full bg-[#F97316]"></div>
+                    <span>Authorized Personnel Only</span>
+                </div>
+                <div class="flex items-center gap-3 text-slate-400 text-sm">
+                    <div class="w-1.5 h-1.5 rounded-full bg-[#F97316]"></div>
+                    <span>Data Governance Active</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Login Form -->
+        <div class="md:w-1/2 p-12 flex flex-col justify-center bg-white">
+            <div class="mb-10">
+                <div class="flex items-center gap-2 text-[#F97316] mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <span class="text-sm font-bold uppercase tracking-widest">Secure Access</span>
+                </div>
+                <h2 class="text-2xl font-bold text-slate-900">Masuk ke Konsol</h2>
+                <p class="text-slate-500 text-sm mt-1">Masukkan ID Pekerja atau email perusahaan Anda</p>
+            </div>
+
+            <!-- Error/Success Messages -->
+            <div id="auth-message" class="mb-4 hidden"></div>
+
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">ID Pekerja / Email</label>
+                    <input id="login" type="text" placeholder="ID Pekerja atau email" required
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316] outline-none transition-all text-slate-900 placeholder-slate-400">
+                </div>
+                <div>
+                    <div class="flex justify-between mb-2">
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">Password</label>
+                        <a href="#" class="text-xs font-semibold text-[#F97316] hover:text-[#EA580C]">Forgot password?</a>
+                    </div>
+                    <input id="password" type="password" placeholder="••••••••" required
+                           class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316] outline-none transition-all text-slate-900 placeholder-slate-400">
+                </div>
+
+                <div class="flex items-center gap-2 pb-2">
+                    <input type="checkbox" id="remember" class="w-4 h-4 text-[#F97316] border-slate-300 rounded focus:ring-[#F97316]">
+                    <label for="remember" class="text-sm text-slate-600 font-medium">Remember this session</label>
+                </div>
+
+                <button type="submit" id="loginButton"
+                        class="w-full bg-[#0F172A] hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-slate-200 transition-all active:scale-[0.98]">
+                    Sign In
+                </button>
+            </form>
+
+            <div class="text-center mt-4">
+                <p class="text-[10px] text-slate-400 font-medium">Session: 2 hours (auto-refresh enabled)</p>
+            </div>
+
+            <!-- Security Footer -->
+            <div class="mt-8 pt-8 border-t border-slate-100">
+                <div class="flex items-center gap-3 text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                    </svg>
+                    <span class="text-xs">Protected by enterprise-grade security</span>
+                </div>
+                <p class="text-[10px] text-slate-300 mt-2 uppercase tracking-tight">System activity is monitored for security purposes.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Environment Badge -->
+    <div class="fixed bottom-4 right-4 z-50 pointer-events-none opacity-75 hover:opacity-100 transition-opacity">
+        <span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm
+            {{ 'bg-red-50 text-red-600 border-red-200' if APP_ENV == 'PROD' else 'bg-green-50 text-green-600 border-green-200' }}">
+            {{ APP_ENV }} ENVIRONMENT
+        </span>
+    </div>
+
+    <!-- Enterprise Auth -->
+    <script>
+        // Check if already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.SanoCareAuth && window.SanoCareAuth.isAuthenticated()) {
+                window.location.href = '/enterprise/';
+            }
+        });
+
+        // Handle login form submission
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
+            const loginButton = document.getElementById('loginButton');
+            const messageDiv = document.getElementById('auth-message');
+
+            // Show loading state
+            loginButton.disabled = true;
+            loginButton.innerHTML = '<svg class="animate-spin h-5 w-5 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+
+            try {
+                await window.SanoCareAuth.signIn(login, password);
+
+                // Success
+                messageDiv.className = 'mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg text-sm';
+                messageDiv.textContent = 'Login successful! Redirecting...';
+                messageDiv.classList.remove('hidden');
+
+                setTimeout(() => {
+                    window.location.href = '/enterprise/';
+                }, 800);
+
+            } catch (error) {
+                messageDiv.className = 'mb-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm';
+                messageDiv.textContent = 'Login failed: ' + error.message;
+                messageDiv.classList.remove('hidden');
+
+                loginButton.disabled = false;
+                loginButton.textContent = 'Sign In';
+            }
+        });
+    </script>
+
+</body>
+</html>

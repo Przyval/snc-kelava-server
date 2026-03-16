@@ -1,0 +1,423 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Daily Briefing{% endblock %}
+
+{% block content %}
+<div x-data="briefingPage()" x-init="loadData()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <h1 class="text-2xl font-bold text-[#0F172A]">Daily Briefing</h1>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-[#FFF7ED] text-[#C2410C] border border-[#FFEDD5]"
+                      x-text="dayOfWeek"></span>
+            </div>
+            <p class="text-sm text-[#64748B]" x-text="briefingDate"></p>
+        </div>
+        <button @click="loadData()" class="px-3 py-2 rounded-lg bg-[#F97316] text-white text-sm font-medium hover:bg-[#EA580C] transition-colors shadow-sm flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh
+        </button>
+    </div>
+
+    <!-- Quick Stats Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Dijadwalkan</p>
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="scheduledCount + '/' + totalTechs"></p>
+            <p class="text-[10px] text-[#94A3B8]">teknisi hari ini</p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Slot Kosong</p>
+            <p class="text-2xl font-bold" :class="gapCount > 0 ? 'text-amber-600' : 'text-green-600'" x-text="gapCount"></p>
+            <p class="text-[10px] text-[#94A3B8]">perlu diisi</p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Telat Kemarin</p>
+            <p class="text-2xl font-bold" :class="yesterdayLate.length > 0 ? 'text-red-600' : 'text-green-600'" x-text="yesterdayLate.length"></p>
+            <p class="text-[10px] text-[#94A3B8]">teknisi</p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Komplain Aktif</p>
+            <p class="text-2xl font-bold" :class="openComplaints.length > 0 ? 'text-red-600' : 'text-green-600'" x-text="openComplaints.length"></p>
+            <p class="text-[10px] text-[#94A3B8]">open/in progress</p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Kontrak Expiring</p>
+            <p class="text-2xl font-bold" :class="expiringContracts.length > 0 ? 'text-amber-600' : 'text-green-600'" x-text="expiringContracts.length"></p>
+            <p class="text-[10px] text-[#94A3B8]">dalam 14 hari</p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Hadir Hari Ini</p>
+            <p class="text-2xl font-bold" :class="notCheckedIn.length > 0 ? 'text-orange-600' : 'text-green-600'" x-text="checkedInToday.length + '/' + (checkedInToday.length + notCheckedIn.length)"></p>
+            <p class="text-[10px] text-[#94A3B8]">sudah check-in</p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm">
+            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-1">Completion Kemarin</p>
+            <p class="text-2xl font-bold" :class="yesterdayCompletion.total_planned > 0 && yesterdayCompletion.completed/yesterdayCompletion.total_planned >= 0.8 ? 'text-green-600' : 'text-amber-600'"
+               x-text="yesterdayCompletion.total_planned > 0 ? Math.round(yesterdayCompletion.completed/yesterdayCompletion.total_planned*100) + '%' : '-'"></p>
+            <p class="text-[10px] text-[#94A3B8]" x-text="(yesterdayCompletion.completed || 0) + '/' + (yesterdayCompletion.total_planned || 0) + ' visit'"></p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Today's Schedule -->
+        <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                <svg class="w-4 h-4 text-[#F97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <h2 class="text-sm font-bold text-[#0F172A]">Jadwal Hari Ini</h2>
+                <span class="ml-auto text-xs text-[#64748B]" x-text="todaySchedule.length + ' teknisi'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-80 overflow-y-auto">
+                <template x-for="s in todaySchedule" :key="s.technician_id">
+                    <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-[#F8FAFC]">
+                        <div class="w-7 h-7 rounded-full overflow-hidden bg-[#F1F5F9] border border-[#E2E8F0] flex-shrink-0 relative">
+                            <img :src="'/enterprise/static/img/staff/' + s.technician_id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="s.name">
+                            <span class="flex items-center justify-center w-full h-full text-[#475569] text-[10px] font-bold" x-text="s.name?.charAt(0) || '?'"></span>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-medium text-[#0F172A] truncate" x-text="s.name"></p>
+                                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border"
+                                      :class="{
+                                          'bg-blue-50 text-blue-600 border-blue-200': s.segment === 'MOBILE',
+                                          'bg-purple-50 text-purple-600 border-purple-200': s.segment === 'STATION',
+                                      }" x-text="s.segment"></span>
+                            </div>
+                            <p class="text-[10px] text-[#94A3B8] truncate" x-text="(s.customer_names || []).join(', ')"></p>
+                        </div>
+                        <span class="text-xs font-bold text-[#F97316]" x-text="s.planned_visits + ' visit'"></span>
+                    </div>
+                </template>
+                <div x-show="todaySchedule.length === 0" class="px-4 py-8 text-center text-[#94A3B8] text-sm">
+                    Tidak ada jadwal hari ini
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule Gaps -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden" :class="gapCount > 0 ? 'border-amber-200' : 'border-[#E2E8F0]'">
+            <div class="px-4 py-3 border-b flex items-center gap-2" :class="gapCount > 0 ? 'border-amber-200 bg-amber-50' : 'border-[#E2E8F0] bg-[#F8FAFC]'">
+                <svg class="w-4 h-4" :class="gapCount > 0 ? 'text-amber-600' : 'text-[#64748B]'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <h2 class="text-sm font-bold" :class="gapCount > 0 ? 'text-amber-800' : 'text-[#0F172A]'">Slot Kosong (Perlu Diisi)</h2>
+                <span class="ml-auto text-xs" :class="gapCount > 0 ? 'text-amber-600' : 'text-[#64748B]'" x-text="gapCount + ' gap'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-80 overflow-y-auto">
+                <template x-for="g in scheduleGaps" :key="g.technician_id + '-' + g.customer_name">
+                    <div class="px-4 py-2.5 hover:bg-amber-50/50">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-[#0F172A]" x-text="g.name"></p>
+                                <p class="text-xs text-[#64748B]" x-text="g.customer_name"></p>
+                            </div>
+                            <span class="text-xs font-mono text-amber-600" x-text="g.scheduled_time || '-'"></span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="gapCount === 0" class="px-4 py-8 text-center text-green-600 text-sm font-medium">
+                    Semua slot terisi hari ini
+                </div>
+            </div>
+        </div>
+
+        <!-- Yesterday's Late -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden" :class="yesterdayLate.length > 0 ? 'border-red-200' : 'border-[#E2E8F0]'">
+            <div class="px-4 py-3 border-b flex items-center gap-2" :class="yesterdayLate.length > 0 ? 'border-red-200 bg-red-50' : 'border-[#E2E8F0] bg-[#F8FAFC]'">
+                <svg class="w-4 h-4" :class="yesterdayLate.length > 0 ? 'text-red-600' : 'text-[#64748B]'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <h2 class="text-sm font-bold" :class="yesterdayLate.length > 0 ? 'text-red-800' : 'text-[#0F172A]'">Terlambat Kemarin</h2>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <template x-for="l in yesterdayLate" :key="l.technician_id">
+                    <div class="px-4 py-2.5 flex items-center justify-between hover:bg-red-50/50">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-6 h-6 rounded-full overflow-hidden bg-[#F1F5F9] border border-[#E2E8F0] flex-shrink-0 relative">
+                                <img :src="'/enterprise/static/img/staff/' + l.technician_id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="l.name">
+                                <span class="flex items-center justify-center w-full h-full text-[10px] font-bold text-[#475569]" x-text="l.name?.charAt(0) || '?'"></span>
+                            </div>
+                            <p class="text-sm font-medium text-[#0F172A]" x-text="l.name"></p>
+                        </div>
+                        <span class="text-xs font-bold text-red-600" x-text="'+' + Math.round(l.delta_minutes) + ' min'"></span>
+                    </div>
+                </template>
+                <div x-show="yesterdayLate.length === 0" class="px-4 py-8 text-center text-green-600 text-sm font-medium">
+                    Semua tepat waktu kemarin
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Issues & Complaints -->
+        <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                <h2 class="text-sm font-bold text-[#0F172A]">Issues & Komplain Pending</h2>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <template x-for="c in openComplaints" :key="c.id">
+                    <div class="px-4 py-2.5 hover:bg-[#F8FAFC]">
+                        <div class="flex items-center justify-between">
+                            <p class="text-sm font-medium text-[#0F172A] truncate" x-text="c.title"></p>
+                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border flex-shrink-0"
+                                  :class="{
+                                      'bg-red-50 text-red-600 border-red-200': c.severity === 'critical' || c.severity === 'high',
+                                      'bg-amber-50 text-amber-600 border-amber-200': c.severity === 'medium',
+                                      'bg-slate-50 text-slate-600 border-slate-200': c.severity === 'low',
+                                  }" x-text="c.severity || c.status"></span>
+                        </div>
+                        <p class="text-[10px] text-[#94A3B8]" x-text="c.status + ' - ' + (c.created_at || '').slice(0,10)"></p>
+                    </div>
+                </template>
+                <template x-for="i in pendingIssues" :key="i.id">
+                    <div class="px-4 py-2.5 hover:bg-[#F8FAFC]">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-[#475569]" x-text="i.name + ' - ' + i.issue_type"></p>
+                                <p class="text-[10px] text-[#94A3B8]" x-text="i.status + ' - ' + (i.created_at || '').slice(0,10)"></p>
+                            </div>
+                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border flex-shrink-0 ml-2"
+                                  :class="{
+                                      'bg-red-50 text-red-600 border-red-200': i.severity === 'critical' || i.severity === 'high',
+                                      'bg-amber-50 text-amber-600 border-amber-200': i.severity === 'medium',
+                                      'bg-slate-50 text-slate-600 border-slate-200': i.severity === 'low',
+                                  }" x-text="i.severity"></span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="openComplaints.length === 0 && pendingIssues.length === 0" class="px-4 py-8 text-center text-green-600 text-sm font-medium">
+                    Tidak ada issues pending
+                </div>
+            </div>
+        </div>
+
+        <!-- Attendance Tracker -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden" :class="notCheckedIn.length > 0 ? 'border-orange-200' : 'border-[#E2E8F0]'">
+            <div class="px-4 py-3 border-b flex items-center gap-2" :class="notCheckedIn.length > 0 ? 'border-orange-200 bg-orange-50' : 'border-[#E2E8F0] bg-[#F8FAFC]'">
+                <svg class="w-4 h-4" :class="notCheckedIn.length > 0 ? 'text-orange-600' : 'text-green-600'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <h2 class="text-sm font-bold" :class="notCheckedIn.length > 0 ? 'text-orange-800' : 'text-[#0F172A]'">Absensi Hari Ini</h2>
+                <span class="ml-auto text-xs font-bold" :class="notCheckedIn.length > 0 ? 'text-orange-600' : 'text-green-600'"
+                      x-text="checkedInToday.length + ' hadir / ' + notCheckedIn.length + ' belum'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <!-- Not checked in (red) -->
+                <template x-for="n in notCheckedIn" :key="n.technician_id">
+                    <div class="px-4 py-2 flex items-center justify-between hover:bg-orange-50/50">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-2 h-2 rounded-full bg-red-400"></div>
+                            <p class="text-sm font-medium text-[#0F172A]" x-text="n.name"></p>
+                        </div>
+                        <span class="text-[10px] text-red-500 font-bold" x-text="n.planned_visits + ' visit pending'"></span>
+                    </div>
+                </template>
+                <!-- Checked in (green) -->
+                <template x-for="c in checkedInToday" :key="c.technician_id">
+                    <div class="px-4 py-2 flex items-center justify-between hover:bg-[#F8FAFC]">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-2 h-2 rounded-full bg-green-400"></div>
+                            <p class="text-sm text-[#475569]" x-text="c.name"></p>
+                        </div>
+                        <span class="text-[10px] text-green-600 font-mono" x-text="(c.first_checkin || '').slice(11,16)"></span>
+                    </div>
+                </template>
+                <div x-show="checkedInToday.length === 0 && notCheckedIn.length === 0" class="px-4 py-8 text-center text-[#94A3B8] text-sm">
+                    Belum ada data absensi
+                </div>
+            </div>
+        </div>
+
+        <!-- Yesterday Top Performers & Completion -->
+        <div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                <h2 class="text-sm font-bold text-[#0F172A]">Performa Kemarin</h2>
+            </div>
+            <!-- Completion rate bar -->
+            <div class="px-4 py-3 border-b border-[#F1F5F9]">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-xs text-[#64748B]">Completion Rate</span>
+                    <span class="text-sm font-bold"
+                          :class="yesterdayCompletion.total_planned > 0 ? (yesterdayCompletion.completed/yesterdayCompletion.total_planned >= 0.8 ? 'text-green-600' : 'text-amber-600') : 'text-[#94A3B8]'"
+                          x-text="yesterdayCompletion.total_planned > 0 ? Math.round(yesterdayCompletion.completed/yesterdayCompletion.total_planned*100) + '%' : '-'"></span>
+                </div>
+                <div class="h-2.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500"
+                         :class="yesterdayCompletion.total_planned > 0 && yesterdayCompletion.completed/yesterdayCompletion.total_planned >= 0.8 ? 'bg-green-500' : 'bg-amber-500'"
+                         :style="'width:' + (yesterdayCompletion.total_planned > 0 ? Math.round(yesterdayCompletion.completed/yesterdayCompletion.total_planned*100) : 0) + '%'"></div>
+                </div>
+                <p class="text-[10px] text-[#94A3B8] mt-1" x-text="(yesterdayCompletion.completed || 0) + ' dari ' + (yesterdayCompletion.total_planned || 0) + ' kunjungan selesai'"></p>
+            </div>
+            <!-- Top 3 -->
+            <div class="divide-y divide-[#F1F5F9]">
+                <template x-for="(p, idx) in topPerformers" :key="p.technician_id">
+                    <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-[#F8FAFC]">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs"
+                             :class="idx === 0 ? 'bg-yellow-100 text-yellow-700' : idx === 1 ? 'bg-gray-100 text-gray-600' : 'bg-orange-50 text-orange-600'"
+                             x-text="idx + 1"></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-[#0F172A] truncate" x-text="p.name"></p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-bold text-[#F97316]" x-text="p.completed_visits + ' visit'"></p>
+                            <p class="text-[10px] text-[#94A3B8]" x-text="p.avg_duration_min ? '~' + p.avg_duration_min + ' min/visit' : ''"></p>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="topPerformers.length === 0" class="px-4 py-6 text-center text-[#94A3B8] text-sm">
+                    Tidak ada data kemarin
+                </div>
+            </div>
+        </div>
+
+        <!-- Expiring Contracts (full width) -->
+        <div class="lg:col-span-2 bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden" x-show="expiringContracts.length > 0">
+            <div class="px-4 py-3 border-b border-[#E2E8F0] bg-amber-50 flex items-center gap-2">
+                <svg class="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <h2 class="text-sm font-bold text-amber-800">Kontrak Akan Berakhir (14 Hari)</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                        <tr>
+                            <th class="px-4 py-2.5 text-left font-bold">Customer</th>
+                            <th class="px-4 py-2.5 text-center font-bold">Tanggal Berakhir</th>
+                            <th class="px-4 py-2.5 text-center font-bold">Sisa Hari</th>
+                            <th class="px-4 py-2.5 text-center font-bold">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#F1F5F9]">
+                        <template x-for="c in expiringContracts" :key="c.id">
+                            <tr class="hover:bg-amber-50/50">
+                                <td class="px-4 py-2.5 font-medium text-[#0F172A]" x-text="c.customer_name"></td>
+                                <td class="px-4 py-2.5 text-center font-mono text-xs text-[#64748B]" x-text="(c.end_date || '').slice(0,10)"></td>
+                                <td class="px-4 py-2.5 text-center">
+                                    <span class="font-bold" :class="c.days_remaining <= 3 ? 'text-red-600' : c.days_remaining <= 7 ? 'text-amber-600' : 'text-[#64748B]'"
+                                          x-text="c.days_remaining + ' hari'"></span>
+                                </td>
+                                <td class="px-4 py-2.5 text-center">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-50 text-amber-600 border border-amber-200" x-text="c.status || 'active'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Briefing Notes (full width) -->
+        <div class="lg:col-span-2 bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                <svg class="w-4 h-4 text-[#F97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                <h2 class="text-sm font-bold text-[#0F172A]">Catatan Briefing</h2>
+                <span class="ml-auto text-[10px] text-[#94A3B8]">disimpan lokal</span>
+            </div>
+            <div class="p-4">
+                <textarea x-model="briefingNotes" rows="4" placeholder="Catat action items, keputusan meeting, atau hal penting lainnya..."
+                    class="w-full border border-[#E2E8F0] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/10 transition-all resize-none"
+                    @input="saveBriefingNotes()"></textarea>
+                <div class="flex items-center justify-between mt-2">
+                    <p class="text-[10px] text-[#94A3B8]" x-text="briefingNotes.length + ' karakter'"></p>
+                    <div class="flex gap-2">
+                        <button @click="printBriefing()" class="px-3 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569] text-xs font-medium hover:bg-[#E2E8F0] transition-colors flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                            Print
+                        </button>
+                        <button @click="shareBriefing()" class="px-3 py-1.5 rounded-lg bg-[#F97316] text-white text-xs font-medium hover:bg-[#EA580C] transition-colors flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                            Copy Summary
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function briefingPage() {
+    return {
+        briefingDate: '',
+        dayOfWeek: '',
+        todaySchedule: [],
+        scheduleGaps: [],
+        yesterdayLate: [],
+        pendingIssues: [],
+        openComplaints: [],
+        expiringContracts: [],
+        checkedInToday: [],
+        notCheckedIn: [],
+        yesterdayCompletion: {},
+        topPerformers: [],
+        scheduledCount: 0,
+        totalTechs: 0,
+        gapCount: 0,
+        briefingNotes: '',
+
+        async loadData() {
+            // Load saved notes
+            const savedDate = new Date().toISOString().slice(0,10);
+            this.briefingNotes = localStorage.getItem('briefing_notes_' + savedDate) || '';
+
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch('/api/v1/enterprise/briefing/today');
+            const data = await res.json();
+
+            this.briefingDate = data.date || '';
+            this.dayOfWeek = data.day_of_week || '';
+            this.todaySchedule = data.today_schedule || [];
+            this.scheduleGaps = data.schedule_gaps || [];
+            this.yesterdayLate = data.yesterday_late || [];
+            this.pendingIssues = data.pending_issues || [];
+            this.openComplaints = data.open_complaints || [];
+            this.expiringContracts = data.expiring_contracts || [];
+            this.checkedInToday = data.checked_in_today || [];
+            this.notCheckedIn = data.not_checked_in || [];
+            this.yesterdayCompletion = data.yesterday_completion || {};
+            this.topPerformers = data.top_performers || [];
+            this.scheduledCount = data.scheduled_technicians || 0;
+            this.totalTechs = data.total_technicians || 0;
+            this.gapCount = data.gap_count || 0;
+
+            window.addEventListener('refresh-data', () => this.loadData());
+        },
+
+        saveBriefingNotes() {
+            const savedDate = new Date().toISOString().slice(0,10);
+            localStorage.setItem('briefing_notes_' + savedDate, this.briefingNotes);
+        },
+
+        printBriefing() {
+            window.print();
+        },
+
+        shareBriefing() {
+            const lines = [
+                `DAILY BRIEFING - ${this.briefingDate} (${this.dayOfWeek})`,
+                ``,
+                `JADWAL: ${this.scheduledCount}/${this.totalTechs} teknisi, ${this.gapCount} slot kosong`,
+                `ABSENSI: ${this.checkedInToday.length} hadir, ${this.notCheckedIn.length} belum check-in`,
+                `KEMARIN: ${this.yesterdayCompletion.completed || 0}/${this.yesterdayCompletion.total_planned || 0} visit selesai`,
+            ];
+            if (this.yesterdayLate.length > 0) {
+                lines.push(`TERLAMBAT: ${this.yesterdayLate.length} teknisi`);
+            }
+            if (this.notCheckedIn.length > 0) {
+                lines.push(``, `BELUM CHECK-IN:`);
+                this.notCheckedIn.forEach(n => lines.push(`  - ${n.name} (${n.planned_visits} visit)`));
+            }
+            if (this.topPerformers.length > 0) {
+                lines.push(``, `TOP PERFORMERS KEMARIN:`);
+                this.topPerformers.forEach((p,i) => lines.push(`  ${i+1}. ${p.name} - ${p.completed_visits} visit`));
+            }
+            if (this.briefingNotes.trim()) {
+                lines.push(``, `CATATAN:`, this.briefingNotes);
+            }
+            const text = lines.join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Summary disalin ke clipboard!');
+            });
+        },
+    }
+}
+</script>
+{% endblock %}

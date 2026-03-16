@@ -1,0 +1,452 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Operations Overview{% endblock %}
+
+{% block content %}
+<div x-data="operationsDashboard()" x-init="loadData()">
+    
+    <!-- Page Header -->
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-[#0F172A]">Operations Overview</h1>
+        <p class="text-[#6B7280] text-sm">Today's workload and exceptions requiring attention</p>
+    </div>
+
+    <!-- Today's Workload Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-sm text-[#6B7280] font-medium mb-1">Planned Today</p>
+            <p class="text-3xl font-bold text-[#0F172A]" x-text="workload.planned_total || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border-l-4 border-[#16A34A] p-4">
+            <p class="text-sm text-[#6B7280] font-medium mb-1">Executed</p>
+            <p class="text-3xl font-bold text-[#16A34A]" x-text="workload.executed || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border-l-4 border-[#2563EB] p-4">
+            <p class="text-sm text-[#6B7280] font-medium mb-1">In Progress</p>
+            <p class="text-3xl font-bold text-[#2563EB]" x-text="workload.berjalan || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border-l-4 border-[#F59E0B] p-4">
+            <p class="text-sm text-[#6B7280] font-medium mb-1">Pending Approval</p>
+            <p class="text-3xl font-bold text-[#F59E0B]" x-text="workload.requested || 0"></p>
+        </div>
+    </div>
+
+    <!-- Exceptions Alert Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white border-l-4 border-[#DC2626] rounded-xl shadow-sm p-4 cursor-pointer hover:shadow-md transition-all group"
+             @click="showExceptionModal('overdue')">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-red-50 text-[#DC2626] flex items-center justify-center group-hover:bg-[#DC2626] group-hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-[#DC2626]" x-text="exceptions.overdue_road_plans || 0"></p>
+                    <p class="text-xs text-[#DC2626] font-medium">Overdue Plans</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white border-l-4 border-[#F97316] rounded-xl shadow-sm p-4 cursor-pointer hover:shadow-md transition-all group"
+             @click="showExceptionModal('missing_checkout')">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-orange-50 text-[#F97316] flex items-center justify-center group-hover:bg-[#F97316] group-hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-[#F97316]" x-text="exceptions.missing_checkout || 0"></p>
+                    <p class="text-xs text-[#F97316] font-medium">Missing Checkout</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white border-l-4 border-[#EAB308] rounded-xl shadow-sm p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-yellow-50 text-[#EAB308] flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-[#EAB308]" x-text="exceptions.short_visits_under_5min || 0"></p>
+                    <p class="text-xs text-[#EAB308] font-medium">Short Visits (&lt;5min)</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white border-l-4 border-[#6B7280] rounded-xl shadow-sm p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-slate-50 text-[#6B7280] flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-[#6B7280]" x-text="exceptions.cancelled_this_week || 0"></p>
+                    <p class="text-xs text-[#6B7280] font-medium">Cancelled (Week)</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exceptions Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-[#0F172A]">
+                <span x-text="currentExceptionType === 'overdue' ? 'Overdue Road Plans' : 'Missing Checkout'"></span>
+            </h3>
+            <div class="flex gap-2">
+                <button @click="loadExceptions('overdue')" 
+                        class="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded transition-colors"
+                        :class="currentExceptionType === 'overdue' ? 'bg-[#DC2626] text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">
+                    Overdue
+                </button>
+                <button @click="loadExceptions('missing_checkout')" 
+                        class="px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded transition-colors"
+                        :class="currentExceptionType === 'missing_checkout' ? 'bg-[#F97316] text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">
+                    Missing Checkout
+                </button>
+            </div>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-xs text-[#6B7280] uppercase bg-[#F8FAFC]">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-semibold">ID</th>
+                        <th class="px-4 py-3 text-left font-semibold">Customer</th>
+                        <th class="px-4 py-3 text-left font-semibold">Technician</th>
+                        <th class="px-4 py-3 text-left font-semibold">Date</th>
+                        <th class="px-4 py-3 text-left font-semibold">Status</th>
+                        <th class="px-4 py-3 text-right font-semibold">Alert</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="item in exceptionItems" :key="item.id">
+                        <tr class="hover:bg-[#F6F8FB] transition-colors">
+                            <td class="px-4 py-3 font-mono text-xs text-[#6B7280]" x-text="item.no_ra || item.id"></td>
+                            <td class="px-4 py-3 font-medium text-[#1F2937]" x-text="item.customer_name || '—'"></td>
+                            <td class="px-4 py-3 text-[#4B5563]" x-text="item.tech_name || '—'"></td>
+                            <td class="px-4 py-3 text-[#6B7280]" x-text="item.visit_date || item.realization_date || '—'"></td>
+                            <td class="px-4 py-3">
+                                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border"
+                                      :class="{
+                                          'bg-[#EFF6FF] border-[#BFDBFE] text-[#2563EB]': item.status === 'Berjalan',
+                                          'bg-[#FEF3C7] border-[#FDE68A] text-[#D97706]': item.status === 'Requested',
+                                          'bg-[#F1F5F9] border-[#E2E8F0] text-[#475569]': item.status === 'Baru'
+                                      }"
+                                      x-text="item.status || 'N/A'"></span>
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626]"
+                                      x-text="item.days_overdue ? item.days_overdue + ' DAYS OVERDUE' : 'MISSING CHECKOUT'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="exceptionItems.length === 0">
+                        <td colspan="6" class="px-4 py-8 text-center text-[#9CA3AF]">
+                            No exceptions found
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Exception Detail Modal -->
+    <div x-show="modalOpen" 
+         x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="modalOpen = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+             @click.stop>
+            <!-- Modal Header -->
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center shadow-sm"
+                         :class="modalData.color ? modalData.color.replace('text-', 'bg-').replace('bg-', 'text-white bg-opacity-100 ') : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-[#0F172A]" x-text="modalData.title"></h3>
+                        <p class="text-sm text-[#6B7280]" x-text="modalData.subtitle"></p>
+                    </div>
+                </div>
+                <button @click="modalOpen = false" class="p-2 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="p-6 space-y-6">
+                <!-- Exception Items Table -->
+                <div class="bg-[#F8FAFC] rounded-xl p-4 border border-slate-200">
+                    <h4 class="font-bold text-[#1E293B] mb-3 flex items-center gap-2 text-sm uppercase tracking-wide">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        <span x-text="'Daftar Kasus (' + modalExceptionItems.length + ' items)' "></span>
+                    </h4>
+                    
+                    <!-- Loading State -->
+                    <div x-show="modalLoading" class="text-center py-8">
+                        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#F97316]"></div>
+                        <p class="text-sm text-[#6B7280] mt-2">Loading data...</p>
+                    </div>
+
+                    <!-- Exception Items -->
+                    <div x-show="!modalLoading" class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                        <template x-for="(item, idx) in modalExceptionItems" :key="item.id || idx">
+                            <div class="bg-white rounded-lg p-4 border border-slate-100 shadow-sm hover:border-[#F97316]/30 transition-colors">
+                                <!-- Header: Technician -->
+                                <div class="flex items-start justify-between mb-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-[#F1F5F9] text-[#475569] flex items-center justify-center font-bold text-xs"
+                                             x-text="(item.tech_name || 'N/A').substring(0,2).toUpperCase()"></div>
+                                        <div>
+                                            <p class="font-bold text-[#0F172A] text-sm" x-text="item.tech_name || '—'"></p>
+                                            <p class="text-[10px] text-[#9CA3AF] font-mono" x-text="'ID: ' + (item.no_ra || item.id)"></p>
+                                        </div>
+                                    </div>
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border"
+                                          :class="{
+                                              'bg-[#EFF6FF] border-[#BFDBFE] text-[#2563EB]': item.status === 'Berjalan',
+                                              'bg-[#FEF3C7] border-[#FDE68A] text-[#D97706]': item.status === 'Requested',
+                                              'bg-[#F1F5F9] border-[#E2E8F0] text-[#475569]': item.status === 'Baru'
+                                          }"
+                                          x-text="item.status || 'N/A'"></span>
+                                </div>
+
+                                <!-- Details Grid -->
+                                <div class="grid grid-cols-2 gap-3 text-xs">
+                                    <div>
+                                        <p class="text-[#9CA3AF] mb-0.5 uppercase tracking-wider text-[10px]">Customer</p>
+                                        <p class="font-medium text-[#334155]" x-text="item.customer_name || '—'"></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-[#9CA3AF] mb-0.5 uppercase tracking-wider text-[10px]">Tanggal</p>
+                                        <p class="font-medium text-[#334155]" x-text="item.visit_date || item.realization_date || '—'"></p>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <p class="text-[#9CA3AF] mb-0.5 uppercase tracking-wider text-[10px]">Check-in</p>
+                                        <p class="font-medium text-[#334155]" x-text="item.check_in ? new Date(item.check_in).toLocaleString('id-ID') : '—'"></p>
+                                    </div>
+                                </div>
+
+                                <!-- Alert Badge -->
+                                <div class="mt-3 pt-3 border-t border-slate-50">
+                                    <span class="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide rounded-md"
+                                          :class="modalData.color ? modalData.color.replace('text-', 'bg-').replace('100', '50').replace('text-', 'text-') : ''">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                        </svg>
+                                        <span x-text="item.days_overdue ? item.days_overdue + ' DAYS OVERDUE' : (item.hours_since_checkin ? item.hours_since_checkin + 'H SINCE CHECK-IN' : modalData.subtitle)"></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Empty State -->
+                        <div x-show="modalExceptionItems.length === 0" class="text-center py-8 text-[#94A3B8]">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <p class="text-xs">No exceptions found</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Collapsible: Root Cause & Remediation Guide -->
+                <details class="bg-[#F0F9FF] border border-[#BAE6FD] rounded-xl overflow-hidden group">
+                    <summary class="cursor-pointer p-4 font-semibold text-[#0369A1] hover:bg-[#E0F2FE] transition-colors flex items-center justify-between">
+                        <span>📘 Panduan: Root Cause & Cara Penyelesaian</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </summary>
+                    <div class="p-4 pt-0 space-y-4">
+                        <!-- Root Cause -->
+                        <div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-1.5 h-1.5 rounded-full bg-[#DC2626]"></div>
+                                <h5 class="font-bold text-[#334155] text-xs uppercase tracking-wide">Penyebab Umum</h5>
+                            </div>
+                            <ul class="space-y-1 text-sm text-[#475569] pl-3.5 border-l-2 border-[#E2E8F0]">
+                                <template x-for="cause in modalData.causes" :key="cause">
+                                    <li x-text="cause"></li>
+                                </template>
+                            </ul>
+                        </div>
+
+                        <!-- Remediation -->
+                        <div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></div>
+                                <h5 class="font-bold text-[#334155] text-xs uppercase tracking-wide">Langkah Penyelesaian</h5>
+                            </div>
+                            <ol class="space-y-2 pl-1">
+                                <template x-for="(step, index) in modalData.steps" :key="index">
+                                    <li class="flex gap-3 text-sm text-[#334155]">
+                                        <span class="flex-shrink-0 w-5 h-5 rounded bg-[#BFDBFE] text-[#1E40AF] text-[10px] flex items-center justify-center font-bold" x-text="index + 1"></span>
+                                        <span x-text="step" class="pt-0.5"></span>
+                                    </li>
+                                </template>
+                            </ol>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function operationsDashboard() {
+    return {
+        workload: {},
+        exceptions: {},
+        exceptionItems: [],
+        currentExceptionType: 'overdue',
+        modalOpen: false,
+        modalData: {},
+        modalLoading: false,
+        modalExceptionItems: [],
+
+        exceptionDetails: {
+            overdue: {
+                type: 'overdue',
+                title: 'Overdue Road Plans',
+                subtitle: 'Pekerjaan yang melewati jadwal',
+                color: 'bg-red-100 text-red-600',
+                causes: [
+                    'Teknisi terlambat mulai pekerjaan (delayed check-in)',
+                    'Pekerjaan membutuhkan waktu lebih lama dari estimasi',
+                    'Teknisi tidak hadir/sakit tanpa koordinasi pergantian',
+                    'Pelanggan membatalkan/reschedule mendadak tanpa update sistem',
+                    'Masalah logistik (spare part tidak tersedia, traffic padat)'
+                ],
+                steps: [
+                    'Hubungi teknisi via WhatsApp/telepon untuk konfirmasi progress terkini',
+                    'Jika masih on-site: minta estimasi waktu selesai dan update status di sistem',
+                    'Jika belum mulai: reschedule ke tanggal terdekat atau assign teknisi pengganti',
+                    'Update status di sistem (cancel/reschedule) dan dokumentasikan reason',
+                    'Follow-up dengan pelanggan untuk konfirmasi jadwal baru (jika reschedule)'
+                ]
+            },
+            missing_checkout: {
+                type: 'missing_checkout',
+                title: 'Missing Check-out',
+                subtitle: 'Teknisi belum check-out setelah >4 jam',
+                color: 'bg-orange-100 text-orange-600',
+                causes: [
+                    'Teknisi lupa melakukan check-out di aplikasi setelah selesai',
+                    'Masalah teknis aplikasi mobile (GPS error, crash)',
+                    'Teknisi masih on-site (pekerjaan kompleks memakan waktu lama)',
+                    'Internet/sinyal lemah saat hendak check-out',
+                    'Multiple visits berturut-turut menyebabkan teknisi skip check-out'
+                ],
+                steps: [
+                    'Telepon teknisi untuk konfirmasi: apakah sudah selesai atau masih on-site',
+                    'Jika sudah selesai: minta teknisi check-out manual via aplikasi SEGERA',
+                    'Jika masih on-site: catat estimasi waktu selesai, biarkan sistem running',
+                    'Jika masalah teknis: lakukan manual check-out dari backend dengan approval supervisor',
+                    'Dokumentasikan reason untuk audit trail (foto bukti/screenshot jika perlu)'
+                ]
+            },
+            short_visit: {
+                type: 'short_visit',
+                title: 'Short Visits (<5 min)',
+                subtitle: 'Kunjungan terlalu singkat, kemungkinan tidak valid',
+                color: 'bg-yellow-100 text-yellow-600',
+                causes: [
+                    'Teknisi hanya check-in/out tanpa perform actual service',
+                    'GPS spoofing atau fake location',
+                    'Pelanggan tidak di tempat, teknisi langsung pulang',
+                    'Pekerjaan sudah selesai sebelumnya (duplikat visit)',
+                    'Error sistem (double check-in/out dalam waktu dekat)'
+                ],
+                steps: [
+                    'Review GPS coordinates: bandingkan dengan lokasi customer sebenarnya',
+                    'Check foto bukti pekerjaan di t_visit_data (foto_display, foto_kompetitor)',
+                    'Hubungi teknisi untuk klarifikasi: apa yang dilakukan di lokasi?',
+                    'Jika valid (misal customer tidak ada): tandai sebagai "No Show" dan reschedule',
+                    'Jika invalid/fraud: eskalasi ke supervisor untuk investigasi dan tindakan disipliner'
+                ]
+            },
+            cancelled: {
+                type: 'cancelled',
+                title: 'Cancelled Visits',
+                subtitle: 'Pekerjaan dibatalkan minggu ini',
+                color: 'bg-slate-100 text-slate-600',
+                causes: [
+                    'Request dari pelanggan (jadwal bentrok, sudah tidak membutuhkan service)',
+                    'Teknisi tidak available (sakit, cuti mendadak)',
+                    'Masalah operasional (spare part habis, kendaraan rusak)',
+                    'Cuaca ekstrem atau kondisi force majeure',
+                    'Duplikasi data atau error input'
+                ],
+                steps: [
+                    'Verifikasi alasan pembatalan dengan pihak terkait (customer/teknisi)',
+                    'Jika dari customer: reschedule ke tanggal yang mereka inginkan',
+                    'Jika dari internal: assign teknisi lain atau jadwalkan ulang dengan teknisi sama',
+                    'Update status di sistem dengan reason yang jelas',
+                    'Monitor trend: jika satu customer sering cancel, investigasi lebih lanjut'
+                ]
+            }
+        },
+
+        async loadData() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+
+            const [workloadRes, exRes, overdueRes] = await Promise.all([
+                _fetch('/api/v1/enterprise/operations/workload'),
+                _fetch('/api/v1/enterprise/operations/exceptions'),
+                _fetch('/api/v1/enterprise/operations/exceptions/table?type=overdue&per_page=20'),
+            ]);
+            const [workloadData, exData, overdueData] = await Promise.all([
+                workloadRes.json(), exRes.json(), overdueRes.json(),
+            ]);
+
+            this.workload = workloadData.workload || {};
+            this.exceptions = exData.exceptions || {};
+            this.currentExceptionType = 'overdue';
+            this.exceptionItems = overdueData.items || [];
+
+            window.addEventListener('refresh-data', () => this.loadData());
+        },
+
+        async loadExceptions(type) {
+            this.currentExceptionType = type;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch(`/api/v1/enterprise/operations/exceptions/table?type=${type}&per_page=20`);
+            const data = await res.json();
+            this.exceptionItems = data.items || [];
+        },
+
+        showExceptionModal(type) {
+            console.log('showExceptionModal called with type:', type);
+            this.modalData = this.exceptionDetails[type] || {};
+            console.log('modalData:', this.modalData);
+            this.modalOpen = true;
+            console.log('modalOpen set to:', this.modalOpen);
+            this.modalLoading = true;
+            this.modalExceptionItems = [];
+            
+            // Fetch actual exception items
+            const _fetch2 = window.SanoCareAuth?.authenticatedFetch || fetch;
+            _fetch2(`/api/v1/enterprise/operations/exceptions/table?type=${type}&per_page=50`)
+                .then(res => res.json())
+                .then(data => {
+                    console.log('Fetched exception items:', data.items?.length || 0);
+                    this.modalExceptionItems = data.items || [];
+                    this.modalLoading = false;
+                })
+                .catch(err => {
+                    console.error('Error loading exception items:', err);
+                    this.modalLoading = false;
+                });
+        }
+    }
+}
+</script>
+{% endblock %}

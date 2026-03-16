@@ -1,0 +1,251 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Notification Center{% endblock %}
+
+{% block content %}
+<div x-data="notificationCenter()" x-init="init()" class="p-6 max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Notification Center</h1>
+            <p class="text-sm text-gray-500 mt-1">Alerts, reminders & action items</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <button @click="markAllRead()" :disabled="summary.unread === 0"
+                    class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Mark All Read
+            </button>
+            <button @click="generateNotifications()" :disabled="generating"
+                    class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2">
+                <svg x-show="generating" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span x-text="generating ? 'Generating...' : 'Generate Notifications'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Badges -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-gray-400 uppercase">Total</p>
+            <p class="text-2xl font-bold text-gray-900 mt-1" x-text="summary.total || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-blue-500 uppercase">Unread</p>
+            <p class="text-2xl font-bold text-blue-600 mt-1" x-text="summary.unread || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-red-500 uppercase">Complaints</p>
+            <p class="text-2xl font-bold text-red-600 mt-1" x-text="summary.complaint_overdue || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-yellow-500 uppercase">Contracts</p>
+            <p class="text-2xl font-bold text-yellow-600 mt-1" x-text="summary.contract_expiring || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-orange-500 uppercase">Performance</p>
+            <p class="text-2xl font-bold text-orange-600 mt-1" x-text="summary.low_performance || 0"></p>
+        </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="flex gap-2 mb-4">
+        <button @click="filter = 'all'; loadNotifications()"
+                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                :class="filter === 'all' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+            All
+        </button>
+        <button @click="filter = 'unread'; loadNotifications()"
+                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                :class="filter === 'unread' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+            Unread
+            <span x-show="summary.unread > 0" class="w-5 h-5 rounded-full text-xs flex items-center justify-center"
+                  :class="filter === 'unread' ? 'bg-white text-orange-600' : 'bg-orange-500 text-white'"
+                  x-text="summary.unread"></span>
+        </button>
+    </div>
+
+    <!-- Notification Cards -->
+    <div class="space-y-3">
+        <template x-for="n in notifications" :key="n.id">
+            <div class="bg-white rounded-xl border shadow-sm p-5 flex items-start gap-4 transition-all hover:shadow-md"
+                 :class="!n.read_at ? 'border-l-4 border-l-blue-400' : ''">
+                <!-- Category badge icon -->
+                <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                     :class="categoryStyle(n.category).bg">
+                    <svg class="w-5 h-5" :class="categoryStyle(n.category).text" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path x-show="n.category === 'contract_expiring'" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        <path x-show="n.category === 'complaint_overdue'" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        <path x-show="n.category === 'low_performance'" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/>
+                        <path x-show="n.category === 'missed_visits'" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                        <path x-show="!['contract_expiring','complaint_overdue','low_performance','missed_visits'].includes(n.category)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                    </svg>
+                </div>
+
+                <!-- Content -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-start justify-between gap-2">
+                        <div>
+                            <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase mb-1"
+                                  :class="categoryStyle(n.category).badge"
+                                  x-text="categoryLabel(n.category)"></span>
+                            <h4 class="text-sm font-semibold text-gray-900" x-text="n.title"></h4>
+                        </div>
+                        <span class="text-xs text-gray-400 whitespace-nowrap" x-text="formatTime(n.created_at)"></span>
+                    </div>
+                    <p class="text-sm text-gray-600 mt-1" x-text="n.message"></p>
+                    <div class="flex items-center gap-3 mt-2" x-show="n.reference_type">
+                        <span class="text-xs text-gray-400" x-text="(n.reference_type || '') + ' #' + (n.reference_id || '')"></span>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex-shrink-0">
+                    <button x-show="!n.read_at" @click="markRead(n)"
+                            class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                            title="Mark as read">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <span x-show="n.read_at" class="p-2 inline-block text-green-400" title="Read">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    </span>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="notifications.length === 0 && !loading" class="text-center py-16 text-gray-400">
+        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <p class="text-lg">No notifications</p>
+        <p class="text-sm mt-1">Click "Generate Notifications" to scan for alerts</p>
+    </div>
+
+    <!-- Loading overlay -->
+    <div x-show="loading" class="fixed inset-0 bg-white/50 z-10 flex items-center justify-center" x-cloak>
+        <div class="bg-white rounded-xl shadow-lg p-6 flex items-center gap-3">
+            <svg class="animate-spin w-5 h-5 text-orange-500" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span class="text-sm text-gray-600">Loading notifications...</span>
+        </div>
+    </div>
+</div>
+
+<script>
+function notificationCenter() {
+    return {
+        notifications: [],
+        summary: { total: 0, unread: 0, complaint_overdue: 0, contract_expiring: 0, low_performance: 0 },
+        filter: 'all',
+        loading: false,
+        generating: false,
+
+        async init() {
+            await this.loadAll();
+            window.addEventListener('refresh-data', () => this.loadAll());
+        },
+
+        async loadAll() {
+            this.loading = true;
+            await Promise.all([this.loadNotifications(), this.loadSummary()]);
+            this.loading = false;
+        },
+
+        async loadNotifications() {
+            try {
+                const params = this.filter === 'unread' ? '?unread=true' : '';
+                const resp = await authenticatedFetch('/api/v1/enterprise/notifications' + params);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.notifications = data.notifications || [];
+                }
+            } catch (e) { console.error('Failed to load notifications:', e); }
+        },
+
+        async loadSummary() {
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/notifications/summary');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.summary = data.summary || this.summary;
+                }
+            } catch (e) { console.error('Failed to load summary:', e); }
+        },
+
+        async markRead(n) {
+            try {
+                const resp = await authenticatedFetch(`/api/v1/enterprise/notifications/${n.id}/read`, {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+                });
+                if (resp.ok) {
+                    n.read_at = new Date().toISOString();
+                    if (this.summary.unread > 0) this.summary.unread--;
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async markAllRead() {
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/notifications/read-all', {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+                });
+                if (resp.ok) {
+                    this.notifications.forEach(n => n.read_at = n.read_at || new Date().toISOString());
+                    this.summary.unread = 0;
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async generateNotifications() {
+            this.generating = true;
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/notifications/generate', {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+                });
+                if (resp.ok) {
+                    await this.loadAll();
+                }
+            } catch (e) { console.error(e); }
+            this.generating = false;
+        },
+
+        categoryStyle(cat) {
+            const styles = {
+                contract_expiring: { bg: 'bg-yellow-100', text: 'text-yellow-600', badge: 'bg-yellow-100 text-yellow-700' },
+                complaint_overdue: { bg: 'bg-red-100', text: 'text-red-600', badge: 'bg-red-100 text-red-700' },
+                low_performance:   { bg: 'bg-orange-100', text: 'text-orange-600', badge: 'bg-orange-100 text-orange-700' },
+                missed_visits:     { bg: 'bg-purple-100', text: 'text-purple-600', badge: 'bg-purple-100 text-purple-700' }
+            };
+            return styles[cat] || { bg: 'bg-gray-100', text: 'text-gray-600', badge: 'bg-gray-100 text-gray-700' };
+        },
+
+        categoryLabel(cat) {
+            const labels = {
+                contract_expiring: 'Contract',
+                complaint_overdue: 'Complaint',
+                low_performance: 'Performance',
+                missed_visits: 'Missed Visit'
+            };
+            return labels[cat] || cat || 'General';
+        },
+
+        formatTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            const now = new Date();
+            const diffH = Math.floor((now - d) / 3600000);
+            if (diffH < 1) return 'Just now';
+            if (diffH < 24) return diffH + 'h ago';
+            const diffD = Math.floor(diffH / 24);
+            if (diffD < 7) return diffD + 'd ago';
+            return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+        }
+    };
+}
+</script>
+{% endblock %}

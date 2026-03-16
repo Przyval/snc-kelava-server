@@ -1,0 +1,244 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Notulen Rapat{% endblock %}
+
+{% block content %}
+<div x-data="momDashboard()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Notulen Rapat (MOM)</h1>
+            <p class="text-slate-500 text-sm">Rekam, transkripsi, dan distribusi otomatis</p>
+        </div>
+        <button @click="showCreateModal = true"
+                class="px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] transition-colors flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Meeting Baru
+        </button>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Total Meeting</p>
+            <p class="text-xl font-bold text-slate-900 mt-1" x-text="stats.total || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-4">
+            <p class="text-[10px] font-medium text-emerald-500 uppercase">Siap Kirim</p>
+            <p class="text-xl font-bold text-emerald-600 mt-1" x-text="stats.ready || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
+            <p class="text-[10px] font-medium text-blue-500 uppercase">Sudah Terkirim</p>
+            <p class="text-xl font-bold text-blue-600 mt-1" x-text="stats.sent || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-amber-200 p-4">
+            <p class="text-[10px] font-medium text-amber-500 uppercase">Draft</p>
+            <p class="text-xl font-bold text-amber-600 mt-1" x-text="stats.draft || 0"></p>
+        </div>
+    </div>
+
+    <!-- Meetings Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <!-- Search -->
+        <div class="p-4 border-b border-slate-100">
+            <input type="text" x-model="search" placeholder="Cari judul meeting..."
+                   @input.debounce.300ms="page = 1; loadMeetings()"
+                   class="w-full max-w-sm px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+        </div>
+
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-left">
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Tanggal</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Judul</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Lokasi</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Detail</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+                <template x-for="m in meetings" :key="m.id">
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-4 py-3 text-slate-600 whitespace-nowrap" x-text="formatDate(m.meeting_date)"></td>
+                        <td class="px-4 py-3">
+                            <p class="font-medium text-slate-800" x-text="m.title"></p>
+                            <p class="text-xs text-slate-400" x-text="m.created_by_name || ''"></p>
+                        </td>
+                        <td class="px-4 py-3 text-slate-600" x-text="m.location || '-'"></td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-1 rounded text-xs font-bold"
+                                  :class="{
+                                      'bg-slate-100 text-slate-500': m.status === 'draft',
+                                      'bg-blue-100 text-blue-700': m.status === 'uploaded',
+                                      'bg-amber-100 text-amber-700': m.status === 'transcribing' || m.status === 'summarizing',
+                                      'bg-purple-100 text-purple-700': m.status === 'transcribed',
+                                      'bg-emerald-100 text-emerald-700': m.status === 'ready',
+                                      'bg-green-100 text-green-700': m.status === 'sent'
+                                  }"
+                                  x-text="statusLabel(m.status)"></span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-1">
+                                <span class="text-xs text-slate-400" x-text="(m.action_count || 0) + ' items'"></span>
+                                <template x-if="m.sent_count > 0">
+                                    <span class="text-xs text-green-500 ml-1" x-text="'(' + m.sent_count + ' sent)'"></span>
+                                </template>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <a :href="'/enterprise/mom/' + m.id"
+                               class="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-[#F97316] hover:text-white transition-colors">
+                                Buka
+                            </a>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+
+        <div x-show="meetings.length === 0" class="px-6 py-12 text-center text-slate-400">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+            <p class="text-sm font-medium">Belum ada meeting</p>
+            <p class="text-xs mt-1">Klik "Meeting Baru" untuk memulai</p>
+        </div>
+
+        <!-- Pagination -->
+        <div x-show="pagination.total > pagination.per_page" class="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
+            <p class="text-sm text-slate-500" x-text="'Halaman ' + page + ' dari ' + Math.ceil(pagination.total / pagination.per_page)"></p>
+            <div class="flex gap-2">
+                <button @click="page--; loadMeetings()" :disabled="page <= 1"
+                        class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50">Prev</button>
+                <button @click="page++; loadMeetings()" :disabled="page * pagination.per_page >= pagination.total"
+                        class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Meeting Modal -->
+    <div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showCreateModal = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
+            <h2 class="text-lg font-bold text-slate-900 mb-4">Meeting Baru</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Judul Meeting *</label>
+                    <input type="text" x-model="newMeeting.title" placeholder="Contoh: Review Operasional Pakuwon Q1"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Tanggal</label>
+                        <input type="date" x-model="newMeeting.meeting_date"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Lokasi</label>
+                        <input type="text" x-model="newMeeting.location" placeholder="Kantor / Online"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Peserta (pisahkan dengan koma)</label>
+                    <input type="text" x-model="newMeeting.participantsStr" placeholder="Nama 1, Nama 2, Nama 3"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showCreateModal = false" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Batal</button>
+                <button @click="createMeeting()" :disabled="!newMeeting.title || creating"
+                        class="px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] disabled:opacity-50 transition-colors">
+                    <span x-show="!creating">Buat Meeting</span>
+                    <span x-show="creating">Menyimpan...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function momDashboard() {
+    return {
+        meetings: [],
+        stats: {},
+        search: '',
+        page: 1,
+        pagination: { total: 0, per_page: 20 },
+        showCreateModal: false,
+        creating: false,
+        newMeeting: {
+            title: '',
+            meeting_date: new Date().toISOString().split('T')[0],
+            location: '',
+            participantsStr: ''
+        },
+
+        async init() {
+            await this.loadMeetings();
+        },
+
+        async loadMeetings() {
+            try {
+                const params = new URLSearchParams({ page: this.page, per_page: 20 });
+                if (this.search) params.set('search', this.search);
+
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/mom/meetings?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.meetings = data.meetings || [];
+                    this.pagination = data.pagination || { total: 0, per_page: 20 };
+
+                    // Calculate stats
+                    this.stats = {
+                        total: this.pagination.total,
+                        draft: this.meetings.filter(m => ['draft','uploaded'].includes(m.status)).length,
+                        ready: this.meetings.filter(m => m.status === 'ready').length,
+                        sent: this.meetings.filter(m => m.status === 'sent').length,
+                    };
+                }
+            } catch (e) { console.error('Load meetings error:', e); }
+        },
+
+        async createMeeting() {
+            if (!this.newMeeting.title) return;
+            this.creating = true;
+            try {
+                const participants = this.newMeeting.participantsStr
+                    ? this.newMeeting.participantsStr.split(',').map(s => s.trim()).filter(Boolean)
+                    : [];
+
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/mom/meetings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: this.newMeeting.title,
+                        meeting_date: this.newMeeting.meeting_date,
+                        location: this.newMeeting.location,
+                        participants: participants
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.showCreateModal = false;
+                    this.newMeeting = { title: '', meeting_date: new Date().toISOString().split('T')[0], location: '', participantsStr: '' };
+                    window.location.href = '/enterprise/mom/' + data.meeting.id;
+                }
+            } catch (e) { console.error('Create error:', e); }
+            this.creating = false;
+        },
+
+        statusLabel(s) {
+            const map = { draft: 'Draft', uploaded: 'Audio Ready', transcribing: 'Transkripsi...', transcribed: 'Transkripsi OK', summarizing: 'Meringkas...', ready: 'Siap Kirim', sent: 'Terkirim' };
+            return map[s] || s;
+        },
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+    }
+}
+</script>
+{% endblock %}

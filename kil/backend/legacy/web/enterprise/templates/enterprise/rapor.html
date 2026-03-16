@@ -1,0 +1,196 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Rapor Teknisi{% endblock %}
+
+{% block content %}
+<div x-data="raporList()" x-init="loadData()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-[#0F172A]">Rapor Kinerja Teknisi</h1>
+            <p class="text-sm text-[#64748B]">Pilih teknisi untuk melihat rapor kinerja lengkap.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <select x-model="filterSegment" @change="filterData()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm">
+                <option value="">Semua Segment</option>
+                <option value="MOBILE">Mobile</option>
+                <option value="STATION">Station</option>
+                <option value="SUPPORT">Support</option>
+                <option value="SUPERVISOR">Supervisor</option>
+            </select>
+            <div class="relative">
+                <input type="text" x-model="search" @input="filterData()" placeholder="Cari nama teknisi..."
+                       class="pl-9 pr-3 py-2 rounded-lg border border-[#E2E8F0] text-sm w-56 focus:ring-[#F97316] focus:border-[#F97316]">
+                <svg class="w-4 h-4 absolute left-3 top-2.5 text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="grid grid-cols-5 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-[#E2E8F0] p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="stats.total"></p>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Total Teknisi</p>
+        </div>
+        <div class="bg-green-50 rounded-xl border border-green-200 p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-green-700" x-text="stats.gradeA"></p>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-green-600">Grade A</p>
+        </div>
+        <div class="bg-blue-50 rounded-xl border border-blue-200 p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-blue-700" x-text="stats.gradeB"></p>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-600">Grade B</p>
+        </div>
+        <div class="bg-amber-50 rounded-xl border border-amber-200 p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-amber-700" x-text="stats.gradeC"></p>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-amber-600">Grade C</p>
+        </div>
+        <div class="bg-red-50 rounded-xl border border-red-200 p-4 shadow-sm text-center">
+            <p class="text-2xl font-bold text-red-700" x-text="stats.gradeD"></p>
+            <p class="text-[10px] font-bold uppercase tracking-wider text-red-600">Grade D</p>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-12">
+        <div class="animate-spin w-8 h-8 border-2 border-[#F97316] border-t-transparent rounded-full mx-auto"></div>
+        <p class="text-sm text-[#64748B] mt-3">Memuat data rapor...</p>
+    </div>
+
+    <!-- Technician Cards Grid -->
+    <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="t in filtered" :key="t.id">
+            <a :href="'/enterprise/technicians/' + t.id + '/rapor'"
+               class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm hover:shadow-md hover:border-[#F97316]/30 transition-all group p-5 block">
+                <div class="flex items-start gap-4">
+                    <!-- Avatar -->
+                    <div class="w-12 h-12 rounded-full overflow-hidden bg-[#F1F5F9] border-2 border-[#E2E8F0] flex-shrink-0 relative">
+                        <img :src="'/enterprise/static/img/staff/' + t.id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="t.name">
+                        <span class="flex items-center justify-center w-full h-full text-lg font-bold text-[#475569]" x-text="t.name?.charAt(0) || '?'"></span>
+                    </div>
+                    <!-- Info -->
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-[#0F172A] text-sm truncate group-hover:text-[#F97316] transition-colors" x-text="t.name"></h3>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                  :class="{
+                                      'bg-blue-50 text-blue-600 border-blue-200': t.segment === 'MOBILE',
+                                      'bg-purple-50 text-purple-600 border-purple-200': t.segment === 'STATION',
+                                      'bg-teal-50 text-teal-600 border-teal-200': t.segment === 'SUPPORT',
+                                      'bg-amber-50 text-amber-600 border-amber-200': t.segment === 'SUPERVISOR',
+                                      'bg-slate-50 text-slate-500 border-slate-200': !t.segment || t.segment === 'UNASSIGNED',
+                                  }" x-text="t.segment || 'UNASSIGNED'"></span>
+                        </div>
+                        <!-- KPI Summary -->
+                        <div class="flex items-center gap-3 mt-2 text-[11px]">
+                            <span class="text-[#64748B]">Visit/day: <strong class="text-[#0F172A]" x-text="t.visits_per_day || '-'"></strong></span>
+                            <span class="text-[#64748B]">Compl: <strong class="text-[#0F172A]" x-text="(t.completion_rate || '-') + '%'"></strong></span>
+                        </div>
+                    </div>
+                    <!-- Grade Badge -->
+                    <div class="flex-shrink-0">
+                        <div class="w-11 h-11 rounded-full border-2 flex items-center justify-center text-lg font-black"
+                             :class="{
+                                 'bg-green-100 text-green-700 border-green-300': t.grade === 'A',
+                                 'bg-blue-100 text-blue-700 border-blue-300': t.grade === 'B',
+                                 'bg-amber-100 text-amber-700 border-amber-300': t.grade === 'C',
+                                 'bg-red-100 text-red-700 border-red-300': t.grade === 'D',
+                                 'bg-slate-100 text-slate-400 border-slate-200': !t.grade || t.grade === '-',
+                             }" x-text="t.grade || '-'"></div>
+                    </div>
+                </div>
+                <!-- Open Rapor CTA -->
+                <div class="mt-3 pt-3 border-t border-[#F1F5F9] flex items-center justify-between">
+                    <span class="text-[10px] text-[#94A3B8] uppercase tracking-wide">Lihat Rapor Lengkap</span>
+                    <svg class="w-4 h-4 text-[#94A3B8] group-hover:text-[#F97316] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </div>
+            </a>
+        </template>
+    </div>
+
+    <div x-show="!loading && filtered.length === 0" class="text-center py-12">
+        <p class="text-[#94A3B8] text-sm">Tidak ada teknisi ditemukan.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function raporList() {
+    return {
+        technicians: [],
+        filtered: [],
+        search: '',
+        filterSegment: '',
+        loading: true,
+        stats: { total: 0, gradeA: 0, gradeB: 0, gradeC: 0, gradeD: 0 },
+
+        async loadData() {
+            this.loading = true;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+
+            // Get leaderboard data (already has performance metrics)
+            const res = await _fetch('/api/v1/enterprise/technicians/leaderboard?limit=100');
+            const data = await res.json();
+            const lb = data.leaderboard || [];
+
+            // Calculate grades
+            this.technicians = lb.map(t => {
+                const m = t.metrics || {};
+                const vpd = parseFloat(m.visits_per_day) || 0;
+                const cr = parseFloat(m.completion_rate_pct) || 0;
+                const score = (vpd / 4 * 40) + (cr / 100 * 60);
+                let grade = 'D';
+                if (score >= 80) grade = 'A';
+                else if (score >= 65) grade = 'B';
+                else if (score >= 50) grade = 'C';
+
+                return {
+                    id: t.id,
+                    name: t.name,
+                    segment: t.segment || 'UNASSIGNED',
+                    visits_per_day: vpd.toFixed(1),
+                    completion_rate: cr.toFixed(0),
+                    total_visits: m.total_visits || 0,
+                    grade,
+                    score: Math.round(score),
+                };
+            });
+
+            // Sort by grade then name
+            this.technicians.sort((a, b) => {
+                const go = { A: 0, B: 1, C: 2, D: 3 };
+                if (go[a.grade] !== go[b.grade]) return go[a.grade] - go[b.grade];
+                return (a.name || '').localeCompare(b.name || '');
+            });
+
+            this.filterData();
+            this.loading = false;
+        },
+
+        filterData() {
+            let list = this.technicians;
+
+            if (this.filterSegment) {
+                list = list.filter(t => t.segment === this.filterSegment);
+            }
+
+            if (this.search) {
+                const q = this.search.toLowerCase();
+                list = list.filter(t => (t.name || '').toLowerCase().includes(q));
+            }
+
+            this.filtered = list;
+
+            // Calc stats from full list
+            this.stats = {
+                total: this.technicians.length,
+                gradeA: this.technicians.filter(t => t.grade === 'A').length,
+                gradeB: this.technicians.filter(t => t.grade === 'B').length,
+                gradeC: this.technicians.filter(t => t.grade === 'C').length,
+                gradeD: this.technicians.filter(t => t.grade === 'D').length,
+            };
+        },
+    }
+}
+</script>
+{% endblock %}

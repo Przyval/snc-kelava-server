@@ -1,0 +1,463 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Customers{% endblock %}
+
+{% block content %}
+<div x-data="customersDashboard()" x-init="loadData()">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Customers</h1>
+            <p class="text-slate-500 text-sm">Customer directory and 360 view</p>
+        </div>
+    </div>
+
+    <!-- Managerial Control Bar (Phase 11) -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+        <!-- Top Row: Primary Filters -->
+        <div class="flex flex-wrap gap-4 mb-4">
+            <!-- Search -->
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Search</label>
+                <div class="relative">
+                    <input type="text" x-model="filters.search" 
+                           placeholder="Name, code, or phone..."
+                           class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 text-sm focus:ring-orange-500 focus:border-orange-500">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Priority (The "Urgency" Filter) -->
+            <div class="w-40">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Priority</label>
+                <select x-model="filters.priority" 
+                        class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-orange-500 focus:border-orange-500 font-medium"
+                        :class="{
+                            'bg-red-50 text-red-700 border-red-200': filters.priority === 'P0',
+                            'bg-amber-50 text-amber-700 border-amber-200': filters.priority === 'P1'
+                        }">
+                    <option value="">All Priorities</option>
+                    <option value="P0">🔴 P0 - Critical</option>
+                    <option value="P1">🟠 P1 - Important</option>
+                    <option value="P2">🟡 P2 - Normal</option>
+                    <option value="P3">⚫ P3 - Low</option>
+                </select>
+            </div>
+
+            <!-- Status (The "Risk" Filter) -->
+            <div class="w-44">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Account Status</label>
+                <select x-model="filters.status" 
+                        class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-orange-500 focus:border-orange-500">
+                    <option value="">All Accounts</option>
+                    <option value="under_sla">✓ Under SLA</option>
+                    <option value="at_risk">⚠ At Risk</option>
+                    <option value="dormant">○ Dormant (60+)</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+            </div>
+
+            <!-- Segment (The "Value" Filter) -->
+            <div class="w-44">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Business Segment</label>
+                <select x-model="filters.segment" 
+                        class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-orange-500 focus:border-orange-500">
+                    <option value="">All Segments</option>
+                    <option value="REVENUE_CORE">💎 Revenue Core</option>
+                    <option value="STABLE_CORE">🛡️ Stable Core</option>
+                    <option value="REVENUE_RISK">📉 Revenue Risk</option>
+                    <option value="GROWTH">🚀 Growth</option>
+                    <option value="LOW_VALUE">⚪ Low Value</option>
+                    <option value="CHURNED">💀 Churned</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="h-px bg-slate-100 my-4"></div>
+
+        <!-- Bottom Row: Secondary Filters -->
+        <div class="flex flex-wrap items-end gap-4">
+            <!-- Overdue (Time) -->
+            <div class="w-36">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Time / Overdue</label>
+                <select x-model="filters.overdue" 
+                        class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-orange-500 focus:border-orange-500">
+                    <option value="">Any Time</option>
+                    <option value="7">> 7 Days</option>
+                    <option value="30">> 30 Days</option>
+                    <option value="90">> 90 Days</option>
+                </select>
+            </div>
+            
+            <!-- Owner -->
+            <div class="w-36">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Responsibility</label>
+                <select x-model="filters.owner" 
+                        class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-orange-500 focus:border-orange-500">
+                    <option value="">All Teams</option>
+                    <option value="OPS">🛠 Ops Team</option>
+                    <option value="SALES">💰 Sales Team</option>
+                </select>
+            </div>
+
+            <!-- Contract -->
+            <div class="w-36">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Contract</label>
+                <select x-model="filters.contract" 
+                        class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-orange-500 focus:border-orange-500">
+                    <option value="">All</option>
+                    <option value="active">Active Contract</option>
+                    <option value="no_contract">No Contract</option>
+                </select>
+            </div>
+
+             <!-- Frequency -->
+            <div class="w-36">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Frequency</label>
+                <select x-model="filters.frequency" 
+                        class="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs focus:ring-orange-500 focus:border-orange-500">
+                    <option value="">All</option>
+                    <option value="WEEKLY">Weekly</option>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="AD_HOC">Ad-hoc</option>
+                </select>
+            </div>
+
+            <div class="flex-1 text-right">
+                <button @click="resetFilters()" 
+                        class="text-xs text-slate-400 hover:text-slate-600 underline">
+                    Reset Filters
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Action Bar (Winback) -->
+    <div x-show="selectedIds.length > 0" x-cloak
+         class="fixed bottom-6 left-1/2 transform -translate-x-1/2 lg:ml-32 z-30
+                bg-slate-900 text-white rounded-xl shadow-2xl px-6 py-3 flex items-center gap-4">
+        <span class="text-sm font-medium" x-text="selectedIds.length + ' selected'"></span>
+        <div class="h-6 w-px bg-white/20"></div>
+        <button @click="startWinbackFromSelection()"
+                class="px-4 py-1.5 bg-[#F97316] rounded-lg text-sm font-medium hover:bg-[#EA580C] transition-colors flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Start Winback Campaign
+        </button>
+        <button @click="selectedIds = []" class="text-white/60 hover:text-white transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    <!-- Quick Winback Modal -->
+    <div x-show="showQuickWinback" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="showQuickWinback = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md" @click.stop>
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h3 class="font-bold text-slate-900">Quick Winback Campaign</h3>
+                <p class="text-xs text-slate-400 mt-1" x-text="selectedIds.length + ' customers selected'"></p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Campaign Name</label>
+                    <input type="text" x-model="quickWinback.name" placeholder="e.g. Feb 2026 Dormant Recovery"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Segment</label>
+                        <select x-model="quickWinback.target_segment"
+                                class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                            <option value="MIXED">Mixed</option>
+                            <option value="CHURNED">Churned</option>
+                            <option value="DORMANT">Dormant</option>
+                            <option value="LOW_VALUE">Low Value</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Team</label>
+                        <select x-model="quickWinback.assigned_team"
+                                class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                            <option value="SALES">Sales</option>
+                            <option value="SALES_CS">Sales + CS</option>
+                            <option value="OPS">Operations</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button @click="showQuickWinback = false"
+                        class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button @click="createQuickWinback()" :disabled="!quickWinback.name || creatingWinback"
+                        class="px-6 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] disabled:opacity-50">
+                    <span x-text="creatingWinback ? 'Creating...' : 'Create & Open'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <template x-for="customer in customers" :key="customer.id">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all block group relative overflow-hidden"
+               :class="{
+                   'border-l-4 border-l-red-500': customer.priority?.level === 'P0',
+                   'border-l-4 border-l-amber-500': customer.priority?.level === 'P1',
+                   'border-l-4 border-l-emerald-500': customer.priority?.level === 'P2',
+                   'border-l-4 border-l-slate-200': !customer.priority || customer.priority?.level === 'P3'
+               }">
+                
+                <!-- Selection Checkbox -->
+                <div class="absolute top-3 left-3 z-10" @click.stop>
+                    <input type="checkbox" :value="customer.id"
+                           x-model.number="selectedIds"
+                           class="rounded border-slate-300 text-[#F97316] focus:ring-[#F97316] w-4 h-4 cursor-pointer">
+                </div>
+
+                <!-- Card Body (clickable to detail) -->
+                <a :href="'/enterprise/customers/' + customer.id" class="block">
+                <div class="p-4 pl-10">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                            <!-- Avatar -->
+                            <div class="w-10 h-10 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold"
+                                 x-text="customer.name?.charAt(0) || '?'"></div>
+                            <div>
+                                <h3 class="font-semibold text-slate-900 leading-tight" x-text="customer.name"></h3>
+                                <p class="text-xs text-slate-400" x-text="customer.code"></p>
+                                
+                                <!-- Smart Status (Accusative) -->
+                                <div class="flex items-center gap-1.5 mt-1">
+                                    <span class="text-xs font-medium px-1.5 py-0.5 rounded flex items-center gap-1"
+                                          :class="{
+                                              'bg-red-50 text-red-700': customer.smart_status?.color === 'red',
+                                              'bg-amber-50 text-amber-700': customer.smart_status?.color === 'amber',
+                                              'bg-emerald-50 text-emerald-700': customer.smart_status?.color === 'emerald',
+                                              'bg-slate-100 text-slate-600': customer.smart_status?.color === 'slate'
+                                          }">
+                                        <span x-text="customer.smart_status?.icon"></span>
+                                        <span x-text="customer.smart_status?.label"></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Priority Badge -->
+                        <div class="flex flex-col items-end gap-1">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold border"
+                                  :class="{
+                                      'bg-red-100 text-red-700 border-red-200': customer.priority?.level === 'P0',
+                                      'bg-amber-100 text-amber-700 border-amber-200': customer.priority?.level === 'P1',
+                                      'bg-emerald-100 text-emerald-700 border-emerald-200': customer.priority?.level === 'P2',
+                                      'bg-slate-50 text-slate-400 border-slate-200': !customer.priority || customer.priority?.level === 'P3'
+                                  }"
+                                  x-text="customer.priority?.level || 'P3'"></span>
+                            
+                            <!-- Owner Hint -->
+                            <span class="text-[10px] text-slate-400 flex items-center gap-1" x-show="customer.owner_hint && customer.owner_hint !== 'SYSTEM'">
+                                <span x-text="customer.owner_hint?.startsWith('SALES') ? '💰' : '🛠'"></span>
+                                <span x-text="customer.owner_hint?.replace('_', ' ')"></span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Metrics / Context -->
+                    <div class="grid grid-cols-2 gap-2 text-xs mt-3 pt-3 border-t border-slate-50">
+                       <div>
+                           <span class="text-slate-400 block">Frequency</span>
+                           <span class="font-medium text-slate-700" x-text="customer.visit_frequency"></span>
+                       </div>
+                       <div>
+                           <span class="text-slate-400 block">Active Contract</span>
+                           <span class="font-medium" 
+                                 :class="customer.active_contracts > 0 ? 'text-emerald-600' : 'text-slate-400'"
+                                 x-text="customer.active_contracts > 0 ? 'Yes' : 'No'"></span>
+                       </div>
+                    </div>
+                </div>
+
+                <!-- Action Footer (The Nudge) -->
+                <div class="px-4 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                    <span class="text-[10px] text-slate-400">
+                         <template x-if="customer.days_ago !== null">
+                             <span x-text="customer.days_ago + ' days since visit'"></span>
+                         </template>
+                         <template x-if="customer.days_ago === null">
+                             <span>Never visited</span>
+                         </template>
+                    </span>
+
+                    <!-- Suggested Action Button -->
+                    <span class="text-xs font-medium px-2 py-1 rounded transition-colors flex items-center gap-1"
+                            :class="{
+                                'bg-red-100 text-red-700 hover:bg-red-200': customer.suggested_action?.type === 'urgent',
+                                'bg-amber-100 text-amber-700 hover:bg-amber-200': customer.suggested_action?.type === 'sales',
+                                'bg-blue-50 text-blue-600 hover:bg-blue-100': customer.suggested_action?.type === 'ops',
+                                'bg-slate-100 text-slate-600 hover:bg-slate-200': customer.suggested_action?.type === 'passive' || customer.suggested_action?.type === 'view'
+                            }">
+                        <span x-text="customer.suggested_action?.label || 'View'"></span>
+                        <span>→</span>
+                    </span>
+                </div>
+                </a>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="customers.length === 0" class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+        <p class="text-slate-500">No customers found</p>
+        <p class="text-xs text-slate-400 mt-1">Try adjusting your search or filters</p>
+    </div>
+
+    <!-- Pagination -->
+    <div x-show="pagination.total > pagination.per_page" class="flex items-center justify-between mt-4">
+        <p class="text-sm text-slate-500" x-text="'Showing ' + customers.length + ' of ' + pagination.total + ' customers'"></p>
+        <div class="flex gap-2">
+            <button @click="page--; loadData()" :disabled="page <= 1"
+                    class="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                Previous
+            </button>
+            <button @click="page++; loadData()" :disabled="page * pagination.per_page >= pagination.total"
+                    class="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                Next
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function customersDashboard() {
+    return {
+        customers: [],
+        segments: [],
+        // Winback batch selection
+        selectedIds: [],
+        showQuickWinback: false,
+        creatingWinback: false,
+        quickWinback: { name: '', target_segment: 'MIXED', assigned_team: 'SALES' },
+        // State
+        filters: {
+            search: '',
+            priority: '',
+            status: '',
+            segment: '',
+            overdue: '',
+            owner: '',
+            contract: '',
+            frequency: ''
+        },
+        page: 1,
+        pagination: { total: 0, per_page: 25 },
+
+        init() {
+            // Watch specific properties for changes
+            this.$watch('filters.search', () => this.debouncedLoad());
+            this.$watch('filters.priority', () => this.loadData());
+            this.$watch('filters.status', () => this.loadData());
+            this.$watch('filters.segment', () => this.loadData());
+            this.$watch('filters.overdue', () => this.loadData());
+            this.$watch('filters.owner', () => this.loadData());
+            this.$watch('filters.contract', () => this.loadData());
+            this.$watch('filters.frequency', () => this.loadData());
+            
+            this.loadData();
+        },
+
+        debouncedLoad: Alpine.debounce(function() {
+            this.page = 1; 
+            this.loadData();
+        }, 300),
+
+        async loadData() {
+            const params = new URLSearchParams({
+                page: this.page,
+                per_page: 25
+            });
+            
+            // Append all filters
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.priority) params.set('priority', this.filters.priority);
+            if (this.filters.status) params.set('status_filter', this.filters.status);
+            if (this.filters.segment) params.set('segment', this.filters.segment);
+            if (this.filters.overdue) params.set('overdue', this.filters.overdue);
+            if (this.filters.owner) params.set('owner', this.filters.owner);
+            if (this.filters.contract) params.set('contract', this.filters.contract);
+            if (this.filters.frequency) params.set('frequency', this.filters.frequency);
+
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/customers?${params}`);
+                if (!res.ok) throw new Error('Failed to fetch');
+                const data = await res.json();
+                this.customers = data.customers || [];
+                this.pagination = data.pagination || { total: 0, per_page: 25 };
+            } catch (err) {
+                console.error("Error loading customers:", err);
+            }
+        },
+
+        resetFilters() {
+            this.filters = {
+                search: '',
+                priority: '',
+                status: '',
+                segment: '',
+                overdue: '',
+                owner: '',
+                contract: '',
+                frequency: ''
+            };
+            this.page = 1;
+            this.loadData();
+        },
+
+        // Winback methods
+        startWinbackFromSelection() {
+            if (this.selectedIds.length === 0) return;
+            this.showQuickWinback = true;
+        },
+
+        async createQuickWinback() {
+            if (!this.quickWinback.name || this.selectedIds.length === 0) return;
+            this.creatingWinback = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/winback/campaigns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: this.quickWinback.name,
+                        target_segment: this.quickWinback.target_segment,
+                        assigned_team: this.quickWinback.assigned_team,
+                        customer_ids: this.selectedIds
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.showQuickWinback = false;
+                    this.selectedIds = [];
+                    if (data.campaign?.id) {
+                        window.location.href = '/enterprise/winback/' + data.campaign.id;
+                    }
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to create campaign');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                this.creatingWinback = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

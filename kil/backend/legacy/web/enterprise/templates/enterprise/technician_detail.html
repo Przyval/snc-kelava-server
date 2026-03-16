@@ -1,0 +1,433 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Technician Diagnostic Record{% endblock %}
+
+{% block content %}
+<div x-data="technicianDetail()" x-init="loadData()">
+    
+    <!-- Navigation & Context -->
+    <div class="flex items-center justify-between mb-6">
+        <a href="/enterprise/technicians" class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500 hover:text-slate-800 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            Operational Control
+        </a>
+        <div class="flex items-center gap-3">
+            <a :href="'/enterprise/technicians/' + techId + '/rapor'" class="px-3 py-1.5 rounded-lg bg-[#F97316] text-white text-xs font-bold hover:bg-[#EA580C] transition-colors flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                View Rapor
+            </a>
+            <span class="text-xs font-mono text-slate-400">ID: <span x-text="techId"></span></span>
+        </div>
+    </div>
+
+    <!-- Diagnostic Header -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div class="flex items-center gap-4">
+            <!-- Profile Photo -->
+            <div class="w-12 h-12 rounded-full overflow-hidden bg-slate-100 border border-slate-200 flex-shrink-0 relative">
+                <img :src="'/enterprise/static/img/staff/' + techId + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="technician.name">
+                <span class="flex items-center justify-center w-full h-full text-slate-600 font-bold text-lg" x-text="technician.name?.charAt(0) || '?'"></span>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h1 class="text-xl font-bold text-[#0F172A]" x-text="technician.name || 'Loading...'"></h1>
+                    <!-- Operational Status Codes -->
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Active
+                    </span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-slate-50 text-slate-600 border border-slate-200">
+                        Full-Time
+                    </span>
+                </div>
+                <div class="flex items-center gap-4 mt-1">
+                    <p class="text-xs text-slate-500 font-mono" x-text="technician.email || 'No email'"></p>
+                    <p class="text-xs text-slate-500 font-mono border-l border-slate-200 pl-4" x-text="technician.phone || 'No phone'"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk Profile -->
+        <div class="flex items-center gap-6 text-right">
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">Reliability Score</p>
+                <p class="text-lg font-bold text-[#0F172A]">98.2<span class="text-xs font-normal text-slate-400">%</span></p>
+            </div>
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">Data Quality</p>
+                <div class="flex items-center gap-1 justify-end">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span class="text-sm font-bold text-amber-700">Flagged</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnostic Matrix (The Cruel Truth) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <!-- Efficiency Deviation -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex justify-between items-start mb-2">
+                <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Efficiency Offset</p>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="(Math.round(performance.avg_duration_min || 0)) + 'm'"></p>
+            <div class="mt-2 flex items-center gap-2">
+                <span class="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                    +15m vs Fleet
+                </span>
+            </div>
+        </div>
+
+        <!-- Compliance Rate -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex justify-between items-start mb-2">
+                <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Protocol Adherence</p>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <p class="text-2xl font-bold text-[#0F172A]">94.5<span class="text-sm text-slate-400">%</span></p>
+            <p class="text-xs text-slate-500 mt-1">2 incidents pending review</p>
+        </div>
+
+        <!-- Visit Volume Load -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex justify-between items-start mb-2">
+                <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">30-Day Load</p>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            </div>
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="performance.total_visits || 0"></p>
+            <p class="text-xs text-emerald-600 font-medium mt-1">Within optimal range</p>
+        </div>
+
+        <!-- System Usage -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex justify-between items-start mb-2">
+                <p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">App Sync</p>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            </div>
+            <p class="text-xl font-bold text-[#0F172A]">14m ago</p>
+            <p class="text-xs text-slate-400 mt-1">v2.4.1 (Latest)</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Operational Audit Log (Left 2/3) -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                    <h3 class="font-bold text-[#0F172A] text-sm uppercase tracking-wide">Operational Audit Log</h3>
+                    <button class="text-xs font-medium text-slate-500 hover:text-blue-600">Export CSV</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th class="px-4 py-3 text-left font-semibold">Timeline</th>
+                                <th class="px-4 py-3 text-left font-semibold">Job Context</th>
+                                <th class="px-4 py-3 text-left font-semibold">Execution</th>
+                                <th class="px-4 py-3 text-right font-semibold">Variance</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="visit in recentVisits" :key="visit.id">
+                                <tr class="hover:bg-slate-50 transition-colors group">
+                                    <td class="px-4 py-3 align-top">
+                                        <div class="flex flex-col">
+                                            <span class="font-bold text-[#0F172A]" x-text="visit.realization_date"></span>
+                                            <span class="text-xs text-slate-400 font-mono" x-text="visit.no_ra"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 align-top">
+                                        <div class="flex flex-col">
+                                            <span class="font-medium text-slate-700" x-text="visit.customer_name"></span>
+                                            <span class="text-xs text-slate-500" x-text="visit.type"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 align-top">
+                                        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                            <span class="text-slate-400">In:</span>
+                                            <span class="font-mono text-slate-700" x-text="visit.check_in ? visit.check_in.substring(11, 16) : '—'"></span>
+                                            <span class="text-slate-400">Out:</span>
+                                            <span class="font-mono text-slate-700" x-text="visit.check_out ? visit.check_out.substring(11, 16) : '—'"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 align-top text-right">
+                                        <template x-if="visit.duration_min">
+                                            <div class="flex flex-col items-end gap-1">
+                                                <span class="font-mono font-bold text-slate-700" x-text="visit.duration_min + 'm'"></span>
+                                                <!-- Deviation Flags -->
+                                                <span x-show="visit.duration_min < 15" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">Short Visit</span>
+                                                <span x-show="visit.duration_min > 120" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">Long Duration</span>
+                                            </div>
+                                        </template>
+                                        <span x-show="!visit.duration_min" class="text-slate-400 italic text-xs">Incomplete</span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Accountability Log (Right 1/3) -->
+        <div class="space-y-6">
+            
+            <!-- Open Issues (Escalation Policy) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" x-show="openIssues.length > 0">
+                <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                    <h3 class="font-bold text-[#0F172A] text-xs uppercase tracking-wide flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                        Open Issues
+                    </h3>
+                    <span class="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded border" x-text="openIssues.length"></span>
+                </div>
+                <div class="divide-y divide-slate-100">
+                    <template x-for="issue in openIssues" :key="issue.id">
+                        <div class="p-4 hover:bg-slate-50 transition-colors">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <!-- Severity Badge -->
+                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                                              :class="{
+                                                  'bg-amber-100 text-amber-800 border border-amber-200': issue.severity === 'review',
+                                                  'bg-orange-100 text-orange-800 border border-orange-200': issue.severity === 'warning',
+                                                  'bg-red-100 text-red-800 border border-red-200': issue.severity === 'escalated'
+                                              }"
+                                              x-text="issue.severity"></span>
+                                        <span class="text-xs font-medium text-slate-700" x-text="issueTypeLabel(issue.issue_type)"></span>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400">
+                                        Open <span x-text="Math.round(issue.hours_open || 0)"></span>h
+                                    </p>
+                                </div>
+                                <button @click="openResolveModal(issue)" 
+                                        class="px-2 py-1 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors">
+                                    Resolve
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Supervisory Actions -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="font-bold text-[#0F172A] text-sm uppercase tracking-wide mb-4">Supervisory Actions</h3>
+                <div class="space-y-6">
+                    <template x-for="action in issueActions" :key="action.id">
+                        <div class="relative pl-6 border-l-2 border-slate-200 pb-2">
+                            <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-white"
+                                 :class="{
+                                     'bg-emerald-500': action.action_type === 'resolved',
+                                     'bg-amber-500': action.action_type === 'escalated' || action.action_type === 'auto_escalated',
+                                     'bg-slate-300': action.action_type === 'note_added' || action.action_type === 'created'
+                                 }"></div>
+                            <p class="text-xs text-slate-400 font-mono mb-1" x-text="formatDate(action.created_at)"></p>
+                            <p class="text-sm font-medium text-[#0F172A]" x-text="action.action_type.replace('_', ' ').toUpperCase()"></p>
+                            <p class="text-xs text-slate-600 mt-1" x-text="action.note"></p>
+                            <div class="mt-2 flex items-center gap-2">
+                                <span class="text-[10px] font-bold px-1.5 rounded"
+                                      :class="action.actor_name === 'System' ? 'text-amber-700 bg-amber-50 border border-amber-100' : 'text-slate-500 bg-slate-100'"
+                                      x-text="action.actor_name === 'System' ? 'Automated' : 'Manual'"></span>
+                                <span class="text-[10px] text-slate-400" x-text="'by ' + action.actor_name"></span>
+                            </div>
+                        </div>
+                    </template>
+                    
+                    <!-- Fallback if no actions -->
+                    <div x-show="issueActions.length === 0" class="text-center py-6 text-slate-400 text-xs">
+                        No supervisory actions recorded yet.
+                    </div>
+                </div>
+                <button @click="addNoteModalOpen = true" class="w-full mt-6 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 font-medium hover:bg-slate-50 transition-colors">
+                    + Log New Action
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function technicianDetail() {
+    return {
+        techId: {{ tech_id }},
+        technician: {},
+        performance: {},
+        recentVisits: [],
+        
+        // Escalation Policy State
+        openIssues: [],
+        issueActions: [],
+        resolveModalOpen: false,
+        addNoteModalOpen: false,
+        selectedIssue: null,
+        resolutionType: 'resolved',
+        resolutionNote: '',
+        isSubmitting: false,
+        
+        issueTypeLabels: {
+            'low_volume': 'Low Volume',
+            'slow_duration': 'Slow Duration',
+            'low_completion': 'Low Completion',
+            'protocol_violation': 'Protocol Violation'
+        },
+        
+        issueTypeLabel(type) {
+            return this.issueTypeLabels[type] || type;
+        },
+        
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        },
+
+        async loadData() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                // Load technician data + issues in parallel
+                const [res, issueRes] = await Promise.all([
+                    _fetch(`/api/v1/enterprise/technicians/${this.techId}`),
+                    _fetch(`/api/v1/enterprise/technician-issues/technician/${this.techId}`).catch(() => null),
+                ]);
+
+                if (!res.ok) throw new Error('Failed to load data');
+                const data = await res.json();
+                this.technician = data.technician || {};
+                this.performance = data.performance_30d || {};
+                this.recentVisits = data.recent_visits || [];
+
+                // Process issues
+                if (issueRes && issueRes.ok) {
+                    const issueData = await issueRes.json();
+                    this.openIssues = (issueData.issues || []).filter(i => i.status === 'open');
+
+                    // Load actions for all issues in parallel
+                    const actionResults = await Promise.all(
+                        (issueData.issues || []).map(issue =>
+                            _fetch(`/api/v1/enterprise/technician-issues/${issue.id}`)
+                                .then(r => r.ok ? r.json() : {})
+                                .catch(() => ({}))
+                        )
+                    );
+                    const allActions = actionResults.flatMap(d => d.actions || []);
+                    this.issueActions = allActions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                }
+            } catch (err) {
+                console.error('Error loading technician details:', err);
+            }
+        },
+        
+        openResolveModal(issue) {
+            this.selectedIssue = issue;
+            this.resolutionType = 'resolved';
+            this.resolutionNote = '';
+            this.resolveModalOpen = true;
+        },
+        
+        async submitResolution() {
+            if (!this.selectedIssue || this.resolutionNote.length < 10) {
+                alert('Resolution note must be at least 10 characters.');
+                return;
+            }
+            
+            this.isSubmitting = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/technician-issues/${this.selectedIssue.id}/resolve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        resolution_type: this.resolutionType,
+                        note: this.resolutionNote,
+                        actor_name: 'Supervisor'
+                    })
+                });
+                
+                if (res.ok) {
+                    this.resolveModalOpen = false;
+                    await this.loadIssues();
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to resolve issue');
+                }
+            } catch (err) {
+                console.error('Error resolving issue:', err);
+                alert('Failed to resolve issue');
+            } finally {
+                this.isSubmitting = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
+
+<!-- Resolution Modal -->
+<div x-show="resolveModalOpen" 
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+     @keydown.escape.window="resolveModalOpen = false">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" @click.away="resolveModalOpen = false">
+        <div class="p-6 border-b border-slate-100">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-lg text-[#0F172A]">Resolve Issue</h3>
+                <button @click="resolveModalOpen = false" class="text-slate-400 hover:text-slate-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="p-6 space-y-4">
+            <!-- Issue Info -->
+            <div class="bg-slate-50 rounded-lg p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                          :class="{
+                              'bg-amber-100 text-amber-800': selectedIssue?.severity === 'review',
+                              'bg-orange-100 text-orange-800': selectedIssue?.severity === 'warning',
+                              'bg-red-100 text-red-800': selectedIssue?.severity === 'escalated'
+                          }"
+                          x-text="selectedIssue?.severity"></span>
+                    <span class="text-sm font-medium" x-text="issueTypeLabel(selectedIssue?.issue_type)"></span>
+                </div>
+                <p class="text-xs text-slate-500">Open for <span x-text="Math.round(selectedIssue?.hours_open || 0)"></span> hours</p>
+            </div>
+            
+            <!-- Resolution Type -->
+            <div>
+                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Resolution Type</label>
+                <select x-model="resolutionType" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <option value="resolved">Resolved - Issue addressed</option>
+                    <option value="acknowledged">Acknowledged - Noted for monitoring</option>
+                    <option value="deferred">Deferred - Will address later</option>
+                    <option value="false_positive">False Positive - Not a real issue</option>
+                </select>
+            </div>
+            
+            <!-- Resolution Note -->
+            <div>
+                <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Resolution Note <span class="text-red-500">*</span></label>
+                <textarea x-model="resolutionNote" 
+                          rows="3" 
+                          placeholder="Describe the action taken or reason for this resolution (min 10 chars)..."
+                          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"></textarea>
+                <p class="text-xs text-slate-400 mt-1"><span x-text="resolutionNote.length"></span>/10 minimum characters</p>
+            </div>
+        </div>
+        <div class="p-6 border-t border-slate-100 flex justify-end gap-3">
+            <button @click="resolveModalOpen = false" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                Cancel
+            </button>
+            <button @click="submitResolution()" 
+                    :disabled="isSubmitting || resolutionNote.length < 10"
+                    class="px-4 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <span x-show="!isSubmitting">Confirm Resolution</span>
+                <span x-show="isSubmitting">Submitting...</span>
+            </button>
+        </div>
+    </div>
+</div>

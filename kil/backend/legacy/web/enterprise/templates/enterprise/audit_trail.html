@@ -1,0 +1,307 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Supervisory Audit Trail{% endblock %}
+
+{% block content %}
+<div x-data="auditDashboard()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Supervisory Audit Trail</h1>
+            <p class="text-slate-500 text-sm">Unified action log, escalations, and supervisory oversight</p>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Open Reviews</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1" x-text="dashboard.open_reviews?.total_open || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-red-200 p-4">
+            <p class="text-[10px] font-medium text-red-500 uppercase">Escalated</p>
+            <p class="text-2xl font-bold text-red-600 mt-1" x-text="dashboard.open_reviews?.escalated_count || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-amber-200 p-4">
+            <p class="text-[10px] font-medium text-amber-500 uppercase">Attention</p>
+            <p class="text-2xl font-bold text-amber-600 mt-1" x-text="dashboard.open_reviews?.attention_count || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
+            <p class="text-[10px] font-medium text-blue-500 uppercase">Watch</p>
+            <p class="text-2xl font-bold text-blue-600 mt-1" x-text="dashboard.open_reviews?.watch_count || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Actions (30d)</p>
+            <p class="text-2xl font-bold text-slate-700 mt-1" x-text="dashboard.recent_activity_30d || 0"></p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left: Escalation Queue -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Open Escalations -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-6 py-4 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Open Escalations</h3>
+                </div>
+                <div class="divide-y divide-slate-50">
+                    <template x-for="esc in dashboard.escalations" :key="esc.id">
+                        <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-50">
+                            <div class="flex items-center gap-3">
+                                <span class="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+                                      :class="{
+                                          'bg-red-100 text-red-700': esc.escalation_level === 'ESCALATED',
+                                          'bg-amber-100 text-amber-700': esc.escalation_level === 'ATTENTION',
+                                          'bg-blue-100 text-blue-700': esc.escalation_level === 'WATCH'
+                                      }"
+                                      x-text="esc.escalation_level?.charAt(0)"></span>
+                                <div>
+                                    <a :href="'/enterprise/customers/' + esc.id_customer"
+                                       class="font-medium text-slate-800 hover:text-[#F97316]"
+                                       x-text="esc.customer_name"></a>
+                                    <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                                        <span x-text="esc.customer_code"></span>
+                                        <span x-text="esc.escalation_level"></span>
+                                        <span x-text="esc.review_status"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs text-slate-400" x-text="esc.last_reviewer_name ? 'by ' + esc.last_reviewer_name : ''"></p>
+                                <p class="text-xs text-slate-400" x-text="formatDate(esc.last_review_at)"></p>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="!dashboard.escalations?.length" class="px-6 py-8 text-center text-slate-400">
+                        No open escalations
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unified Activity Feed -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-700">Activity Feed</h3>
+                    <div class="flex gap-2">
+                        <button @click="moduleFilter = ''; loadFeed()" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                                :class="moduleFilter === '' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'">All</button>
+                        <button @click="moduleFilter = 'governance'; loadFeed()" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                                :class="moduleFilter === 'governance' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'">Governance</button>
+                        <button @click="moduleFilter = 'winback'; loadFeed()" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                                :class="moduleFilter === 'winback' ? 'bg-[#F97316] text-white' : 'bg-slate-100 text-slate-500'">Winback</button>
+                        <button @click="moduleFilter = 'contracts'; loadFeed()" class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                                :class="moduleFilter === 'contracts' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'">Contracts</button>
+                    </div>
+                </div>
+
+                <div class="divide-y divide-slate-50 max-h-[600px] overflow-y-auto">
+                    <template x-for="(item, idx) in feed" :key="idx">
+                        <div class="px-6 py-3 flex items-start gap-3">
+                            <!-- Module Badge -->
+                            <span class="mt-0.5 w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                                  :class="{
+                                      'bg-blue-100 text-blue-700': item.module === 'governance',
+                                      'bg-orange-100 text-orange-700': item.module === 'winback',
+                                      'bg-emerald-100 text-emerald-700': item.module === 'contracts'
+                                  }"
+                                  x-text="item.module?.charAt(0).toUpperCase()"></span>
+
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-xs font-bold text-slate-700" x-text="item.action_type?.replace(/_/g, ' ')"></span>
+                                    <span class="text-xs text-slate-400" x-text="item.entity_name ? 'on ' + item.entity_name : ''"></span>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-0.5 line-clamp-2" x-text="item.note || '-'"></p>
+                                <div class="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
+                                    <span x-text="item.actor_name || 'System'"></span>
+                                    <span x-text="formatDateTime(item.created_at)"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div x-show="feed.length === 0" class="px-6 py-8 text-center text-slate-400">
+                        No activity recorded yet
+                    </div>
+                </div>
+
+                <div x-show="feed.length >= feedPerPage" class="px-6 py-3 border-t border-slate-100 text-center">
+                    <button @click="feedPage++; loadFeed(true)" class="text-xs text-[#F97316] hover:underline">Load more...</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Recent Module Activity -->
+        <div class="space-y-6">
+            <!-- Quick Supervisory Action -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="text-sm font-semibold text-slate-700 mb-4">Log Supervisory Action</h3>
+                <div class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <select x-model="actionForm.entity_type" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                            <option value="">Type...</option>
+                            <option value="customer">Customer</option>
+                            <option value="technician">Technician</option>
+                            <option value="contract">Contract</option>
+                        </select>
+                        <input type="number" x-model="actionForm.entity_id" placeholder="ID"
+                               class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                    </div>
+                    <input type="text" x-model="actionForm.action" placeholder="Action (e.g. REVIEW, WARNING, FOLLOW_UP)"
+                           class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                    <select x-model="actionForm.escalation_level" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <option value="">Escalation Level (optional)</option>
+                        <option value="WATCH">Watch</option>
+                        <option value="ATTENTION">Attention</option>
+                        <option value="ESCALATED">Escalated</option>
+                    </select>
+                    <textarea x-model="actionForm.note" rows="3" placeholder="Mandatory note..."
+                              class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"></textarea>
+                    <button @click="logAction()"
+                            :disabled="!actionForm.entity_type || !actionForm.entity_id || !actionForm.action || !actionForm.note"
+                            class="w-full px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] disabled:opacity-50">
+                        Log Action
+                    </button>
+                </div>
+            </div>
+
+            <!-- Winback Activity -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-4 py-3 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Winback Activity (7d)</h3>
+                </div>
+                <div class="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                    <template x-for="(w, i) in dashboard.winback_activity" :key="i">
+                        <div class="px-4 py-2.5">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-orange-600" x-text="w.action?.replace(/_/g, ' ')"></span>
+                                <span class="text-[10px] text-slate-400" x-text="w.campaign_name"></span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-0.5 truncate" x-text="w.note || '-'"></p>
+                            <p class="text-[10px] text-slate-400 mt-0.5" x-text="w.actor_name + ' | ' + formatDateTime(w.created_at)"></p>
+                        </div>
+                    </template>
+                    <div x-show="!dashboard.winback_activity?.length" class="px-4 py-4 text-center text-slate-400 text-xs">
+                        No winback activity this week
+                    </div>
+                </div>
+            </div>
+
+            <!-- Renewal Activity -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-4 py-3 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Renewal Activity (7d)</h3>
+                </div>
+                <div class="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                    <template x-for="(r, i) in dashboard.renewal_activity" :key="i">
+                        <div class="px-4 py-2.5">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-emerald-600" x-text="r.action?.replace(/_/g, ' ')"></span>
+                                <span class="text-[10px] text-slate-400" x-text="r.customer_name"></span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-0.5 truncate" x-text="r.note || '-'"></p>
+                        </div>
+                    </template>
+                    <div x-show="!dashboard.renewal_activity?.length" class="px-4 py-4 text-center text-slate-400 text-xs">
+                        No renewal activity this week
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Type Breakdown -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-4 py-3 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Actions by Type (30d)</h3>
+                </div>
+                <div class="p-4 space-y-2">
+                    <template x-for="(t, i) in dashboard.activity_by_type" :key="i">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-slate-600" x-text="t.action?.replace(/_/g, ' ')"></span>
+                            <span class="text-xs font-bold text-slate-700" x-text="t.count"></span>
+                        </div>
+                    </template>
+                    <div x-show="!dashboard.activity_by_type?.length" class="text-center text-slate-400 text-xs py-4">
+                        No actions recorded
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function auditDashboard() {
+    return {
+        dashboard: {},
+        feed: [],
+        moduleFilter: '',
+        feedPage: 1,
+        feedPerPage: 30,
+        actionForm: { entity_type: '', entity_id: '', action: '', note: '', escalation_level: '' },
+
+        async init() {
+            await Promise.all([this.loadDashboard(), this.loadFeed()]);
+        },
+
+        async loadDashboard() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/audit/dashboard');
+                if (res.ok) this.dashboard = await res.json();
+            } catch (e) { console.error('Dashboard error:', e); }
+        },
+
+        async loadFeed(append = false) {
+            if (!append) { this.feedPage = 1; this.feed = []; }
+            try {
+                const params = new URLSearchParams({ page: this.feedPage, per_page: this.feedPerPage });
+                if (this.moduleFilter) params.set('module', this.moduleFilter);
+
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/audit/feed?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (append) {
+                        this.feed = [...this.feed, ...(data.feed || [])];
+                    } else {
+                        this.feed = data.feed || [];
+                    }
+                }
+            } catch (e) { console.error('Feed error:', e); }
+        },
+
+        async logAction() {
+            const f = this.actionForm;
+            if (!f.entity_type || !f.entity_id || !f.action || !f.note) return;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/audit/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(f)
+                });
+                if (res.ok) {
+                    this.actionForm = { entity_type: '', entity_id: '', action: '', note: '', escalation_level: '' };
+                    await Promise.all([this.loadDashboard(), this.loadFeed()]);
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed');
+                }
+            } catch (e) { alert(e.message); }
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        },
+
+        formatDateTime(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        }
+    }
+}
+</script>
+{% endblock %}

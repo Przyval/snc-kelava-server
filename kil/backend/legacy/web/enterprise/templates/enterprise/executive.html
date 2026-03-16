@@ -1,0 +1,268 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Executive Summary{% endblock %}
+
+{% block content %}
+<div x-data="executiveDashboard()" x-init="loadData()">
+    
+    <!-- Page Header -->
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-900">Executive Summary</h1>
+        <p class="text-slate-500 text-sm">High-level operational metrics and trends</p>
+    </div>
+
+    <!-- Attention Required Widget -->
+    <div x-show="attention.length > 0" class="bg-gradient-to-r from-amber-50 to-red-50 border border-amber-200 rounded-xl p-4 mb-6">
+        <div class="flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <h3 class="font-semibold text-amber-800">Attention Required</h3>
+        </div>
+        <div class="flex flex-wrap gap-4">
+            <template x-for="item in attention" :key="item.type">
+                <a :href="item.action_url" class="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors"
+                   :class="item.severity === 'high' ? 'bg-red-100 hover:bg-red-200 text-red-800' : 'bg-amber-100 hover:bg-amber-200 text-amber-800'">
+                    <span class="text-xl font-bold" x-text="item.count"></span>
+                    <span class="text-sm" x-text="item.label"></span>
+                </a>
+            </template>
+        </div>
+    </div>
+
+    <!-- KPI Cards Row -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <!-- Planned Visits -->
+        <a href="/enterprise/operations" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition-shadow cursor-pointer">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-slate-500 text-sm font-medium">Planned Visits</span>
+                <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-slate-900" x-text="kpis.planned_visits?.toLocaleString() || '—'"></p>
+        </a>
+
+        <!-- Executed Visits -->
+        <a href="/enterprise/operations" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition-shadow cursor-pointer">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-slate-500 text-sm font-medium">Executed</span>
+                <div class="w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-slate-900" x-text="kpis.executed_visits?.toLocaleString() || '—'"></p>
+        </a>
+
+        <!-- Completion Rate -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-slate-500 text-sm font-medium">Completion Rate</span>
+                <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold" :class="kpis.completion_rate_pct >= 90 ? 'text-green-600' : kpis.completion_rate_pct >= 70 ? 'text-yellow-600' : 'text-red-600'" x-text="(kpis.completion_rate_pct || 0) + '%'"></p>
+        </div>
+
+        <!-- Avg Duration - Now shows Median with context -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 group relative">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-slate-500 text-sm font-medium">Median Duration</span>
+                <div class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-slate-900" x-text="Math.round(kpis.duration?.median_minutes || 0) + ' min'"></p>
+            <p class="text-xs text-slate-400 mt-1" x-show="kpis.duration?.excluded_count > 0" 
+               x-text="'Avg: ' + Math.round(kpis.duration?.avg_minutes || 0) + ' | ' + kpis.duration?.excluded_count + ' excluded'"></p>
+            <!-- Tooltip -->
+            <div class="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-xs rounded-lg whitespace-nowrap z-10">
+                Excludes visits >8 hours (outliers)
+            </div>
+        </div>
+
+        <!-- Active Contracts - Now shows breakdown -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 group relative">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-slate-500 text-sm font-medium">Active Contracts</span>
+                <div class="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-slate-900" x-text="kpis.contracts?.active_total?.toLocaleString() || '—'"></p>
+            <p class="text-xs mt-1" x-show="kpis.contracts?.expiring_30d > 0"
+               :class="kpis.contracts?.expiring_14d > 0 ? 'text-red-500' : 'text-amber-500'"
+               x-text="kpis.contracts?.expiring_30d + ' expiring soon'"></p>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Trend Chart -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <h3 class="font-semibold text-slate-800 mb-4">Planned vs Executed Trend</h3>
+            <div class="h-64">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- By Type Chart -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <h3 class="font-semibold text-slate-800 mb-4">Visits by Type</h3>
+            <div class="h-64">
+                <canvas id="typeChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expiring Contracts Alert -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-slate-800">Contracts Expiring (30 Days)</h3>
+            <span class="text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700" x-text="expiringContracts.length + ' contracts'"></span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-xs text-slate-500 uppercase bg-slate-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Contract No</th>
+                        <th class="px-4 py-2 text-left">Customer</th>
+                        <th class="px-4 py-2 text-left">End Date</th>
+                        <th class="px-4 py-2 text-right">Days Left</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="contract in expiringContracts.slice(0, 10)" :key="contract.id">
+                        <tr class="border-b hover:bg-slate-50">
+                            <td class="px-4 py-2 font-medium" x-text="contract.no_kontrak"></td>
+                            <td class="px-4 py-2" x-text="contract.customer_name"></td>
+                            <td class="px-4 py-2" x-text="contract.end_date"></td>
+                            <td class="px-4 py-2 text-right">
+                                <span class="px-2 py-0.5 text-xs font-medium rounded-full"
+                                      :class="contract.days_to_expire <= 7 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'"
+                                      x-text="contract.days_to_expire + ' days'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="expiringContracts.length === 0">
+                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">No contracts expiring soon</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function executiveDashboard() {
+    return {
+        kpis: {},
+        attention: [],
+        trends: { labels: [], datasets: {} },
+        byType: [],
+        expiringContracts: [],
+        trendChart: null,
+        typeChart: null,
+
+        async loadData() {
+            const startInput = document.querySelector('[x-model="startDate"]');
+            const endInput = document.querySelector('[x-model="endDate"]');
+            const params = new URLSearchParams({
+                start_date: startInput?.value || new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0],
+                end_date: endInput?.value || new Date().toISOString().split('T')[0]
+            });
+
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+
+            // Load all data in parallel
+            const [kpiRes, attnRes, trendRes, typeRes, contractRes] = await Promise.all([
+                _fetch(`/api/v1/enterprise/executive/kpis?${params}`),
+                _fetch('/api/v1/enterprise/executive/attention-required').catch(() => null),
+                _fetch('/api/v1/enterprise/executive/trends?days=7'),
+                _fetch(`/api/v1/enterprise/executive/visits-by-type?${params}`),
+                _fetch('/api/v1/enterprise/executive/contracts/expiring?days=30&limit=20'),
+            ]);
+
+            const [kpiData, attnData, trendData, typeData, contractData] = await Promise.all([
+                kpiRes.json(),
+                attnRes ? attnRes.json() : {},
+                trendRes.json(),
+                typeRes.json(),
+                contractRes.json(),
+            ]);
+
+            this.kpis = kpiData.kpis || {};
+            this.attention = (attnData.attention_items || []).filter(i => i.count > 0);
+            this.trends = trendData.chart_data || { labels: [], datasets: {} };
+            this.byType = typeData.by_type || [];
+            this.expiringContracts = contractData.contracts || [];
+
+            this.renderTrendChart();
+            this.renderTypeChart();
+
+            // Listen for refresh events
+            window.addEventListener('refresh-data', () => this.loadData());
+        },
+
+        renderTrendChart() {
+            const ctx = document.getElementById('trendChart');
+            if (this.trendChart) this.trendChart.destroy();
+            
+            this.trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: this.trends.labels,
+                    datasets: [
+                        {
+                            label: 'Planned',
+                            data: this.trends.datasets.planned || [],
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Executed',
+                            data: this.trends.datasets.executed || [],
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        },
+
+        renderTypeChart() {
+            const ctx = document.getElementById('typeChart');
+            if (this.typeChart) this.typeChart.destroy();
+
+            const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899'];
+            
+            this.typeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: this.byType.map(t => t.type),
+                    datasets: [{
+                        data: this.byType.map(t => t.count),
+                        backgroundColor: colors.slice(0, this.byType.length)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

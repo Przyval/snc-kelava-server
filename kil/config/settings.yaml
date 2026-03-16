@@ -1,0 +1,33 @@
+database:
+  type: "sqlite"
+  kil_db: "kil/kil_analytics.db"
+
+  # Postgres config (uncomment when local PG is available)
+  # type: "postgres"
+  # host: "localhost"
+  # port: 5434
+  # name: "kil_analytics"
+  # user: "kil_user"
+  # password: "kil_password"
+
+kelava:
+  host: "${KELAVA_HOST}"
+  port: "${KELAVA_PORT}"
+  database: "${KELAVA_DB}"
+  user: "${KELAVA_USER}"
+  password: "${KELAVA_PASSWORD}"
+
+ingestion:
+  batch_size: 1000
+
+rules:
+  photo_missing:
+    severity: "medium"
+
+api:
+  host: "0.0.0.0"
+  port: 5001
+  debug: true
+
+logging:
+  level: "INFO"

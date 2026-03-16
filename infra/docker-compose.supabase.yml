@@ -1,0 +1,124 @@
+version: '3.8'
+
+# Self-Hosted Supabase for SanoCare.work
+# This setup runs Supabase Auth against your existing PostgreSQL database (localhost:5433)
+
+services:
+  # Supabase Kong API Gateway
+  kong:
+    container_name: supabase-kong
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      - "8000:8000/tcp"  # Kong proxy (API Gateway)
+      - "8443:8443/tcp"  # Kong proxy SSL
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+    volumes:
+      - ./supabase/config/kong.yml:/var/lib/kong/kong.yml:ro
+    networks:
+      - supabase_network
+
+  # Supabase Auth Service
+  auth:
+    container_name: supabase-auth
+    image: supabase/gotrue:v2.143.0
+    restart: unless-stopped
+    depends_on:
+      - kong
+    environment:
+      # Database Connection (uses your existing Kelava DB)
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: "postgresql://snc_read:SnCR3aD2026&@host.docker.internal:5433/sanocare?search_path=auth"
+
+      # JWT Settings (IMPORTANT: Change these secrets in production!)
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_SECRET: "super-secret-jwt-token-with-at-least-32-characters-long"  # CHANGE THIS!
+
+      # Site URL (your frontend URL)
+      GOTRUE_SITE_URL: http://localhost:3000
+
+      # API Settings
+      API_EXTERNAL_URL: http://localhost:8000
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: 9999
+
+      # Disable email confirmation for development (enable in production)
+      GOTRUE_MAILER_AUTOCONFIRM: true
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@sanocare.work
+      GOTRUE_SMTP_HOST: smtp.gmail.com
+      GOTRUE_SMTP_PORT: 587
+      GOTRUE_SMTP_SENDER_NAME: SanoCare
+
+      # Enable email/password signup
+      GOTRUE_DISABLE_SIGNUP: false
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: true
+
+      # Logging
+      GOTRUE_LOG_LEVEL: info
+    networks:
+      - supabase_network
+
+  # Supabase Studio (Web UI for managing auth users)
+  studio:
+    container_name: supabase-studio
+    image: supabase/studio:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: SnCR3aD2026&
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_REST_URL: http://kong:8000/rest/v1/
+      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsaG9zdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE5NTczNDUyMDB9.dc6V5vL72LZIP4FgUqoLrGwR-K5YsJk5vGH3V6KpQbI"
+      SUPABASE_SERVICE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsaG9zdCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTk1NzM0NTIwMH0.qkUZ_JdFxjYbKPpv-0gzE5mH0vLPJLqq7LYWQJtZZ0k"
+    networks:
+      - supabase_network
+
+  # PostgreSQL Meta (for Studio to inspect database)
+  meta:
+    container_name: supabase-meta
+    image: supabase/postgres-meta:v0.75.0
+    restart: unless-stopped
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: host.docker.internal
+      PG_META_DB_PORT: 5433
+      PG_META_DB_NAME: sanocare
+      PG_META_DB_USER: snc_read
+      PG_META_DB_PASSWORD: SnCR3aD2026&
+    networks:
+      - supabase_network
+
+networks:
+  supabase_network:
+    driver: bridge
+
+# IMPORTANT SETUP NOTES:
+# =====================
+# 1. First, create the auth schema in your PostgreSQL database:
+#    psql -h localhost -p 5433 -U snc_read -d sanocare -c "CREATE SCHEMA IF NOT EXISTS auth;"
+#
+# 2. Create the Kong configuration file:
+#    mkdir -p supabase/config
+#    (We'll create kong.yml in the next step)
+#
+# 3. Start Supabase:
+#    docker-compose -f docker-compose.supabase.yml up -d
+#
+# 4. Access Supabase Studio at: http://localhost:3001
+#
+# 5. Your Supabase API URL will be: http://localhost:8000
+#
+# JWT TOKENS (for .env):
+# ======================
+# SUPABASE_URL=http://localhost:8000
+# SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsaG9zdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE5NTczNDUyMDB9.dc6V5vL72LZIP4FgUqoLrGwR-K5YsJk5vGH3V6KpQbI
+# SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsaG9zdCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE2NDE3NjkyMDAsImV4cCI6MTk1NzM0NTIwMH0.qkUZ_JdFxjYbKPpv-0gzE5mH0vLPJLqq7LYWQJtZZ0k

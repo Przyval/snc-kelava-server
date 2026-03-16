@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modal Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="bg-slate-100 p-8">
+    <div x-data="{ modalOpen: false }">
+        <h1 class="text-2xl font-bold mb-4">Modal Test</h1>
+        
+        <!-- Trigger Button -->
+        <button @click="modalOpen = true; console.log('Button clicked, modalOpen:', modalOpen)" 
+                class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600">
+            Click to Test Modal
+        </button>
+
+        <!-- Modal -->
+        <div x-show="modalOpen" 
+             x-cloak
+             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+             @click.self="modalOpen = false">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                <h3 class="text-lg font-bold mb-4">Modal Works!</h3>
+                <p class="text-slate-600 mb-4">If you see this, Alpine.js is working correctly.</p>
+                <button @click="modalOpen = false" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Close Modal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('Alpine loaded:', typeof Alpine !== 'undefined');
+        document.addEventListener('alpine:init', () => {
+            console.log('Alpine initialized');
+        });
+    </script>
+</body>
+</html>

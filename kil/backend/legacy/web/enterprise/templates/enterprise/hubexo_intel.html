@@ -1,0 +1,524 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Hubexo Intel{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    #hubexo-map { height: 420px; border-radius: 0.75rem; z-index: 1; }
+    .relevance-high { background-color: #DC2626; }
+    .relevance-medium { background-color: #F59E0B; }
+    .relevance-low { background-color: #6B7280; }
+    .badge-high { color: #DC2626; background-color: #FEE2E2; }
+    .badge-medium { color: #D97706; background-color: #FEF3C7; }
+    .badge-low { color: #6B7280; background-color: #F3F4F6; }
+    .tab-active { border-bottom: 2px solid #F97316; color: #F97316; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="hubexoIntel()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">Hubexo Intelligence</h1>
+                <p class="text-sm text-slate-500 mt-1">Construction project OSINT enrichment for SDR outreach</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button @click="exportCSV()" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    Export CSV
+                </button>
+                <button @click="loadAll()" class="flex items-center gap-2 px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">Construction Leads</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1" x-text="stats.total_leads || '—'"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">Companies</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1">
+                <span x-text="stats.companies?.with_domain || '—'"></span>
+                <span class="text-sm text-slate-400 font-normal" x-text="'/ ' + (stats.companies?.total || '—')"></span>
+            </p>
+            <p class="text-xs text-green-600 mt-0.5">with domain</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">Emails Found</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1" x-text="stats.emails?.total || '—'"></p>
+            <p class="text-xs text-slate-400 mt-0.5">
+                <span class="text-green-600" x-text="(stats.emails?.high || 0) + ' verified'"></span> /
+                <span class="text-amber-600" x-text="(stats.emails?.medium || 0) + ' likely'"></span> /
+                <span class="text-slate-500" x-text="(stats.emails?.low || 0) + ' guess'"></span>
+            </p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">Projects Geocoded</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1">
+                <span x-text="stats.geocoding?.geocoded || '—'"></span>
+                <span class="text-sm text-slate-400 font-normal" x-text="'/ ' + (stats.geocoding?.total || '—')"></span>
+            </p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">High Relevance</p>
+            <p class="text-2xl font-bold text-red-600 mt-1" x-text="stats.classification?.high_relevance || '—'"></p>
+            <p class="text-xs text-slate-400 mt-0.5">pest control targets</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+            <p class="text-xs text-slate-500 uppercase tracking-wider">LinkedIn Contacts</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1" x-text="stats.total_linkedin || '—'"></p>
+            <p class="text-xs text-slate-400 mt-0.5">corporate outreach</p>
+        </div>
+    </div>
+
+    <!-- Map + Industry Breakdown -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div class="lg:col-span-2 bg-white rounded-xl border border-slate-100 shadow-sm p-4">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Project Map</h3>
+            <div id="hubexo-map"></div>
+            <div class="flex items-center gap-4 mt-3 text-xs text-slate-500">
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-600 inline-block"></span> High Relevance</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span> Medium</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-500 inline-block"></span> Low</span>
+                <span class="text-slate-400 ml-auto">Circle size = unit count</span>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">Industry Breakdown</h3>
+            <div class="space-y-2">
+                <template x-for="ind in stats.industry_breakdown || []" :key="ind.industry">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-slate-600 capitalize" x-text="ind.industry"></span>
+                        <div class="flex items-center gap-2">
+                            <div class="w-24 bg-slate-100 rounded-full h-2">
+                                <div class="bg-[#F97316] h-2 rounded-full" :style="`width: ${Math.min(100, (ind.count / (stats.companies?.total || 1)) * 100)}%`"></div>
+                            </div>
+                            <span class="text-sm font-medium text-slate-700 w-8 text-right" x-text="ind.count"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Scale Distribution -->
+            <h3 class="text-sm font-semibold text-slate-700 mt-6 mb-3">Project Scale</h3>
+            <div class="grid grid-cols-2 gap-2">
+                <template x-for="[label, count] in scaleDistribution" :key="label">
+                    <div class="bg-slate-50 rounded-lg p-2 text-center">
+                        <p class="text-lg font-bold text-slate-900" x-text="count"></p>
+                        <p class="text-xs text-slate-500 capitalize" x-text="label"></p>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Relevance Distribution -->
+            <h3 class="text-sm font-semibold text-slate-700 mt-6 mb-3">Pest Relevance</h3>
+            <div class="grid grid-cols-3 gap-2">
+                <template x-for="[label, count] in relevanceDistribution" :key="label">
+                    <div class="rounded-lg p-2 text-center" :class="'badge-' + label">
+                        <p class="text-lg font-bold" x-text="count"></p>
+                        <p class="text-xs capitalize" x-text="label"></p>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs: Projects / Companies / SDR Queue -->
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm">
+        <div class="flex border-b border-slate-100 px-4">
+            <button @click="activeTab = 'projects'" class="px-4 py-3 text-sm transition-colors" :class="activeTab === 'projects' ? 'tab-active' : 'text-slate-500 hover:text-slate-700'">
+                Projects (<span x-text="projects.length"></span>)
+            </button>
+            <button @click="activeTab = 'companies'" class="px-4 py-3 text-sm transition-colors" :class="activeTab === 'companies' ? 'tab-active' : 'text-slate-500 hover:text-slate-700'">
+                Companies (<span x-text="companies.length"></span>)
+            </button>
+            <button @click="activeTab = 'sdr'" class="px-4 py-3 text-sm transition-colors" :class="activeTab === 'sdr' ? 'tab-active' : 'text-slate-500 hover:text-slate-700'">
+                SDR Action Queue
+            </button>
+        </div>
+
+        <!-- Projects Tab -->
+        <div x-show="activeTab === 'projects'" class="p-4">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                            <th class="pb-2 pr-4">Project</th>
+                            <th class="pb-2 pr-4">Type</th>
+                            <th class="pb-2 pr-4 text-right">Units</th>
+                            <th class="pb-2 pr-4">Scale</th>
+                            <th class="pb-2 pr-4">Relevance</th>
+                            <th class="pb-2 pr-4">City</th>
+                            <th class="pb-2 pr-4 text-right">Contacts</th>
+                            <th class="pb-2 pr-4 text-right">Emails</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="p in projects" :key="p.project_name">
+                            <tr class="border-b border-slate-50 hover:bg-slate-50">
+                                <td class="py-2 pr-4">
+                                    <p class="font-medium text-slate-900 truncate max-w-xs" x-text="p.project_name" :title="p.project_name"></p>
+                                    <p class="text-xs text-slate-400" x-text="p.project_type_raw ? p.project_type_raw.substring(0, 60) : ''"></p>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <span class="text-xs capitalize" x-text="(p.building_type || '') + '/' + (p.building_subtype || '')"></span>
+                                </td>
+                                <td class="py-2 pr-4 text-right font-medium" x-text="p.unit_count || '—'"></td>
+                                <td class="py-2 pr-4">
+                                    <span class="text-xs px-2 py-0.5 rounded-full capitalize"
+                                          :class="{'bg-purple-100 text-purple-700': p.project_scale === 'mega',
+                                                   'bg-blue-100 text-blue-700': p.project_scale === 'large',
+                                                   'bg-slate-100 text-slate-600': p.project_scale === 'medium',
+                                                   'bg-gray-50 text-gray-500': p.project_scale === 'small'}"
+                                          x-text="p.project_scale || '—'"></span>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <span class="text-xs px-2 py-0.5 rounded-full capitalize"
+                                          :class="'badge-' + (p.pest_relevance || 'low')"
+                                          x-text="p.pest_relevance || '—'"></span>
+                                </td>
+                                <td class="py-2 pr-4 text-slate-600" x-text="p.city || '—'"></td>
+                                <td class="py-2 pr-4 text-right" x-text="p.contact_count || 0"></td>
+                                <td class="py-2 pr-4 text-right">
+                                    <span :class="p.email_count > 0 ? 'text-green-600 font-medium' : 'text-slate-400'" x-text="p.email_count || 0"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Companies Tab -->
+        <div x-show="activeTab === 'companies'" class="p-4">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                            <th class="pb-2 pr-4">Company</th>
+                            <th class="pb-2 pr-4">Industry</th>
+                            <th class="pb-2 pr-4">Domain</th>
+                            <th class="pb-2 pr-4">Source</th>
+                            <th class="pb-2 pr-4">Parent</th>
+                            <th class="pb-2 pr-4 text-right">Contacts</th>
+                            <th class="pb-2 pr-4 text-right">Emails</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="c in companies" :key="c.company_name">
+                            <tr class="border-b border-slate-50 hover:bg-slate-50">
+                                <td class="py-2 pr-4">
+                                    <p class="font-medium text-slate-900 truncate max-w-xs" x-text="c.company_name" :title="c.company_name"></p>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <span class="text-xs capitalize px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="c.industry || '—'"></span>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <template x-if="c.domain">
+                                        <a :href="c.website_url" target="_blank" class="text-blue-600 hover:underline text-xs" x-text="c.domain"></a>
+                                    </template>
+                                    <template x-if="!c.domain">
+                                        <span class="text-slate-400 text-xs">—</span>
+                                    </template>
+                                </td>
+                                <td class="py-2 pr-4 text-xs text-slate-400" x-text="c.domain_source || '—'"></td>
+                                <td class="py-2 pr-4 text-xs text-slate-500 truncate max-w-[150px]" x-text="c.parent_company || '—'" :title="c.parent_company"></td>
+                                <td class="py-2 pr-4 text-right" x-text="c.contact_count || 0"></td>
+                                <td class="py-2 pr-4 text-right">
+                                    <span :class="c.email_count > 0 ? 'text-green-600 font-medium' : 'text-slate-400'" x-text="c.email_count || 0"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SDR Action Queue Tab -->
+        <div x-show="activeTab === 'sdr'" class="p-4">
+            <!-- Filter buttons -->
+            <div class="flex items-center gap-2 mb-4">
+                <button @click="sdrFilter = 'ready'" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        :class="sdrFilter === 'ready' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
+                    Ready to Contact (<span x-text="sdrReady.length"></span>)
+                </button>
+                <button @click="sdrFilter = 'needs_email'" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        :class="sdrFilter === 'needs_email' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
+                    Needs Research (<span x-text="sdrNeedsEmail.length"></span>)
+                </button>
+                <button @click="sdrFilter = 'all'" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        :class="sdrFilter === 'all' ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
+                    All (<span x-text="contacts.length"></span>)
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                            <th class="pb-2 pr-4">Contact</th>
+                            <th class="pb-2 pr-4">Company</th>
+                            <th class="pb-2 pr-4">Project</th>
+                            <th class="pb-2 pr-4">Relevance</th>
+                            <th class="pb-2 pr-4">Phone</th>
+                            <th class="pb-2 pr-4">Email</th>
+                            <th class="pb-2 pr-4">LinkedIn</th>
+                            <th class="pb-2 pr-4">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="c in filteredContacts" :key="c.id">
+                            <tr class="border-b border-slate-50 hover:bg-slate-50">
+                                <td class="py-2 pr-4">
+                                    <p class="font-medium text-slate-900" x-text="c.contact_name || '—'"></p>
+                                    <p class="text-xs text-slate-400" x-text="c.contact_title || ''"></p>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <p class="text-slate-700 truncate max-w-[150px]" x-text="c.company_name || '—'" :title="c.company_name"></p>
+                                    <p class="text-xs text-slate-400 capitalize" x-text="c.industry || ''"></p>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <p class="text-slate-600 truncate max-w-[180px]" x-text="c.project_name || '—'" :title="c.project_name"></p>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <span class="text-xs px-2 py-0.5 rounded-full capitalize" :class="'badge-' + (c.pest_relevance || 'low')" x-text="c.pest_relevance || '—'"></span>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <template x-if="c.pic_phone">
+                                        <a :href="'tel:' + c.pic_phone" class="text-blue-600 hover:underline text-xs" x-text="c.pic_phone"></a>
+                                    </template>
+                                    <template x-if="!c.pic_phone"><span class="text-slate-400 text-xs">—</span></template>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <template x-if="c.email_generated || c.pic_email">
+                                        <div class="flex items-center gap-1">
+                                            <span class="text-xs text-slate-700 truncate max-w-[160px]" x-text="c.pic_email || c.email_generated" :title="c.pic_email || c.email_generated"></span>
+                                            <button @click="copyText(c.pic_email || c.email_generated)" class="text-slate-400 hover:text-[#F97316] flex-shrink-0" title="Copy">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                            </button>
+                                            <span class="text-[10px] px-1 rounded" :class="{'text-green-600 bg-green-50': c.email_confidence === 'high', 'text-amber-600 bg-amber-50': c.email_confidence === 'medium', 'text-slate-500 bg-slate-50': c.email_confidence === 'low'}" x-text="c.email_confidence"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="!c.email_generated && !c.pic_email"><span class="text-slate-400 text-xs">—</span></template>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <template x-if="c.linkedin_url">
+                                        <a :href="c.linkedin_url" target="_blank" class="text-blue-600 hover:underline text-xs" x-text="c.linkedin_source === 'existing' ? 'Profile' : 'Search'"></a>
+                                    </template>
+                                    <template x-if="!c.linkedin_url"><span class="text-slate-400 text-xs">—</span></template>
+                                </td>
+                                <td class="py-2 pr-4">
+                                    <span class="text-xs px-2 py-0.5 rounded-full capitalize"
+                                          :class="{'bg-green-100 text-green-700': c.funnel_stage === 'replied',
+                                                   'bg-blue-100 text-blue-700': c.funnel_stage === 'outreach',
+                                                   'bg-slate-100 text-slate-600': c.funnel_stage === 'prospect'}"
+                                          x-text="c.funnel_stage || '—'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            <div class="flex items-center justify-between mt-4 text-xs text-slate-500" x-show="contacts.length > 0">
+                <span x-text="`Showing ${filteredContacts.length} contacts`"></span>
+                <div class="flex gap-2" x-show="contactsTotal > 100">
+                    <button @click="contactsPage > 1 && (contactsPage--, loadContacts())" :disabled="contactsPage <= 1"
+                            class="px-3 py-1 border border-slate-200 rounded text-xs disabled:opacity-30">Prev</button>
+                    <span class="px-3 py-1" x-text="`Page ${contactsPage}`"></span>
+                    <button @click="contactsPage * 100 < contactsTotal && (contactsPage++, loadContacts())"
+                            :disabled="contactsPage * 100 >= contactsTotal"
+                            class="px-3 py-1 border border-slate-200 rounded text-xs disabled:opacity-30">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function hubexoIntel() {
+    return {
+        stats: {},
+        projects: [],
+        companies: [],
+        contacts: [],
+        contactsPage: 1,
+        contactsTotal: 0,
+        activeTab: 'projects',
+        sdrFilter: 'ready',
+        map: null,
+        markersLayer: null,
+
+        async init() {
+            await this.loadAll();
+        },
+
+        async loadAll() {
+            await Promise.all([
+                this.loadStats(),
+                this.loadProjects(),
+                this.loadCompanies(),
+                this.loadContacts(),
+                this.loadMap(),
+            ]);
+        },
+
+        async apiFetch(url) {
+            const resp = await window.SanoCareAuth.authenticatedFetch(url);
+            if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+            return resp.json();
+        },
+
+        async loadStats() {
+            try {
+                this.stats = await this.apiFetch('/api/v1/enterprise/pipeline/hubexo/enrichment-stats');
+            } catch (e) { console.error('Stats error:', e); }
+        },
+
+        async loadProjects() {
+            try {
+                const data = await this.apiFetch('/api/v1/enterprise/pipeline/hubexo/projects');
+                this.projects = data.projects || [];
+            } catch (e) { console.error('Projects error:', e); }
+        },
+
+        async loadCompanies() {
+            try {
+                const data = await this.apiFetch('/api/v1/enterprise/pipeline/hubexo/companies');
+                this.companies = data.companies || [];
+            } catch (e) { console.error('Companies error:', e); }
+        },
+
+        async loadContacts() {
+            try {
+                const data = await this.apiFetch(`/api/v1/enterprise/pipeline/hubexo/contacts?page=${this.contactsPage}&per_page=100`);
+                this.contacts = data.contacts || [];
+                this.contactsTotal = data.pagination?.total || 0;
+            } catch (e) { console.error('Contacts error:', e); }
+        },
+
+        async loadMap() {
+            try {
+                const data = await this.apiFetch('/api/v1/enterprise/pipeline/hubexo/map-data');
+                this.renderMap(data);
+            } catch (e) { console.error('Map error:', e); }
+        },
+
+        renderMap(geojson) {
+            if (!this.map) {
+                this.map = L.map('hubexo-map').setView([-6.25, 106.8], 10);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap',
+                    maxZoom: 18,
+                }).addTo(this.map);
+                this.markersLayer = L.layerGroup().addTo(this.map);
+            }
+
+            this.markersLayer.clearLayers();
+            const bounds = [];
+
+            (geojson.features || []).forEach(f => {
+                const [lng, lat] = f.geometry.coordinates;
+                const p = f.properties;
+                const color = p.pest_relevance === 'high' ? '#DC2626' :
+                              p.pest_relevance === 'medium' ? '#F59E0B' : '#6B7280';
+                const radius = Math.max(6, Math.min(20, Math.sqrt(p.unit_count || 1) * 3));
+
+                const marker = L.circleMarker([lat, lng], {
+                    radius: radius,
+                    fillColor: color,
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8,
+                });
+
+                marker.bindPopup(`
+                    <div style="min-width:200px">
+                        <b>${p.name}</b><br>
+                        <span style="font-size:11px;color:#666">${p.project_type || ''}</span><br><br>
+                        <b>Type:</b> ${p.building_type || '—'}<br>
+                        <b>Units:</b> ${p.unit_count || '—'} &nbsp; <b>Scale:</b> ${p.project_scale || '—'}<br>
+                        <b>Relevance:</b> <span style="color:${color};font-weight:bold">${(p.pest_relevance || '').toUpperCase()}</span><br>
+                        <b>City:</b> ${p.city || '—'}<br>
+                        <b>Contacts:</b> ${p.contact_count || 0} &nbsp; <b>Emails:</b> ${p.email_count || 0}
+                    </div>
+                `);
+
+                this.markersLayer.addLayer(marker);
+                bounds.push([lat, lng]);
+            });
+
+            if (bounds.length > 0) {
+                this.map.fitBounds(bounds, { padding: [30, 30] });
+            }
+        },
+
+        // SDR queue computed properties
+        get sdrReady() {
+            return this.contacts.filter(c =>
+                (c.email_generated || c.pic_email) && c.pic_phone && c.pest_relevance !== 'low'
+            );
+        },
+
+        get sdrNeedsEmail() {
+            return this.contacts.filter(c =>
+                !c.email_generated && !c.pic_email && c.pest_relevance !== 'low'
+            );
+        },
+
+        get filteredContacts() {
+            if (this.sdrFilter === 'ready') return this.sdrReady;
+            if (this.sdrFilter === 'needs_email') return this.sdrNeedsEmail;
+            return this.contacts;
+        },
+
+        get scaleDistribution() {
+            const counts = { mega: 0, large: 0, medium: 0, small: 0 };
+            this.projects.forEach(p => { if (p.project_scale) counts[p.project_scale]++; });
+            return Object.entries(counts);
+        },
+
+        get relevanceDistribution() {
+            const counts = { high: 0, medium: 0, low: 0 };
+            this.projects.forEach(p => { if (p.pest_relevance) counts[p.pest_relevance]++; });
+            return Object.entries(counts);
+        },
+
+        copyText(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Brief visual feedback could be added here
+            });
+        },
+
+        async exportCSV() {
+            try {
+                const resp = await window.SanoCareAuth.authenticatedFetch('/api/v1/enterprise/pipeline/hubexo/export');
+                if (!resp.ok) throw new Error('Export failed');
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `hubexo_enriched_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error('Export error:', e);
+                alert('Export failed: ' + e.message);
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

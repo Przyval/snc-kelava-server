@@ -1,0 +1,418 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Supervisory & Sidak{% endblock %}
+
+{% block content %}
+<div x-data="supervisoryDashboard()" x-init="loadData()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <h1 class="text-2xl font-bold text-[#0F172A]">Supervisory Actions</h1>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-50 text-amber-600 border border-amber-200">
+                    Sidak & Supervision
+                </span>
+            </div>
+            <p class="text-sm text-[#64748B]">Inspeksi mendadak, SP, coaching, pendampingan audit & install klien baru.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <select x-model="actionFilter" @change="loadActions()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316]">
+                <option value="">All Types</option>
+                <option value="SIDAK">Sidak</option>
+                <option value="SP_WARNING">SP Warning</option>
+                <option value="COACHING">Coaching</option>
+                <option value="NEW_CLIENT_INSTALL">New Install</option>
+                <option value="AUDIT_ACCOMPANY">Audit Accompany</option>
+                <option value="COMPLAINT_HANDLING">Complaint</option>
+            </select>
+            <button @click="showTriggerSidak = true" class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors">
+                Trigger Sidak
+            </button>
+        </div>
+    </div>
+
+    <!-- Pending Approvals Banner (koordinator) -->
+    <div x-show="pendingApprovals.length > 0" class="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-6">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-purple-900">Menunggu Approval Koordinator</p>
+                <p class="text-xs text-purple-600" x-text="pendingApprovals.length + ' aksi menunggu persetujuan'"></p>
+            </div>
+        </div>
+        <div class="space-y-2">
+            <template x-for="pa in pendingApprovals" :key="pa.id">
+                <div class="flex items-center justify-between bg-white rounded-lg border border-purple-100 px-4 py-3">
+                    <div class="flex items-center gap-3">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase" :class="pa.action_type === 'SIDAK' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'" x-text="pa.action_type"></span>
+                        <span class="text-sm font-medium text-[#0F172A]" x-text="pa.technician_name || 'N/A'"></span>
+                        <span class="text-xs text-[#64748B]" x-text="'oleh ' + (pa.supervisor_name || '-')"></span>
+                        <span class="text-xs text-[#94A3B8]" x-text="pa.scheduled_date"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button @click="approveAction(pa.id)" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700">Approve</button>
+                        <button @click="rejectAction(pa.id)" class="px-3 py-1.5 bg-red-100 text-red-600 text-xs font-medium rounded-lg hover:bg-red-200">Reject</button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 mb-6">
+        <button @click="tab = 'actions'; loadActions()" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                :class="tab === 'actions' ? 'bg-[#F97316] text-white' : 'bg-white text-[#64748B] border border-[#E2E8F0]'">
+            Action Queue
+        </button>
+        <button @click="tab = 'candidates'; loadCandidates()" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                :class="tab === 'candidates' ? 'bg-[#F97316] text-white' : 'bg-white text-[#64748B] border border-[#E2E8F0]'">
+            Sidak Candidates
+        </button>
+        <button @click="tab = 'reports'" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                :class="tab === 'reports' ? 'bg-[#F97316] text-white' : 'bg-white text-[#64748B] border border-[#E2E8F0]'">
+            QC Reports
+        </button>
+    </div>
+
+    <!-- Action Queue Tab -->
+    <div x-show="tab === 'actions'" class="bg-white rounded-xl shadow-sm border border-[#E2E8F0] overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                        <th class="px-4 py-3 text-center font-bold">Priority</th>
+                        <th class="px-4 py-3 text-left font-bold">Type</th>
+                        <th class="px-4 py-3 text-left font-bold">Supervisor</th>
+                        <th class="px-4 py-3 text-left font-bold">Target Tech</th>
+                        <th class="px-4 py-3 text-left font-bold">Customer</th>
+                        <th class="px-4 py-3 text-center font-bold">Date</th>
+                        <th class="px-4 py-3 text-center font-bold">Status</th>
+                        <th class="px-4 py-3 text-left font-bold">Reason</th>
+                        <th class="px-4 py-3 text-center font-bold">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#F1F5F9]">
+                    <template x-for="a in actions" :key="a.id">
+                        <tr class="hover:bg-[#F8FAFC] transition-colors">
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                      :class="{
+                                          'bg-red-50 text-red-600 border-red-200': a.priority === 'URGENT',
+                                          'bg-amber-50 text-amber-600 border-amber-200': a.priority === 'HIGH',
+                                          'bg-slate-50 text-slate-600 border-slate-200': a.priority === 'NORMAL',
+                                          'bg-gray-50 text-gray-400 border-gray-200': a.priority === 'LOW',
+                                      }" x-text="a.priority"></span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="px-2 py-1 rounded text-xs font-bold"
+                                      :class="{
+                                          'bg-red-100 text-red-700': a.action_type === 'SIDAK',
+                                          'bg-orange-100 text-orange-700': a.action_type === 'SP_WARNING',
+                                          'bg-blue-100 text-blue-700': a.action_type === 'COACHING',
+                                          'bg-green-100 text-green-700': a.action_type === 'NEW_CLIENT_INSTALL',
+                                          'bg-purple-100 text-purple-700': a.action_type === 'AUDIT_ACCOMPANY',
+                                          'bg-amber-100 text-amber-700': a.action_type === 'COMPLAINT_HANDLING',
+                                      }" x-text="a.action_type?.replace(/_/g, ' ')"></span>
+                            </td>
+                            <td class="px-4 py-3 text-[#475569]" x-text="a.supervisor_name || '-'"></td>
+                            <td class="px-4 py-3 font-medium text-[#0F172A]" x-text="a.technician_name || '-'"></td>
+                            <td class="px-4 py-3 text-[#475569] text-xs" x-text="a.customer_name || '-'"></td>
+                            <td class="px-4 py-3 text-center font-mono text-xs" x-text="a.scheduled_date"></td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border"
+                                      :class="{
+                                          'bg-blue-50 text-blue-600 border-blue-200': a.status === 'SCHEDULED',
+                                          'bg-amber-50 text-amber-600 border-amber-200': a.status === 'IN_PROGRESS',
+                                          'bg-green-50 text-green-600 border-green-200': a.status === 'COMPLETED',
+                                          'bg-slate-50 text-slate-400 border-slate-200': a.status === 'CANCELLED',
+                                          'bg-red-50 text-red-600 border-red-200': a.status === 'MISSED',
+                                      }" x-text="a.status"></span>
+                            </td>
+                            <td class="px-4 py-3 text-xs text-[#64748B] max-w-[150px] truncate" x-text="a.trigger_reason || '-'"></td>
+                            <td class="px-4 py-3 text-center">
+                                <div class="flex items-center justify-center gap-1">
+                                    <template x-if="a.status === 'SCHEDULED' || a.status === 'IN_PROGRESS'">
+                                        <button @click="selectedAction = a; showCompleteModal = true"
+                                                class="p-1.5 rounded-lg hover:bg-green-50 text-[#64748B] hover:text-green-600 transition-colors" title="Complete">
+                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                        </button>
+                                    </template>
+                                    <template x-if="a.status === 'SCHEDULED'">
+                                        <button @click="cancelAction(a.id)"
+                                                class="p-1.5 rounded-lg hover:bg-red-50 text-[#64748B] hover:text-red-600 transition-colors" title="Cancel">
+                                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </template>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="actions.length === 0">
+                        <td colspan="9" class="px-4 py-12 text-center text-[#94A3B8]">
+                            <p class="text-sm font-medium">No supervisory actions found</p>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Sidak Candidates Tab -->
+    <div x-show="tab === 'candidates'" class="bg-white rounded-xl shadow-sm border border-[#E2E8F0] overflow-hidden">
+        <div class="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC]">
+            <p class="text-sm font-bold text-[#0F172A]">Recommended for Inspection</p>
+            <p class="text-xs text-[#64748B]">Ranked by urgency: anomali waktu, missing checkout, complain, tidak pernah disidak</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                        <th class="px-4 py-3 text-center font-bold">Urgency</th>
+                        <th class="px-4 py-3 text-left font-bold">Technician</th>
+                        <th class="px-4 py-3 text-center font-bold">Segment</th>
+                        <th class="px-4 py-3 text-center font-bold">Short Visits</th>
+                        <th class="px-4 py-3 text-center font-bold">Missing C/O</th>
+                        <th class="px-4 py-3 text-center font-bold">Complaints</th>
+                        <th class="px-4 py-3 text-center font-bold">Last Sidak</th>
+                        <th class="px-4 py-3 text-center font-bold">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#F1F5F9]">
+                    <template x-for="(c, idx) in candidates" :key="c.technician_id">
+                        <tr class="hover:bg-[#F8FAFC]" :class="idx < 3 ? 'bg-red-50/30' : ''">
+                            <td class="px-4 py-3 text-center">
+                                <div class="flex items-center justify-center gap-1">
+                                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                                         :class="c.urgency_score >= 15 ? 'bg-red-100 text-red-700' : c.urgency_score >= 8 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'"
+                                         x-text="c.urgency_score"></div>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 font-medium text-[#0F172A]" x-text="c.name"></td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-slate-50 text-slate-600 border-slate-200" x-text="c.segment"></span>
+                            </td>
+                            <td class="px-4 py-3 text-center font-mono" :class="c.short_visits > 0 ? 'text-red-600 font-bold' : 'text-[#64748B]'" x-text="c.short_visits"></td>
+                            <td class="px-4 py-3 text-center font-mono" :class="c.missing_checkout > 0 ? 'text-amber-600 font-bold' : 'text-[#64748B]'" x-text="c.missing_checkout"></td>
+                            <td class="px-4 py-3 text-center font-mono" :class="c.complaint_count > 0 ? 'text-red-600 font-bold' : 'text-[#64748B]'" x-text="c.complaint_count"></td>
+                            <td class="px-4 py-3 text-center text-xs" :class="!c.last_sidak_date ? 'text-red-500 font-bold' : 'text-[#64748B]'" x-text="c.last_sidak_date || 'Never'"></td>
+                            <td class="px-4 py-3 text-center">
+                                <button @click="quickSidak(c.technician_id, c.name)"
+                                        class="px-3 py-1 text-xs font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
+                                    Sidak
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Reports Tab (placeholder) -->
+    <div x-show="tab === 'reports'" class="bg-white rounded-xl shadow-sm border border-[#E2E8F0] p-8 text-center">
+        <svg class="w-12 h-12 mx-auto mb-3 text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+        <p class="text-sm font-medium text-[#64748B]">QC Supervision Reports</p>
+        <p class="text-xs text-[#94A3B8] mt-1">Reports are submitted from the mobile app after completing a sidak or supervision visit.</p>
+        <p class="text-xs text-[#94A3B8]">View individual reports from Technician Detail page.</p>
+    </div>
+
+    <!-- Trigger Sidak Modal -->
+    <div x-show="showTriggerSidak" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="showTriggerSidak = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6" x-transition>
+            <h2 class="text-lg font-bold text-[#0F172A] mb-4">Trigger Sidak</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase">Supervisor ID</label>
+                    <input type="number" x-model="sidakForm.supervisor_id" class="w-full mt-1 px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316]">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase">Target Technician ID</label>
+                    <input type="number" x-model="sidakForm.target_technician_id" class="w-full mt-1 px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316]">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase">Preferred Date (optional)</label>
+                    <input type="date" x-model="sidakForm.preferred_date" class="w-full mt-1 px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316]">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase">Reason</label>
+                    <textarea x-model="sidakForm.reason" rows="2" class="w-full mt-1 px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316]" placeholder="KPI rendah, anomali waktu..."></textarea>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button @click="showTriggerSidak = false" class="px-4 py-2 text-sm text-[#64748B]">Cancel</button>
+                    <button @click="triggerSidak()" class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700">Schedule Sidak</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Complete Action Modal -->
+    <div x-show="showCompleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="showCompleteModal = false">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6" x-transition>
+            <h2 class="text-lg font-bold text-[#0F172A] mb-4">Complete Action</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase">Findings</label>
+                    <textarea x-model="completeForm.findings" rows="3" class="w-full mt-1 px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm focus:ring-[#F97316]" placeholder="Apa yang ditemukan..."></textarea>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-[#64748B] uppercase">Follow-up Action</label>
+                    <input type="text" x-model="completeForm.follow_up_action" class="w-full mt-1 px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm" placeholder="Tindakan lanjutan...">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button @click="showCompleteModal = false" class="px-4 py-2 text-sm text-[#64748B]">Cancel</button>
+                    <button @click="completeAction()" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">Mark Complete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function supervisoryDashboard() {
+    return {
+        actions: [],
+        candidates: [],
+        pendingApprovals: [],
+        tab: 'actions',
+        actionFilter: '',
+        showTriggerSidak: false,
+        showCompleteModal: false,
+        selectedAction: null,
+        sidakForm: { supervisor_id: '', target_technician_id: '', preferred_date: '', reason: '' },
+        completeForm: { findings: '', follow_up_action: '' },
+
+        async loadData() {
+            await Promise.all([this.loadActions(), this.loadPendingApprovals()]);
+            window.addEventListener('refresh-data', () => {
+                this.loadActions();
+                this.loadPendingApprovals();
+            });
+        },
+
+        async loadPendingApprovals() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const user = window.SanoCareAuth?.getCachedUser();
+            if (!user || !['admin', 'koordinator'].includes(user.role)) return;
+
+            try {
+                const res = await _fetch('/api/v1/enterprise/supervisory/actions/pending');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.pendingApprovals = data.pending_actions || [];
+                }
+            } catch (e) { /* ignore */ }
+        },
+
+        async approveAction(actionId) {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch(`/api/v1/enterprise/supervisory/actions/${actionId}/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note: '' })
+            });
+            if (res.ok) {
+                await Promise.all([this.loadActions(), this.loadPendingApprovals()]);
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Gagal approve');
+            }
+        },
+
+        async rejectAction(actionId) {
+            const reason = prompt('Alasan penolakan:');
+            if (!reason) return;
+
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch(`/api/v1/enterprise/supervisory/actions/${actionId}/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason })
+            });
+            if (res.ok) {
+                await Promise.all([this.loadActions(), this.loadPendingApprovals()]);
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Gagal reject');
+            }
+        },
+
+        async loadActions() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const params = new URLSearchParams({ status: 'PENDING_APPROVAL,SCHEDULED,IN_PROGRESS,COMPLETED' });
+            if (this.actionFilter) params.set('action_type', this.actionFilter);
+
+            const res = await _fetch(`/api/v1/enterprise/supervisory/actions?${params}`);
+            const data = await res.json();
+            this.actions = data.actions || [];
+        },
+
+        async loadCandidates() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch('/api/v1/enterprise/supervisory/sidak-candidates?days=30');
+            const data = await res.json();
+            this.candidates = data.candidates || [];
+        },
+
+        async triggerSidak() {
+            if (!this.sidakForm.supervisor_id || !this.sidakForm.target_technician_id) return;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const res = await _fetch('/api/v1/enterprise/supervisory/trigger-sidak', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.sidakForm),
+            });
+            const data = await res.json();
+            alert(data.message || 'Sidak scheduled!');
+            this.showTriggerSidak = false;
+            this.sidakForm = { supervisor_id: '', target_technician_id: '', preferred_date: '', reason: '' };
+            this.loadActions();
+        },
+
+        async quickSidak(techId, techName) {
+            const supervisorId = prompt('Enter Supervisor ID to schedule sidak for ' + techName + ':');
+            if (!supervisorId) return;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            await _fetch('/api/v1/enterprise/supervisory/trigger-sidak', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    supervisor_id: parseInt(supervisorId),
+                    target_technician_id: techId,
+                    reason: 'Triggered from sidak candidates dashboard',
+                }),
+            });
+            this.tab = 'actions';
+            this.loadActions();
+        },
+
+        async completeAction() {
+            if (this.completeForm.findings.length < 5) return;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            await _fetch(`/api/v1/enterprise/supervisory/actions/${this.selectedAction.id}/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.completeForm),
+            });
+            this.showCompleteModal = false;
+            this.completeForm = { findings: '', follow_up_action: '' };
+            this.loadActions();
+        },
+
+        async cancelAction(id) {
+            if (!confirm('Cancel this action?')) return;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            await _fetch(`/api/v1/enterprise/supervisory/actions/${id}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'Cancelled from dashboard' }),
+            });
+            this.loadActions();
+        },
+    }
+}
+</script>
+{% endblock %}

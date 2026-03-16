@@ -1,0 +1,272 @@
+{% extends "enterprise/base.html" %}
+{% block title %}System Health{% endblock %}
+{% block head %}
+<style>
+    .pulse-green { animation: pulse-g 2s infinite; }
+    .pulse-yellow { animation: pulse-y 2s infinite; }
+    .pulse-red { animation: pulse-r 2s infinite; }
+    @keyframes pulse-g { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)} 50%{box-shadow:0 0 0 8px rgba(34,197,94,0)} }
+    @keyframes pulse-y { 0%,100%{box-shadow:0 0 0 0 rgba(234,179,8,.4)} 50%{box-shadow:0 0 0 8px rgba(234,179,8,0)} }
+    @keyframes pulse-r { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="healthDashboard()" x-init="init()" class="p-6 max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">System Health Monitor</h1>
+            <p class="text-sm text-gray-500 mt-1">Real-time server & database diagnostics</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-400" x-text="lastChecked ? 'Updated ' + lastChecked : ''"></span>
+            <button @click="runDeepCheck()" :disabled="loading"
+                    class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2">
+                <svg x-show="loading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span x-text="loading ? 'Checking...' : 'Run Health Check'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Overall Status Banner -->
+    <div x-show="health" class="mb-6 rounded-xl p-5 border-2 transition-all"
+         :class="{
+             'bg-green-50 border-green-200': health?.status === 'healthy',
+             'bg-yellow-50 border-yellow-200': health?.status === 'warning' || health?.status === 'degraded',
+             'bg-red-50 border-red-200': health?.status === 'unhealthy'
+         }">
+        <div class="flex items-center gap-4">
+            <div class="w-4 h-4 rounded-full"
+                 :class="{
+                     'bg-green-500 pulse-green': health?.status === 'healthy',
+                     'bg-yellow-500 pulse-yellow': health?.status === 'warning' || health?.status === 'degraded',
+                     'bg-red-500 pulse-red': health?.status === 'unhealthy'
+                 }"></div>
+            <div>
+                <h2 class="text-lg font-bold" :class="{
+                    'text-green-800': health?.status === 'healthy',
+                    'text-yellow-800': health?.status === 'warning' || health?.status === 'degraded',
+                    'text-red-800': health?.status === 'unhealthy'
+                }" x-text="health?.status === 'healthy' ? 'All Systems Operational' : health?.status === 'warning' ? 'Warning: Check Disk Space' : health?.status === 'degraded' ? 'Degraded: Database Issue' : 'System Unhealthy'"></h2>
+                <p class="text-sm text-gray-600 mt-0.5">
+                    Version <span x-text="health?.version"></span> &middot;
+                    Uptime <span x-text="formatUptime(health?.uptime_seconds)"></span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <!-- Database -->
+        <div class="bg-white rounded-xl border p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-sm font-medium text-gray-500">Database</span>
+                <div class="w-3 h-3 rounded-full" :class="health?.checks?.database?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'"></div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900" x-text="health?.checks?.database?.latency_ms ? health.checks.database.latency_ms + ' ms' : '—'"></p>
+            <p class="text-xs text-gray-400 mt-1">Query latency</p>
+        </div>
+
+        <!-- Disk -->
+        <div class="bg-white rounded-xl border p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-sm font-medium text-gray-500">Disk Usage</span>
+                <div class="w-3 h-3 rounded-full" :class="health?.checks?.disk?.status === 'healthy' ? 'bg-green-500' : 'bg-yellow-500'"></div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900" x-text="health?.checks?.disk?.percent_used ? health.checks.disk.percent_used + '%' : '—'"></p>
+            <p class="text-xs text-gray-400 mt-1" x-text="health?.checks?.disk?.free_gb ? health.checks.disk.free_gb + ' GB free of ' + health.checks.disk.total_gb + ' GB' : ''"></p>
+        </div>
+
+        <!-- Uploads -->
+        <div class="bg-white rounded-xl border p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-sm font-medium text-gray-500">Uploads</span>
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900" x-text="health?.checks?.uploads?.file_count ?? '—'"></p>
+            <p class="text-xs text-gray-400 mt-1" x-text="health?.checks?.uploads?.size_mb ? health.checks.uploads.size_mb + ' MB total' : ''"></p>
+        </div>
+
+        <!-- Uptime -->
+        <div class="bg-white rounded-xl border p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-sm font-medium text-gray-500">Uptime</span>
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900" x-text="health?.uptime_hours ? health.uptime_hours + 'h' : '—'"></p>
+            <p class="text-xs text-gray-400 mt-1">Since last restart</p>
+        </div>
+    </div>
+
+    <!-- Two Column Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Table Health -->
+        <div class="bg-white rounded-xl border shadow-sm">
+            <div class="px-5 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Critical Tables</h3>
+            </div>
+            <div class="divide-y">
+                <template x-for="(info, table) in (health?.checks?.tables || {})" :key="table">
+                    <div class="px-5 py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full" :class="info.status === 'ok' ? 'bg-green-500' : 'bg-red-500'"></div>
+                            <span class="text-sm font-medium text-gray-700" x-text="table"></span>
+                        </div>
+                        <span class="text-sm text-gray-500" x-text="info.status === 'ok' ? info.row_count.toLocaleString() + ' rows' : info.error"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Disk Visualization -->
+        <div class="bg-white rounded-xl border shadow-sm">
+            <div class="px-5 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Storage</h3>
+            </div>
+            <div class="p-5">
+                <div class="mb-4">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-gray-600">Disk Usage</span>
+                        <span class="font-medium" x-text="(health?.checks?.disk?.percent_used || 0) + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-500"
+                             :class="(health?.checks?.disk?.percent_used || 0) > 85 ? 'bg-red-500' : (health?.checks?.disk?.percent_used || 0) > 70 ? 'bg-yellow-500' : 'bg-green-500'"
+                             :style="'width:' + (health?.checks?.disk?.percent_used || 0) + '%'"></div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3 text-center">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-gray-900" x-text="health?.checks?.disk?.total_gb || '—'"></p>
+                        <p class="text-xs text-gray-500">Total GB</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-blue-600" x-text="health?.checks?.disk?.used_gb || '—'"></p>
+                        <p class="text-xs text-gray-500">Used GB</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-green-600" x-text="health?.checks?.disk?.free_gb || '—'"></p>
+                        <p class="text-xs text-gray-500">Free GB</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Health History -->
+    <div class="mt-6 bg-white rounded-xl border shadow-sm">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+            <h3 class="font-semibold text-gray-900">Health Check History</h3>
+            <select x-model="historyDays" @change="loadHistory()" class="text-sm border rounded-lg px-3 py-1.5">
+                <option value="1">Last 24h</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+            </select>
+        </div>
+        <div x-show="historyStats" class="px-5 py-3 bg-gray-50 border-b grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+                <span class="text-gray-500">Total Checks</span>
+                <p class="font-semibold" x-text="historyStats?.total_checks || 0"></p>
+            </div>
+            <div>
+                <span class="text-gray-500">Healthy</span>
+                <p class="font-semibold text-green-600" x-text="historyStats?.healthy_count || 0"></p>
+            </div>
+            <div>
+                <span class="text-gray-500">Issues</span>
+                <p class="font-semibold" :class="(historyStats?.issue_count || 0) > 0 ? 'text-red-600' : 'text-gray-900'" x-text="historyStats?.issue_count || 0"></p>
+            </div>
+            <div>
+                <span class="text-gray-500">Avg Latency</span>
+                <p class="font-semibold" x-text="(historyStats?.avg_latency_ms || '—') + ' ms'"></p>
+            </div>
+        </div>
+        <div class="divide-y max-h-64 overflow-y-auto">
+            <template x-for="h in history" :key="h.id">
+                <div class="px-5 py-2.5 flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full" :class="h.status === 'healthy' ? 'bg-green-500' : h.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'"></div>
+                        <span class="text-gray-700 capitalize" x-text="h.status"></span>
+                    </div>
+                    <div class="flex items-center gap-4 text-gray-500">
+                        <span x-text="h.db_latency_ms ? h.db_latency_ms + ' ms' : '—'"></span>
+                        <span x-text="formatTime(h.checked_at)"></span>
+                    </div>
+                </div>
+            </template>
+            <div x-show="history.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">
+                No health check history yet. Run a check to start logging.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function healthDashboard() {
+    return {
+        health: null,
+        loading: false,
+        lastChecked: null,
+        history: [],
+        historyStats: null,
+        historyDays: '7',
+
+        async init() {
+            await this.runDeepCheck();
+            await this.loadHistory();
+            // Auto-refresh every 60 seconds
+            setInterval(() => this.runDeepCheck(), 60000);
+        },
+
+        async runDeepCheck() {
+            this.loading = true;
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/health/deep');
+                if (resp.ok) {
+                    this.health = await resp.json();
+                    this.lastChecked = new Date().toLocaleTimeString('id-ID');
+                }
+            } catch (e) {
+                console.error('Health check failed:', e);
+            }
+            this.loading = false;
+        },
+
+        async loadHistory() {
+            try {
+                const resp = await authenticatedFetch(`/api/v1/enterprise/health/history?days=${this.historyDays}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.history = data.history || [];
+                    this.historyStats = data.stats || {};
+                }
+            } catch (e) {
+                console.error('Failed to load history:', e);
+            }
+        },
+
+        formatUptime(seconds) {
+            if (!seconds) return '—';
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d > 0) return `${d}d ${h}h`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        },
+
+        formatTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) + ' ' +
+                   d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>
+{% endblock %}

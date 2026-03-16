@@ -1,0 +1,474 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Contract Detail{% endblock %}
+
+{% block content %}
+<div x-data="contractDetail({{ contract_id }})" x-init="init()">
+
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-2 text-sm text-slate-400 mb-4">
+        <a href="/enterprise/contracts" class="hover:text-[#F97316]">Contracts</a>
+        <span>/</span>
+        <span class="text-slate-700 font-medium" x-text="contract.no_kontrak || 'Loading...'"></span>
+    </div>
+
+    <!-- Contract Header -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+        <div class="flex items-start justify-between">
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    <h1 class="text-xl font-bold text-slate-900" x-text="contract.customer_name"></h1>
+                    <span class="px-2 py-0.5 rounded text-xs font-bold"
+                          :class="{
+                              'bg-emerald-100 text-emerald-700': contract.status_computed === 'ACTIVE',
+                              'bg-slate-100 text-slate-500': contract.status_computed === 'EXPIRED',
+                              'bg-blue-100 text-blue-700': contract.status_computed === 'FUTURE'
+                          }"
+                          x-text="contract.status_computed"></span>
+                </div>
+                <p class="text-sm text-slate-500" x-text="'Contract: ' + (contract.no_kontrak || '-')"></p>
+                <div class="flex items-center gap-4 mt-2 text-xs text-slate-400">
+                    <span x-text="'Period: ' + formatDate(contract.start_date) + ' - ' + formatDate(contract.end_date)"></span>
+                    <span x-text="'Access Code: ' + (contract.kode_akses || '-')"></span>
+                </div>
+            </div>
+
+            <div class="text-right">
+                <template x-if="contract.days_remaining > 0">
+                    <div>
+                        <p class="text-3xl font-bold"
+                           :class="{
+                               'text-red-600': contract.days_remaining <= 30,
+                               'text-amber-600': contract.days_remaining <= 60,
+                               'text-emerald-600': contract.days_remaining > 60
+                           }"
+                           x-text="contract.days_remaining"></p>
+                        <p class="text-xs text-slate-400">days remaining</p>
+                    </div>
+                </template>
+                <template x-if="contract.days_remaining <= 0">
+                    <div>
+                        <p class="text-3xl font-bold text-slate-400" x-text="Math.abs(contract.days_remaining)"></p>
+                        <p class="text-xs text-red-400">days since expired</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Customer Contact -->
+        <div class="mt-4 pt-4 border-t border-slate-100 flex items-center gap-6 text-sm">
+            <a :href="'/enterprise/customers/' + contract.customer_id" class="text-[#F97316] hover:underline font-medium">
+                View Customer 360
+            </a>
+            <span class="text-slate-400" x-text="'Phone: ' + (contract.phone1 || '-')"></span>
+            <span class="text-slate-400" x-text="'Email: ' + (contract.email || '-')"></span>
+            <span class="text-slate-400" x-text="contract.address || ''"></span>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left Column: Areas & Subareas -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Areas -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-6 py-4 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Service Areas & Treatments</h3>
+                    <p class="text-xs text-slate-400 mt-1" x-text="areas.length + ' areas, ' + subareas.length + ' checkpoints'"></p>
+                </div>
+                <div class="divide-y divide-slate-50">
+                    <template x-for="area in areas" :key="area.id">
+                        <div class="px-6 py-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-8 h-8 rounded bg-[#F97316]/10 flex items-center justify-center text-[#F97316] text-sm font-bold"
+                                          x-text="area.area?.charAt(0) || '?'"></span>
+                                    <div>
+                                        <p class="font-medium text-slate-800" x-text="area.area"></p>
+                                        <p class="text-xs text-slate-400" x-text="'Treatment: ' + (area.treatment_text || '-')"></p>
+                                    </div>
+                                </div>
+                                <span class="text-xs text-slate-400" x-text="area.subarea_count + ' checkpoints'"></span>
+                            </div>
+
+                            <!-- Subareas for this area -->
+                            <div class="ml-10 mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
+                                <template x-for="sub in subareas.filter(s => s.id_kontrak_area === area.id)" :key="sub.id">
+                                    <div class="text-xs bg-slate-50 rounded px-2 py-1.5 flex items-center gap-2">
+                                        <span class="font-mono text-[#F97316] font-bold" x-text="sub.kode_unit"></span>
+                                        <span class="text-slate-600 truncate" x-text="sub.sub_area"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div x-show="areas.length === 0" class="px-6 py-8 text-center text-slate-400">
+                        <p>No areas mapped for this contract</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Visits -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-6 py-4 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Service Visits During Contract</h3>
+                </div>
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-slate-50">
+                            <th class="px-4 py-2 text-xs text-slate-500 text-left">Date</th>
+                            <th class="px-4 py-2 text-xs text-slate-500 text-left">Technician</th>
+                            <th class="px-4 py-2 text-xs text-slate-500 text-left">Type</th>
+                            <th class="px-4 py-2 text-xs text-slate-500 text-left">Duration</th>
+                            <th class="px-4 py-2 text-xs text-slate-500 text-left">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <template x-for="v in recentVisits" :key="v.id">
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-4 py-2 text-slate-700" x-text="formatDate(v.realization_date)"></td>
+                                <td class="px-4 py-2 text-slate-600" x-text="v.tech_name || '-'"></td>
+                                <td class="px-4 py-2 text-slate-500 text-xs" x-text="v.service_type || '-'"></td>
+                                <td class="px-4 py-2">
+                                    <span :class="v.duration_min > 180 ? 'text-red-500 font-bold' : 'text-slate-600'"
+                                          x-text="v.duration_min ? v.duration_min + ' min' : '-'"></span>
+                                </td>
+                                <td class="px-4 py-2">
+                                    <span class="text-xs font-medium px-1.5 py-0.5 rounded"
+                                          :class="v.status === 'Selesai' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                                          x-text="v.status"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div x-show="recentVisits.length === 0" class="px-6 py-6 text-center text-slate-400 text-sm">
+                    No visits recorded during contract period
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Churn Reason + Renewal + Complaints -->
+        <div class="space-y-6">
+            <!-- Churn Reason Card -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-semibold text-slate-700">Churn / Non-Renewal Reason</h3>
+                    <template x-if="['admin','koordinator'].includes(role)">
+                        <button @click="showChurnForm = !showChurnForm"
+                                class="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600">
+                            <span x-text="showChurnForm ? 'Cancel' : '+ Add'"></span>
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Existing Churn Reasons -->
+                <div class="space-y-3 mb-4">
+                    <template x-for="cr in churnReasons" :key="cr.id">
+                        <div class="p-3 rounded-lg border"
+                             :class="{
+                                 'border-red-200 bg-red-50': cr.reason_category === 'service_quality',
+                                 'border-amber-200 bg-amber-50': cr.reason_category === 'price',
+                                 'border-purple-200 bg-purple-50': cr.reason_category === 'competitor',
+                                 'border-slate-200 bg-slate-50': !['service_quality','price','competitor'].includes(cr.reason_category)
+                             }">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-bold uppercase px-1.5 py-0.5 rounded"
+                                      :class="{
+                                          'bg-red-100 text-red-700': cr.reason_category === 'service_quality',
+                                          'bg-amber-100 text-amber-700': cr.reason_category === 'price',
+                                          'bg-purple-100 text-purple-700': cr.reason_category === 'competitor',
+                                          'bg-blue-100 text-blue-700': cr.reason_category === 'business_closed',
+                                          'bg-cyan-100 text-cyan-700': cr.reason_category === 'relocation',
+                                          'bg-slate-100 text-slate-600': cr.reason_category === 'other'
+                                      }"
+                                      x-text="cr.reason_category?.replace(/_/g, ' ')"></span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] text-slate-400" x-text="formatDate(cr.decided_at)"></span>
+                                    <template x-if="['admin','koordinator'].includes(role)">
+                                        <button @click="deleteChurnReason(cr.id)" class="text-red-400 hover:text-red-600 text-xs">x</button>
+                                    </template>
+                                </div>
+                            </div>
+                            <p class="text-sm text-slate-700" x-text="cr.reason_detail || '-'"></p>
+                            <p x-show="cr.notes" class="text-xs text-slate-500 mt-1" x-text="cr.notes"></p>
+                            <p x-show="cr.decided_by_name" class="text-[10px] text-slate-400 mt-1" x-text="'by ' + cr.decided_by_name"></p>
+                            <template x-if="cr.linked_complaint_ids && cr.linked_complaint_ids.length > 0">
+                                <div class="mt-2 flex flex-wrap gap-1">
+                                    <template x-for="cid in cr.linked_complaint_ids" :key="cid">
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-mono"
+                                              x-text="'Complaint #' + cid"></span>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <div x-show="churnReasons.length === 0 && !showChurnForm" class="text-center text-xs text-slate-400 py-3">
+                        No churn reason recorded
+                    </div>
+                </div>
+
+                <!-- Add Churn Reason Form -->
+                <div x-show="showChurnForm" x-transition class="space-y-3 border-t border-slate-100 pt-4">
+                    <select x-model="churnForm.reason_category"
+                            class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <option value="">Select Reason...</option>
+                        <option value="service_quality">Service Quality</option>
+                        <option value="price">Price</option>
+                        <option value="competitor">Competitor</option>
+                        <option value="business_closed">Business Closed</option>
+                        <option value="relocation">Relocation</option>
+                        <option value="other">Other</option>
+                    </select>
+
+                    <textarea x-model="churnForm.reason_detail" rows="2" placeholder="Detail reason..."
+                              class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"></textarea>
+
+                    <!-- Link Complaints -->
+                    <div x-show="customerComplaints.length > 0">
+                        <label class="block text-xs text-slate-500 mb-1">Link Complaints</label>
+                        <div class="max-h-32 overflow-y-auto border rounded-lg p-2 space-y-1">
+                            <template x-for="co in customerComplaints" :key="co.id">
+                                <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                    <input type="checkbox" :value="co.id"
+                                           @change="toggleComplaintLink(co.id)"
+                                           :checked="churnForm.linked_complaint_ids.includes(co.id)"
+                                           class="rounded border-slate-300">
+                                    <span class="font-mono text-slate-500" x-text="'#' + co.id"></span>
+                                    <span class="text-xs font-bold"
+                                          :class="{
+                                              'text-red-600': co.severity === 'CRITICAL',
+                                              'text-amber-600': co.severity === 'MAJOR',
+                                              'text-slate-500': co.severity === 'MINOR'
+                                          }"
+                                          x-text="co.severity"></span>
+                                    <span class="text-slate-600 truncate" x-text="co.description?.substring(0, 40) + '...'"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+
+                    <textarea x-model="churnForm.notes" rows="2" placeholder="Additional notes..."
+                              class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"></textarea>
+
+                    <button @click="addChurnReason()" :disabled="!churnForm.reason_category"
+                            class="w-full px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
+                        Save Churn Reason
+                    </button>
+                </div>
+            </div>
+
+            <!-- Customer Complaints Card -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-700">Customer Complaints</h3>
+                    <span class="text-xs px-1.5 py-0.5 rounded font-bold"
+                          :class="customerComplaints.length > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'"
+                          x-text="customerComplaints.length"></span>
+                </div>
+                <div class="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                    <template x-for="co in customerComplaints" :key="co.id">
+                        <div class="px-4 py-3">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-[10px] font-mono text-slate-400" x-text="'#' + co.id"></span>
+                                <span class="text-xs font-bold px-1.5 py-0.5 rounded"
+                                      :class="{
+                                          'bg-red-100 text-red-600': co.severity === 'CRITICAL',
+                                          'bg-amber-100 text-amber-700': co.severity === 'MAJOR',
+                                          'bg-slate-100 text-slate-500': co.severity === 'MINOR'
+                                      }"
+                                      x-text="co.severity"></span>
+                                <span class="text-xs px-1.5 py-0.5 rounded"
+                                      :class="{
+                                          'bg-red-50 text-red-500': co.status === 'OPEN',
+                                          'bg-blue-50 text-blue-500': co.status === 'IN_PROGRESS',
+                                          'bg-emerald-50 text-emerald-500': co.status === 'RESOLVED' || co.status === 'CLOSED'
+                                      }"
+                                      x-text="co.status"></span>
+                                <span class="text-[10px] text-slate-400 ml-auto" x-text="formatDate(co.complaint_date)"></span>
+                            </div>
+                            <p class="text-sm text-slate-600" x-text="co.description"></p>
+                            <p x-show="co.technician_name" class="text-xs text-slate-400 mt-1" x-text="'Tech: ' + co.technician_name"></p>
+                            <p x-show="co.category" class="text-xs text-[#F97316] mt-0.5" x-text="co.category?.replace(/_/g, ' ')"></p>
+                        </div>
+                    </template>
+                    <div x-show="customerComplaints.length === 0" class="px-4 py-6 text-center text-xs text-emerald-500">
+                        No complaints recorded for this customer
+                    </div>
+                </div>
+            </div>
+
+            <!-- Renewal Status Card -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="text-sm font-semibold text-slate-700 mb-4">Renewal Tracking</h3>
+
+                <!-- Add Renewal Note -->
+                <div class="space-y-3">
+                    <select x-model="renewalForm.action"
+                            class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <option value="">Select Action...</option>
+                        <option value="RENEWAL_INITIATED">Renewal Initiated</option>
+                        <option value="CUSTOMER_CONTACTED">Customer Contacted</option>
+                        <option value="QUOTE_SENT">Quote Sent</option>
+                        <option value="RENEWAL_CONFIRMED">Renewal Confirmed</option>
+                        <option value="RENEWAL_DECLINED">Renewal Declined</option>
+                        <option value="NOTE">General Note</option>
+                    </select>
+
+                    <textarea x-model="renewalForm.note" rows="3" placeholder="Renewal note..."
+                              class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"></textarea>
+
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Next Follow-up</label>
+                        <input type="date" x-model="renewalForm.next_follow_up"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                    </div>
+
+                    <button @click="addRenewalNote()" :disabled="!renewalForm.action || !renewalForm.note"
+                            class="w-full px-4 py-2 bg-[#F97316] text-white rounded-lg text-sm font-medium hover:bg-[#EA580C] disabled:opacity-50 transition-colors">
+                        Add Renewal Note
+                    </button>
+                </div>
+            </div>
+
+            <!-- Renewal History -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                <div class="px-4 py-3 border-b border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700">Renewal History</h3>
+                </div>
+                <div class="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+                    <template x-for="note in renewalNotes" :key="note.id">
+                        <div class="px-4 py-3">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-bold px-1.5 py-0.5 rounded"
+                                      :class="{
+                                          'bg-emerald-100 text-emerald-700': note.action === 'RENEWAL_CONFIRMED',
+                                          'bg-red-100 text-red-600': note.action === 'RENEWAL_DECLINED',
+                                          'bg-blue-100 text-blue-700': note.action === 'CUSTOMER_CONTACTED' || note.action === 'QUOTE_SENT',
+                                          'bg-amber-100 text-amber-700': note.action === 'RENEWAL_INITIATED',
+                                          'bg-slate-100 text-slate-500': note.action === 'NOTE'
+                                      }"
+                                      x-text="note.action?.replace(/_/g, ' ')"></span>
+                                <span class="text-[10px] text-slate-400" x-text="formatDate(note.created_at)"></span>
+                            </div>
+                            <p class="text-sm text-slate-600 mt-1" x-text="note.note"></p>
+                            <p x-show="note.next_follow_up" class="text-xs text-[#F97316] mt-1"
+                               x-text="'Follow-up: ' + formatDate(note.next_follow_up)"></p>
+                        </div>
+                    </template>
+                    <div x-show="renewalNotes.length === 0" class="px-4 py-6 text-center text-slate-400 text-xs">
+                        No renewal activity yet
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function contractDetail(contractId) {
+    return {
+        contractId,
+        contract: {},
+        areas: [],
+        subareas: [],
+        recentVisits: [],
+        renewalNotes: [],
+        churnReasons: [],
+        customerComplaints: [],
+        renewalForm: { action: '', note: '', next_follow_up: '' },
+        churnForm: { reason_category: '', reason_detail: '', linked_complaint_ids: [], notes: '' },
+        showChurnForm: false,
+        role: '',
+
+        async init() {
+            const user = JSON.parse(localStorage.getItem('sanocare_user') || '{}');
+            this.role = user.role || '';
+            await this.loadContract();
+        },
+
+        async loadContract() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/contracts/${this.contractId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.contract = data.contract || {};
+                    this.areas = data.areas || [];
+                    this.subareas = data.subareas || [];
+                    this.recentVisits = data.recent_visits || [];
+                    this.renewalNotes = data.renewal_notes || [];
+                    this.churnReasons = data.churn_reasons || [];
+                    this.customerComplaints = data.customer_complaints || [];
+                }
+            } catch (e) { console.error('Load error:', e); }
+        },
+
+        toggleComplaintLink(id) {
+            const idx = this.churnForm.linked_complaint_ids.indexOf(id);
+            if (idx >= 0) {
+                this.churnForm.linked_complaint_ids.splice(idx, 1);
+            } else {
+                this.churnForm.linked_complaint_ids.push(id);
+            }
+        },
+
+        async addChurnReason() {
+            if (!this.churnForm.reason_category) return;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/contracts/${this.contractId}/churn-reason`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.churnForm)
+                });
+                if (res.ok) {
+                    this.churnForm = { reason_category: '', reason_detail: '', linked_complaint_ids: [], notes: '' };
+                    this.showChurnForm = false;
+                    await this.loadContract();
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to save');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        async deleteChurnReason(reasonId) {
+            if (!confirm('Delete this churn reason?')) return;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                await _fetch(`/api/v1/enterprise/contracts/${this.contractId}/churn-reason/${reasonId}`, {
+                    method: 'DELETE'
+                });
+                await this.loadContract();
+            } catch (e) { console.error(e); }
+        },
+
+        async addRenewalNote() {
+            if (!this.renewalForm.action || !this.renewalForm.note) return;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/contracts/${this.contractId}/renewal-note`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.renewalForm)
+                });
+                if (res.ok) {
+                    this.renewalForm = { action: '', note: '', next_follow_up: '' };
+                    await this.loadContract();
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Failed to add note');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+    }
+}
+</script>
+{% endblock %}

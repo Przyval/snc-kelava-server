@@ -1,0 +1,293 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Technicians{% endblock %}
+
+{% block content %}
+<div x-data="techniciansDashboard()" x-init="loadData()">
+    
+    <!-- Page Header: SAP-Grade Context -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <h1 class="text-2xl font-bold text-[#0F172A]">Technicians</h1>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">
+                    Performance View
+                </span>
+            </div>
+            <div class="flex items-center gap-2 text-sm">
+                <span class="text-[#64748B]">Operational Performance</span>
+                <span class="text-[#CBD5E1]">•</span>
+                <span class="font-medium text-[#0F172A]" x-text="dateRangeLabel"></span>
+                <span class="text-[#CBD5E1]">•</span>
+                <span class="flex items-center gap-1.5 text-[#DC2626] bg-[#FEF2F2] px-2 py-0.5 rounded border border-[#FECACA] text-xs font-medium" x-show="belowExpectedCount > 0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                    <span x-text="belowExpectedCount + ' technicians below expected'"></span>
+                </span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <select x-model="sortBy" @change="loadData()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#0F172A] focus:ring-[#F97316] focus:border-[#F97316] shadow-sm">
+                <option value="total_visits">Sort by Total Visits</option>
+                <option value="completion_rate">Sort by Completion Rate</option>
+                <option value="avg_duration">Sort by Avg Duration</option>
+            </select>
+            <button @click="exportCSV()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#F97316] transition-colors shadow-sm flex items-center gap-1.5" title="Export CSV">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Export
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Techs: Actionable Zero -->
+    <div class="bg-white border border-[#E2E8F0] rounded-xl p-4 mb-6 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-[#64748B] text-xs font-bold uppercase tracking-wider mb-1">Active Workforce</p>
+                <div class="flex items-baseline gap-3">
+                    <p class="text-3xl font-bold text-[#0F172A]" x-text="activeTodayCount"></p>
+                    
+                    <!-- Actionable Status Badge -->
+                    <template x-if="activeTodayCount === 0">
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">
+                            Outside Working Hours
+                        </span>
+                    </template>
+                    <template x-if="activeTodayCount > 0 && activeTodayCount < 5">
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-[#FFF7ED] text-[#C2410C] border border-[#FFEDD5]">
+                            Low Activity
+                        </span>
+                    </template>
+                </div>
+            </div>
+            
+            <!-- Avatars -->
+            <div class="flex -space-x-2">
+                <template x-for="tech in activeToday.slice(0, 5)" :key="tech.id">
+                    <div class="w-10 h-10 rounded-full overflow-hidden bg-[#F8FAFC] border-2 border-white shadow-sm relative">
+                        <img :src="'/enterprise/static/img/staff/' + tech.id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="tech.name">
+                        <span class="flex items-center justify-center w-full h-full text-xs font-bold text-[#475569]" x-text="tech.name?.charAt(0) || '?'"></span>
+                    </div>
+                </template>
+                <div x-show="activeToday.length > 5" class="w-10 h-10 rounded-full bg-[#F1F5F9] border-2 border-white flex items-center justify-center text-xs font-medium text-[#64748B] shadow-sm"
+                     x-text="'+' + (activeToday.length - 5)"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Table: Diagnostic View -->
+    <div class="bg-white rounded-xl shadow-sm border border-[#E2E8F0] overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#F8FAFC] text-xs text-[#64748B] uppercase tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-bold">Rank</th>
+                        <th class="px-4 py-3 text-left font-bold">Technician</th>
+                        <th class="px-4 py-3 text-right font-bold w-32">
+                            Visits/Day
+                            <span class="block text-[10px] font-normal text-[#94A3B8] normal-case">Avg. Volume</span>
+                        </th>
+                        <th class="px-4 py-3 text-right font-bold">
+                            Total Visits
+                            <span class="block text-[10px] font-normal text-[#94A3B8] normal-case">Absolute Load</span>
+                        </th>
+                        <th class="px-4 py-3 text-right font-bold w-40">
+                            Completion Rate
+                            <span class="block text-[10px] font-normal text-[#94A3B8] normal-case">Success Ratio</span>
+                        </th>
+                        <th class="px-4 py-3 text-right font-bold w-40">
+                            Avg Duration
+                            <span class="block text-[10px] font-normal text-[#94A3B8] normal-case">Efficiency</span>
+                        </th>
+                        <th class="px-4 py-3 text-center font-bold">Signal</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#F1F5F9]">
+                    <template x-for="(tech, idx) in leaderboard" :key="tech.id">
+                        <tr class="hover:bg-[#F8FAFC] transition-colors group">
+                            <td class="px-4 py-3 text-[#64748B]">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono font-medium" x-text="idx + 1"></span>
+                                    <!-- Context Badge for #1 -->
+                                    <span x-show="idx === 0" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">
+                                        TOP
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full overflow-hidden bg-[#F1F5F9] border border-[#E2E8F0] flex-shrink-0 relative">
+                                        <img :src="'/enterprise/static/img/staff/' + tech.id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="tech.name">
+                                        <span class="flex items-center justify-center w-full h-full text-[#475569] text-xs font-bold" x-text="tech.name?.charAt(0) || '?'"></span>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <p class="font-bold text-[#0F172A]" x-text="tech.name || 'Unknown'"></p>
+                                            <!-- Productivity Warning -->
+                                            <span x-show="tech.metrics.visits_per_day < 2" class="w-2 h-2 rounded-full bg-[#EF4444]" title="Low Productivity"></span>
+                                        </div>
+                                        <p class="text-[10px] text-[#94A3B8]" x-text="tech.email || ''"></p>
+                                    </div>
+                                </div>
+                            </td>
+                            
+                            <!-- Key KPI: Visits/Day (Authority) -->
+                            <td class="px-4 py-3 text-right">
+                                <div class="flex flex-col items-end">
+                                    <span class="font-bold text-[#0F172A] text-base" x-text="tech.metrics.visits_per_day"></span>
+                                    
+                                    <!-- Micro-indicator logic -->
+                                    <template x-if="tech.metrics.visits_per_day >= 3">
+                                        <span class="text-[10px] text-[#16A34A] font-medium flex items-center">
+                                            High Vol ▲
+                                        </span>
+                                    </template>
+                                    <template x-if="tech.metrics.visits_per_day < 2">
+                                        <span class="text-[10px] text-[#DC2626] font-medium flex items-center">
+                                            Low Vol ▼
+                                        </span>
+                                    </template>
+                                </div>
+                            </td>
+
+                            <td class="px-4 py-3 text-right font-mono text-[#64748B]" x-text="tech.metrics.total_visits"></td>
+
+                            <!-- Completion Rate (Secondary Visual) -->
+                            <td class="px-4 py-3 text-right">
+                                <div class="flex justify-end">
+                                    <span class="px-2 py-1 rounded text-xs font-medium border"
+                                          :class="{
+                                              'bg-[#F0FDF4] text-[#374151] border-[#DCFCE7]': tech.metrics.completion_rate_pct >= 90, /* Normal Good - subtle */
+                                              'bg-[#FEFCE8] text-[#854D0E] border-[#FEF08A]': tech.metrics.completion_rate_pct >= 75 && tech.metrics.completion_rate_pct < 90, /* Warning */
+                                              'bg-[#FEF2F2] text-[#B91C1C] border-[#FECACA] font-bold': tech.metrics.completion_rate_pct < 75 /* Critical - Keeps shouting */
+                                          }"
+                                          x-text="tech.metrics.completion_rate_pct + '%'"></span>
+                                </div>
+                            </td>
+
+                            <!-- Duration (Efficiency) -->
+                            <td class="px-4 py-3 text-right">
+                                <div class="flex flex-col items-end group/dur cursor-help">
+                                    <span class="font-mono text-[#0F172A]" x-text="Math.round(tech.metrics.avg_duration_min) + 'm'"></span>
+                                    <!-- Context relative to expected 120-180m -->
+                                    <template x-if="tech.metrics.avg_duration_min < 60">
+                                        <span class="text-[10px] text-[#D97706] font-medium">Too fast?</span>
+                                    </template>
+                                    <template x-if="tech.metrics.avg_duration_min > 240">
+                                        <span class="text-[10px] text-[#DC2626] font-bold">Slow</span>
+                                    </template>
+                                    
+                                    <!-- Hover Context (SAP "Why") -->
+                                    <div class="hidden group-hover/dur:block absolute bg-[#1E293B] text-white text-[10px] p-2 rounded shadow-lg z-50 -mt-8 mr-8 w-32">
+                                        Est. Travel: High<br>
+                                        Complexity: Normal
+                                    </div>
+                                </div>
+                            </td>
+
+                            <!-- Action Signal (Decision Support) -->
+                            <td class="px-4 py-3 text-center">
+                                <a :href="'/enterprise/technicians/' + tech.id" 
+                                   class="inline-flex items-center justify-center p-1.5 rounded-lg transition-colors border border-transparent"
+                                   :class="{
+                                       'text-[#DC2626] bg-[#FEF2F2] border-[#FECACA] hover:bg-[#FEE2E2]': tech.metrics.visits_per_day < 2 || tech.metrics.completion_rate_pct < 75,
+                                       'text-[#B45309] bg-[#FFFBEB] border-[#FEF3C7] hover:bg-[#FEF3C7]': tech.metrics.completion_rate_pct < 90 && tech.metrics.completion_rate_pct >= 75,
+                                       'text-[#64748B] hover:text-[#F97316] hover:bg-[#FFF7ED] hover:border-[#FFEDD5]': !(tech.metrics.visits_per_day < 2 || tech.metrics.completion_rate_pct < 90)
+                                   }">
+                                    <!-- Conditional Icon -->
+                                    <template x-if="tech.metrics.visits_per_day < 2 || tech.metrics.completion_rate_pct < 75">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                        </svg>
+                                    </template>
+                                    
+                                    <span class="text-xs font-bold" x-show="tech.metrics.visits_per_day < 2 || tech.metrics.completion_rate_pct < 75">Review</span>
+                                    
+                                    <svg x-show="!(tech.metrics.visits_per_day < 2 || tech.metrics.completion_rate_pct < 75)" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                </a>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="leaderboard.length === 0">
+                        <td colspan="7" class="px-4 py-12 text-center">
+                            <div class="flex flex-col items-center justify-center text-[#94A3B8]">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                </svg>
+                                <p class="text-sm font-medium">No technician data found for this period</p>
+                                <p class="text-xs mt-1">Try adjusting the date range or filters</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function techniciansDashboard() {
+    return {
+        leaderboard: [],
+        activeToday: [],
+        activeTodayCount: 0,
+        sortBy: 'total_visits',
+
+        get dateRangeLabel() {
+            // Simplified date label, ideally dynamic
+            const now = new Date();
+            const past = new Date(Date.now() - 30*24*60*60*1000);
+            return `${past.getDate()} ${past.toLocaleString('default', { month: 'short' })} – ${now.getDate()} ${now.toLocaleString('default', { month: 'short' })}`;
+        },
+        
+        get belowExpectedCount() {
+            // Count techs with < 2 visits/day
+            return this.leaderboard.filter(t => t.metrics.visits_per_day < 2).length;
+        },
+
+        async loadData() {
+            const params = new URLSearchParams({
+                start_date: new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0],
+                sort_by: this.sortBy,
+                limit: 50
+            });
+
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+
+            try {
+                const res = await _fetch(`/api/v1/enterprise/technicians/leaderboard?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.leaderboard = data.leaderboard || [];
+                }
+            } catch (e) { console.error('Leaderboard error:', e); }
+
+            try {
+                const activeRes = await _fetch('/api/v1/enterprise/technicians/active-today');
+                if (activeRes.ok) {
+                    const activeData = await activeRes.json();
+                    this.activeToday = activeData.technicians || [];
+                    this.activeTodayCount = activeData.count || 0;
+                }
+            } catch (e) { console.error('Active today error:', e); }
+        },
+
+        exportCSV() {
+            const params = new URLSearchParams({
+                start_date: new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0],
+                sort_by: this.sortBy,
+                limit: 100,
+                format: 'csv'
+            });
+            window.open(`/api/v1/enterprise/technicians/leaderboard?${params}`, '_blank');
+        }
+    }
+}
+</script>
+{% endblock %}

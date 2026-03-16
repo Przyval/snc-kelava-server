@@ -1,0 +1,155 @@
+# KPI Configuration v1.0
+# ========================
+# All thresholds and parameters for KPI calculation
+# This file is the single source of truth - no hardcoding elsewhere
+
+general:
+  timezone: "Asia/Jakarta"
+  date_range:
+    # Defaults to all data; override in queries if needed
+    mode: "all"  # Options: all, last_15_months, mtd, custom
+    custom_start: null
+    custom_end: null
+
+type_mapping:
+  # Segment assignment for leaderboards
+  MOBILE:
+    - t_mobile
+  STATION:
+    - t_station
+  SUPPORT:
+    - checklist
+  SUPERVISOR:
+    - spv_tc
+    - spv_qc
+
+thresholds:
+  # Global defaults (used when segment-specific not defined)
+  duration:
+    valid_min: 5       # minutes
+    valid_max: 480     # minutes (8 hours)
+    overnight_min: 600 # minutes (10 hours)
+    overnight_max: 1440  # minutes (24 hours)
+    multiday_suspect: 1440  # minutes - anything above is multi-day issue
+    cap_for_display: 1440   # cap for FAIR mode display, not compliance
+  
+  # Segment-specific duration validity (overrides global)
+  duration_by_segment:
+    MOBILE:
+      valid_min: 5       # EDA P05: 5.2 min
+      valid_max: 240     # EDA P75 is 176 min. Cap at 4h to catch sleepers.
+      description: "Short visits (Median 94m). Max 4h per visit."
+    STATION:
+      valid_min: 240     # EDA P05: ~12m but real shifts are >4h.
+      valid_max: 720     # EDA P95: 16h is too long. Cap at 12h.
+      description: "Full shifts (Median 8.5h). 4-12 hours acceptable."
+    SUPPORT:
+      valid_min: 5
+      valid_max: 600
+      description: "Checklist/support tasks, variable duration"
+    SUPERVISOR:
+      valid_min: 5
+      valid_max: 600
+      description: "QC/TC visits, variable duration"
+  
+  photo:
+    minimum_count: 1  # >= 1 photo required
+    # Photo compliance rules by segment
+    # SUPPORT/CHECKLIST may not require photos by SOP
+    photo_required_segments:
+      - MOBILE
+      - STATION
+      - SUPERVISOR
+    photo_exempt_segments:
+      - SUPPORT  # Checklist tasks - confirm with Ops if photos required
+  
+  time:
+    suspect_hours: [21, 22, 23]  # 21:00 - 23:59 flagged as suspect
+    working_hours_start: "07:30"
+    working_hours_end: "17:00"
+    on_time_window_start: "07:30"  # STRICT mode first check-in window
+    on_time_window_end: "08:30"
+    on_time_tolerance_min: 30  # ±30 minutes (FAIR mode tolerance)
+  
+  working_days:
+    # 0=Sunday, 1=Monday, ..., 6=Saturday (SQLite strftime %w format)
+    valid_days: [1, 2, 3, 4, 5, 6]  # Monday to Saturday
+
+kpi_weights:
+  # Total must sum to 100
+  completion_rate: 25
+  on_time_rate: 20
+  duration_compliance: 15
+  photo_compliance: 15
+  productivity: 25
+
+productivity:
+  # Segment-specific targets
+  target_by_segment:
+    MOBILE: 2.0       # 2 visits per working day
+    STATION: 1.0      # 1 visit per working day (long duration)
+    SUPPORT: 1.5      # 1.5 tasks per day
+    SUPERVISOR: 1.5   # 1.5 inspections per day
+  target_visits_per_working_day: 2  # fallback default
+  max_score_multiplier: 1.5  # cap productivity score at 150% of target
+  # EDA Note: Mobile P75 is 3.0 visits/day. Consider extra bonus for > 3.0.
+
+grading:
+  A:
+    min_score: 90
+    max_score: 100
+    label: "Excellent"
+  B:
+    min_score: 80
+    max_score: 89.99
+    label: "Good"
+  C:
+    min_score: 70
+    max_score: 79.99
+    label: "Satisfactory"
+  D:
+    min_score: 60
+    max_score: 69.99
+    label: "Needs Improvement"
+  F:
+    min_score: 0
+    max_score: 59.99
+    label: "Unsatisfactory"
+
+modes:
+  STRICT:
+    description: "Audit/Compliance mode - raw data, all anomalies flagged"
+    duration_validity: "5-480 only"
+    multiday_treatment: "fail"
+    on_time_method: "actual_day = scheduled_day"
+    
+  FAIR:
+    description: "Ranking/Bonus mode - fair comparison, data issues handled"
+    duration_validity: "5-480 only (same as strict)"
+    multiday_treatment: "exclude from duration numerator, keep in denominator"
+    on_time_method: "actual_day = scheduled_day"
+
+eligibility:
+  v1:
+    description: "Original eligibility (Step 2)"
+    criteria:
+      - is_complete = 1
+      - has_checkin = 1
+      - duration_min_raw BETWEEN 5 AND 600
+  v2:
+    description: "Stricter eligibility - requires valid checkout"
+    criteria:
+      - is_complete = 1
+      - has_checkin = 1
+      - has_checkout = 1
+      - duration_min_raw BETWEEN 5 AND 600
+
+# Acceptance test targets (from Step 2.1)
+acceptance_tests:
+  total_road_plans: 33727
+  completed_visits: 33510
+  null_checkout: 217
+  null_checkin: 7
+  no_photo: 5452
+  multiday_suspect: 3431
+  suspect_time: 5711

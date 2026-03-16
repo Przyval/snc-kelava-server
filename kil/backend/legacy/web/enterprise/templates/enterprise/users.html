@@ -1,0 +1,376 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Users & Access{% endblock %}
+
+{% block content %}
+<div x-data="userManagement()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Users & Access Control</h1>
+            <p class="text-sm text-slate-500 mt-1">Manage enterprise user accounts, roles, and permissions</p>
+        </div>
+        <button @click="showCreateModal = true"
+                class="px-4 py-2 bg-[#F97316] text-white text-sm font-semibold rounded-lg hover:bg-[#EA580C] transition-colors shadow-sm">
+            + New User
+        </button>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Users</p>
+            <p class="text-2xl font-bold text-slate-900 mt-1" x-text="stats.total || '—'"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Active</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1" x-text="stats.active || '—'"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Locked</p>
+            <p class="text-2xl font-bold mt-1" :class="stats.locked > 0 ? 'text-red-600' : 'text-slate-900'" x-text="stats.locked || '0'"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Logins (7d)</p>
+            <p class="text-2xl font-bold text-blue-600 mt-1" x-text="stats.recent_logins_7d || '0'"></p>
+        </div>
+    </div>
+
+    <!-- Role Breakdown -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+        <div class="flex items-center gap-6">
+            <span class="text-xs font-bold text-slate-500 uppercase">Roles:</span>
+            <template x-for="r in (stats.by_role || [])" :key="r.role">
+                <button @click="roleFilter = roleFilter === r.role ? '' : r.role; loadUsers()"
+                        class="px-3 py-1 rounded-full text-xs font-bold transition-all"
+                        :class="roleFilter === r.role
+                            ? 'bg-[#F97316] text-white'
+                            : r.role === 'admin' ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                            : r.role === 'koordinator' ? 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                            : r.role === 'supervisor' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            : r.role === 'technician' ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100'">
+                    <span x-text="r.role"></span>
+                    <span class="ml-1 opacity-70" x-text="'(' + r.cnt + ')'"></span>
+                </button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="flex items-center gap-3 mb-4">
+        <div class="flex-1 relative">
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" x-model.debounce.300ms="search" @input="loadUsers()"
+                   placeholder="Search by name or email..."
+                   class="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] focus:border-[#F97316] outline-none">
+        </div>
+        <label class="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" x-model="activeOnly" @change="loadUsers()" class="rounded text-[#F97316] focus:ring-[#F97316]">
+            Active only
+        </label>
+    </div>
+
+    <!-- Users Table -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">User</th>
+                    <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">Role</th>
+                    <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase hidden md:table-cell">Status</th>
+                    <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase hidden lg:table-cell">Last Login</th>
+                    <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase hidden lg:table-cell">p_user</th>
+                    <th class="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="u in users" :key="u.id">
+                    <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                                     :class="u.is_active ? 'bg-[#F97316]' : 'bg-slate-300'">
+                                    <span x-text="(u.full_name || u.email).charAt(0).toUpperCase()"></span>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-slate-900" x-text="u.full_name"></p>
+                                    <p class="text-xs text-slate-500" x-text="u.email"></p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="text-xs font-bold px-2 py-1 rounded"
+                                  :class="u.role === 'admin' ? 'bg-red-50 text-red-700'
+                                        : u.role === 'koordinator' ? 'bg-purple-50 text-purple-700'
+                                        : u.role === 'supervisor' ? 'bg-blue-50 text-blue-700'
+                                        : u.role === 'technician' ? 'bg-emerald-50 text-emerald-700'
+                                        : 'bg-slate-50 text-slate-600'"
+                                  x-text="u.role"></span>
+                        </td>
+                        <td class="px-4 py-3 hidden md:table-cell">
+                            <template x-if="u.locked_until && new Date(u.locked_until) > new Date()">
+                                <span class="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">LOCKED</span>
+                            </template>
+                            <template x-if="!u.is_active">
+                                <span class="text-xs font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded">INACTIVE</span>
+                            </template>
+                            <template x-if="u.is_active && !(u.locked_until && new Date(u.locked_until) > new Date())">
+                                <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">ACTIVE</span>
+                            </template>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-slate-500 hidden lg:table-cell" x-text="u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('id-ID') : 'Never'"></td>
+                        <td class="px-4 py-3 text-xs text-slate-400 hidden lg:table-cell" x-text="u.p_user_id ? '#' + u.p_user_id : '—'"></td>
+                        <td class="px-4 py-3 text-right">
+                            <div class="flex items-center justify-end gap-1">
+                                <button @click="editUser(u)" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600" title="Edit">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button @click="resetPasswordUser(u)" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-orange-600" title="Reset Password">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                                </button>
+                                <template x-if="u.locked_until && new Date(u.locked_until) > new Date()">
+                                    <button @click="unlockUser(u)" class="p-1.5 rounded hover:bg-slate-100 text-red-400 hover:text-emerald-600" title="Unlock">
+                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+                                    </button>
+                                </template>
+                            </div>
+                        </td>
+                    </tr>
+                </template>
+                <template x-if="users.length === 0 && !loading">
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-slate-400">No users found</td></tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Create User Modal -->
+    <div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="showCreateModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 class="text-lg font-bold text-slate-900 mb-4">Create Enterprise User</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Full Name</label>
+                    <input type="text" x-model="newUser.full_name" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none" placeholder="John Doe">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email</label>
+                    <input type="email" x-model="newUser.email" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none" placeholder="user@sanocare.work">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Password</label>
+                    <input type="password" x-model="newUser.password" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none" placeholder="Min 8 characters">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Role</label>
+                    <select x-model="newUser.role" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none">
+                        <option value="viewer">Viewer (read-only)</option>
+                        <option value="technician">Technician</option>
+                        <option value="supervisor">Supervisor</option>
+                        <option value="koordinator">Koordinator</option>
+                        <option value="admin">Admin (full access)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showCreateModal = false" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">Cancel</button>
+                <button @click="createUser()" :disabled="creating"
+                        class="px-4 py-2 bg-[#F97316] text-white text-sm font-semibold rounded-lg hover:bg-[#EA580C] disabled:opacity-50">
+                    <span x-show="!creating">Create User</span>
+                    <span x-show="creating">Creating...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div x-show="showEditModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="showEditModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 class="text-lg font-bold text-slate-900 mb-4">Edit User</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Full Name</label>
+                    <input type="text" x-model="editForm.full_name" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email</label>
+                    <input type="email" x-model="editForm.email" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Role</label>
+                    <select x-model="editForm.role" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none">
+                        <option value="viewer">Viewer</option>
+                        <option value="technician">Technician</option>
+                        <option value="supervisor">Supervisor</option>
+                        <option value="koordinator">Koordinator</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" x-model="editForm.is_active" class="rounded text-[#F97316] focus:ring-[#F97316]">
+                    <label class="text-sm text-slate-700">Active account</label>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showEditModal = false" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">Cancel</button>
+                <button @click="saveEdit()" class="px-4 py-2 bg-[#F97316] text-white text-sm font-semibold rounded-lg hover:bg-[#EA580C]">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Password Modal -->
+    <div x-show="showResetModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="showResetModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 class="text-lg font-bold text-slate-900 mb-2">Reset Password</h3>
+            <p class="text-sm text-slate-500 mb-4">Set a new password for <strong x-text="resetTarget?.full_name"></strong>. All active sessions will be revoked.</p>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 uppercase mb-1">New Password</label>
+                <input type="password" x-model="resetNewPassword" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#F97316] outline-none" placeholder="Min 8 characters">
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showResetModal = false" class="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">Cancel</button>
+                <button @click="confirmResetPassword()" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700">Reset Password</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function userManagement() {
+    return {
+        users: [],
+        stats: {},
+        loading: false,
+        search: '',
+        roleFilter: '',
+        activeOnly: true,
+        showCreateModal: false,
+        showEditModal: false,
+        showResetModal: false,
+        creating: false,
+        newUser: { full_name: '', email: '', password: '', role: 'viewer' },
+        editForm: { id: null, full_name: '', email: '', role: '', is_active: true },
+        resetTarget: null,
+        resetNewPassword: '',
+
+        async init() {
+            await Promise.all([this.loadStats(), this.loadUsers()]);
+        },
+
+        async loadStats() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/users/stats');
+                if (res.ok) this.stats = await res.json();
+            } catch (e) { console.warn('Stats error:', e); }
+        },
+
+        async loadUsers() {
+            this.loading = true;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const params = new URLSearchParams({ active: this.activeOnly, per_page: 100 });
+            if (this.search) params.set('search', this.search);
+            if (this.roleFilter) params.set('role', this.roleFilter);
+
+            try {
+                const res = await _fetch('/api/v1/enterprise/users/?' + params);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.users = data.users;
+                }
+            } catch (e) { console.warn('Load error:', e); }
+            this.loading = false;
+        },
+
+        async createUser() {
+            if (!this.newUser.full_name || !this.newUser.email || !this.newUser.password) {
+                alert('All fields are required'); return;
+            }
+            if (this.newUser.password.length < 8) {
+                alert('Password must be at least 8 characters'); return;
+            }
+            this.creating = true;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/users/', {
+                    method: 'POST',
+                    body: JSON.stringify(this.newUser)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    this.showCreateModal = false;
+                    this.newUser = { full_name: '', email: '', password: '', role: 'viewer' };
+                    await Promise.all([this.loadStats(), this.loadUsers()]);
+                } else {
+                    alert(data.error || 'Failed to create user');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+            this.creating = false;
+        },
+
+        editUser(u) {
+            this.editForm = { id: u.id, full_name: u.full_name, email: u.email, role: u.role, is_active: u.is_active };
+            this.showEditModal = true;
+        },
+
+        async saveEdit() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/users/' + this.editForm.id, {
+                    method: 'PATCH',
+                    body: JSON.stringify(this.editForm)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    this.showEditModal = false;
+                    await Promise.all([this.loadStats(), this.loadUsers()]);
+                } else {
+                    alert(data.error || 'Failed to update');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        resetPasswordUser(u) {
+            this.resetTarget = u;
+            this.resetNewPassword = '';
+            this.showResetModal = true;
+        },
+
+        async confirmResetPassword() {
+            if (this.resetNewPassword.length < 8) {
+                alert('Password must be at least 8 characters'); return;
+            }
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/users/' + this.resetTarget.id + '/reset-password', {
+                    method: 'POST',
+                    body: JSON.stringify({ new_password: this.resetNewPassword })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    this.showResetModal = false;
+                    alert('Password reset successfully');
+                } else {
+                    alert(data.error || 'Failed to reset');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        },
+
+        async unlockUser(u) {
+            if (!confirm('Unlock account for ' + u.full_name + '?')) return;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/users/' + u.id + '/unlock', { method: 'POST' });
+                if (res.ok) {
+                    await this.loadUsers();
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+    }
+}
+</script>
+{% endblock %}

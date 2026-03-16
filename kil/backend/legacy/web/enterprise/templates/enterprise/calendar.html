@@ -1,0 +1,306 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Resource Calendar{% endblock %}
+
+{% block content %}
+<div x-data="calendarDispatch()" x-init="loadSchedule()">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-[#0F172A]">Resource Calendar</h1>
+            <p class="text-[#6B7280] text-sm">Dispatch view: Technician × Time slots</p>
+        </div>
+        <div class="flex items-center gap-4">
+            <!-- Week Navigation -->
+            <div class="flex items-center gap-2 bg-white rounded-lg border border-[#E5E7EB] p-1">
+                <button @click="prevWeek()" class="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                </button>
+                <span class="px-3 text-sm font-medium text-[#1F2937]" x-text="weekLabel"></span>
+                <button @click="nextWeek()" class="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <!-- Today Button: PRIMARY CTA (Brand Orange) -->
+                <button @click="goToday()" class="px-3 py-1.5 text-sm font-medium bg-[#F36A1D] text-white rounded-lg hover:bg-[#C2410C] transition-colors">
+                    Today
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Conflict Alerts -->
+    <div x-show="conflicts.has_issues" class="bg-[#FEF2F2] border border-[#DC2626] rounded-xl p-4 mb-6">
+        <div class="flex items-center gap-2 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#DC2626]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <h3 class="font-semibold text-[#DC2626]">Scheduling Conflicts Detected</h3>
+        </div>
+        <div class="flex flex-wrap gap-3">
+            <template x-for="conflict in conflicts.overlap_conflicts" :key="conflict.job1.id">
+                <div class="flex items-center gap-2 px-3 py-2 bg-[#FEE2E2] rounded-lg text-[#991B1B] text-sm">
+                    <span class="font-medium" x-text="conflict.tech_name"></span>
+                    <span>has overlap:</span>
+                    <span x-text="conflict.job1.customer"></span>
+                    <span>&</span>
+                    <span x-text="conflict.job2.customer"></span>
+                </div>
+            </template>
+            <template x-for="tech in conflicts.overloaded_technicians" :key="tech.id">
+                <div class="flex items-center gap-2 px-3 py-2 bg-[#FEF3C7] rounded-lg text-[#92400E] text-sm">
+                    <span class="font-medium" x-text="tech.name"></span>
+                    <span>overloaded:</span>
+                    <span x-text="tech.job_count + ' jobs'"></span>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Calendar Grid -->
+    <div class="bg-white rounded-xl shadow-sm border border-[#E5E7EB] overflow-hidden">
+        <!-- Header: Dates -->
+        <div class="grid border-b border-[#E5E7EB]" :style="'grid-template-columns: 200px repeat(' + dates.length + ', 1fr)'">
+            <div class="p-3 bg-slate-50 border-r border-[#E5E7EB]">
+                <span class="text-sm font-medium text-[#6B7280]">Technician</span>
+            </div>
+            <template x-for="d in dates" :key="d.date">
+                <div class="p-3 text-center border-r last:border-r-0 border-[#E5E7EB]"
+                     :class="d.is_today ? 'bg-[#FFF4ED]' : 'bg-slate-50'">
+                    <p class="text-xs text-[#9CA3AF]" x-text="d.day_short"></p>
+                    <p class="text-sm font-semibold" :class="d.is_today ? 'text-[#F36A1D]' : 'text-[#1F2937]'"
+                       x-text="d.date.split('-')[2]"></p>
+                </div>
+            </template>
+        </div>
+
+        <!-- Body: Technician Rows -->
+        <div class="max-h-[600px] overflow-y-auto">
+            <template x-for="tech in technicians" :key="tech.id">
+                <div class="grid border-b border-slate-100 hover:bg-slate-50/50" 
+                     :style="'grid-template-columns: 200px repeat(' + dates.length + ', 1fr)'">
+                    <!-- Technician Name & Workload -->
+                    <div class="p-3 border-r border-[#E5E7EB] flex items-center gap-3">
+                        <div class="relative">
+                            <div class="w-10 h-10 rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative">
+                                <img :src="'/enterprise/static/img/staff/' + tech.id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="tech.name">
+                                <span class="flex items-center justify-center w-full h-full text-slate-600 font-bold" x-text="tech.name.charAt(0)"></span>
+                            </div>
+                            <!-- Capacity Indicator Dot -->
+                            <div class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center"
+                                 :class="{
+                                     'bg-emerald-500': tech.workload_status === 'OPTIMAL',
+                                     'bg-amber-500': tech.workload_status === 'HIGH',
+                                     'bg-rose-600 animate-pulse': tech.workload_status === 'OVERLOAD'
+                                 }">
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-slate-800" x-text="tech.name"></p>
+                            <p class="text-[10px] font-medium px-1.5 py-0.5 rounded-full w-fit mt-1"
+                               :class="{
+                                   'bg-emerald-50 text-emerald-700': tech.workload_status === 'OPTIMAL',
+                                   'bg-amber-50 text-amber-700': tech.workload_status === 'HIGH',
+                                   'bg-rose-50 text-rose-700': tech.workload_status === 'OVERLOAD'
+                               }"
+                               x-text="tech.jobs.length + ' Jobs'"></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Jobs per Day -->
+                    <template x-for="d in dates" :key="d.date">
+                        <div class="p-1 border-r last:border-r-0 border-slate-100 min-h-[100px] relative group transition-colors"
+                             :class="d.is_today ? 'bg-[#FFF7ED] border-[#FED7AA]' : 'hover:bg-slate-50'">
+                            
+                            <!-- Empty State CTA -->
+                            <div x-show="getJobsForDate(tech.jobs, d.date).length === 0"
+                                 class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="text-[10px] font-medium text-slate-400 border border-dashed border-slate-300 rounded px-2 py-1 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50">
+                                    + Assign
+                                </button>
+                            </div>
+
+                            <template x-for="job in getJobsForDate(tech.jobs, d.date)" :key="job.id">
+                                <a :href="'/enterprise/customers/' + job.customer_id"
+                                   class="block mb-1 p-2 rounded border shadow-sm cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] relative overflow-hidden"
+                                   :class="{
+                                       'h-14': job.estimated_duration <= 60,
+                                       'h-20': job.estimated_duration > 60 && job.estimated_duration <= 120,
+                                       'h-28': job.estimated_duration > 120,
+                                       'bg-white border-l-4 border-l-emerald-500': job.status === 'Selesai',
+                                       'bg-blue-50 border-l-4 border-l-blue-500': job.status === 'Berjalan',
+                                       'bg-amber-50 border-amber-200 border-l-4 border-l-amber-500': job.color === 'orange', 
+                                       'bg-slate-50 border-slate-200 border-l-4 border-l-slate-400': job.status === 'Baru' || job.status === 'Requested',
+                                       'bg-red-50 border-red-200 border-l-4 border-l-red-500 opacity-75 grayscale': job.is_cancelled
+                                   }">
+                                    
+                                    <!-- Urgency/Status Icons Overlay -->
+                                    <div class="absolute top-1 right-1 flex gap-1">
+                                        <span x-show="job.is_overrun" class="animate-pulse text-red-600" title="Overrun">⚠️</span>
+                                        <span x-show="job.color === 'orange'" class="text-amber-600" title="Missing Checkout">⛔</span>
+                                    </div>
+
+                                    <p class="font-bold text-xs truncate pr-4" 
+                                       :class="job.is_cancelled ? 'line-through text-slate-500' : 'text-slate-800'"
+                                       x-text="job.customer_name"></p>
+                                    
+                                    <div class="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
+                                        <span x-text="job.time_start"></span>
+                                        <!-- Duration Badge -->
+                                        <span class="px-1 rounded bg-slate-100 text-slate-600" 
+                                              x-text="Math.round(job.estimated_duration/60) + 'h'"></span>
+                                    </div>
+                                </a>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Empty State -->
+            <div x-show="technicians.length === 0" class="p-12 text-center">
+                <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                </div>
+                <h3 class="text-lg font-medium text-slate-900">No Scheduled Jobs</h3>
+                <p class="text-slate-500 mb-6">There are no visits scheduled for this period.</p>
+                <button class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium">
+                    Schedule a Visit
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Operational Legend -->
+    <div class="flex items-center flex-wrap gap-6 mt-4 text-xs font-medium text-slate-600 border-t border-slate-100 pt-4">
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-slate-200 border-l-2 border-slate-400"></div>
+            <span>Pending</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-blue-100 border-l-2 border-blue-500"></div>
+            <span>Running</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-amber-100 border-l-2 border-amber-500"></div>
+            <span class="text-amber-700">Missing Checkout (Alert)</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-white border border-l-4 border-l-emerald-500"></div>
+            <span>Completed</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-red-50 border-l-2 border-red-500"></div>
+            <span class="text-red-700">Cancelled/Problem</span>
+        </div>
+        <div class="h-4 w-px bg-slate-300 mx-2"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>Optimal Load</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>High Load</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
+            <span class="text-red-700 font-bold">OVERLOAD</span>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-4 gap-4 mt-6">
+        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
+            <p class="text-sm text-[#6B7280]">Technicians Active</p>
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="summary.total_technicians"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
+            <p class="text-sm text-[#6B7280]">Total Jobs</p>
+            <p class="text-2xl font-bold text-[#0F172A]" x-text="summary.total_jobs"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
+            <p class="text-sm text-[#6B7280]">Conflicts</p>
+            <p class="text-2xl font-bold" :class="conflicts.has_issues ? 'text-[#DC2626]' : 'text-[#16A34A]'"
+               x-text="(conflicts.overlap_conflicts?.length || 0) + (conflicts.overloaded_technicians?.length || 0)"></p>
+        </div>
+        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
+            <p class="text-sm text-[#6B7280]">Week Completion</p>
+            <p class="text-2xl font-bold text-[#2563EB]" x-text="weekCompletion + '%'"></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function calendarDispatch() {
+    return {
+        startDate: new Date().toISOString().split('T')[0],
+        dates: [],
+        technicians: [],
+        summary: { total_technicians: 0, total_jobs: 0 },
+        conflicts: { has_issues: false, overlap_conflicts: [], overloaded_technicians: [] },
+        
+        get weekLabel() {
+            if (!this.dates.length) return '';
+            const start = this.dates[0];
+            const end = this.dates[this.dates.length - 1];
+            return `${start.date.split('-')[2]} - ${end.date.split('-')[2]} ${new Date(end.date).toLocaleString('default', { month: 'short', year: 'numeric' })}`;
+        },
+        
+        get weekCompletion() {
+            const completed = this.technicians.reduce((sum, t) => 
+                sum + t.jobs.filter(j => j.color === 'green').length, 0);
+            return this.summary.total_jobs > 0 
+                ? Math.round(completed / this.summary.total_jobs * 100) 
+                : 0;
+        },
+        
+        async loadSchedule() {
+            const endDate = new Date(this.startDate);
+            endDate.setDate(endDate.getDate() + 6);
+
+            const params = new URLSearchParams({
+                start_date: this.startDate,
+                end_date: endDate.toISOString().split('T')[0]
+            });
+
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+
+            const [schedRes, conflictRes] = await Promise.all([
+                _fetch(`/api/v1/enterprise/calendar/schedule?${params}`),
+                _fetch(`/api/v1/enterprise/calendar/conflicts?date=${this.startDate}`),
+            ]);
+            const [schedData, conflictData] = await Promise.all([
+                schedRes.json(), conflictRes.json(),
+            ]);
+
+            this.dates = schedData.dates || [];
+            this.technicians = schedData.technicians || [];
+            this.summary = schedData.summary || {};
+            this.conflicts = conflictData;
+        },
+        
+        getJobsForDate(jobs, date) {
+            return jobs.filter(j => j.date === date);
+        },
+        
+        prevWeek() {
+            const d = new Date(this.startDate);
+            d.setDate(d.getDate() - 7);
+            this.startDate = d.toISOString().split('T')[0];
+            this.loadSchedule();
+        },
+        
+        nextWeek() {
+            const d = new Date(this.startDate);
+            d.setDate(d.getDate() + 7);
+            this.startDate = d.toISOString().split('T')[0];
+            this.loadSchedule();
+        },
+        
+        goToday() {
+            this.startDate = new Date().toISOString().split('T')[0];
+            this.loadSchedule();
+        }
+    }
+}
+</script>
+{% endblock %}

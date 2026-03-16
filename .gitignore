@@ -1,0 +1,73 @@
+# ============================================================
+# SanoCare / KIL Server — .gitignore
+# ============================================================
+
+# --- Secrets & Environment ---
+.env
+*.env
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+.Python
+pip-wheel-metadata/
+
+# --- Virtual Environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Databases (runtime artifacts) ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Logs ---
+*.log
+logs/*.log
+flask.log
+kil_server.log
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# --- IDE ---
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+
+# --- Node (dashboard) ---
+analytics/dashboard/node_modules/
+analytics/dashboard/dist/
+analytics/dashboard/.env
+
+# --- Generated / Large Data (regeneratable, not for git) ---
+data/
+analytics/kpi/
+analytics/staging/
+analytics/insights/
+analytics/dashboard_data/
+analytics/dashboard/public/data/
+analytics/*.db
+
+# --- Pycache (anywhere) ---
+**/__pycache__/
+**/*.pyc
+
+# --- Test artifacts ---
+.pytest_cache/
+.coverage
+htmlcov/

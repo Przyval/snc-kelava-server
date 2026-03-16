@@ -1,0 +1,345 @@
+{% extends "enterprise/base.html" %}
+{% block title %}KPI Archive{% endblock %}
+
+{% block content %}
+<div x-data="kpiArchive()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">KPI History Archive</h1>
+            <p class="text-slate-500 text-sm">Monthly technician performance records</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <select x-model="selectedMonth" @change="loadArchive()"
+                    class="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                <template x-for="m in availableMonths" :key="m.year_month">
+                    <option :value="m.year_month" x-text="formatMonth(m.year_month) + ' (' + m.technician_count + ')'"></option>
+                </template>
+            </select>
+            <button @click="recompute()" :disabled="recomputing"
+                    class="px-4 py-2 rounded-lg bg-[#F97316] text-white text-sm font-medium hover:bg-[#EA580C] disabled:opacity-50 transition-colors"
+                    x-show="['admin','koordinator'].includes(role)">
+                <span x-show="!recomputing">Recompute</span>
+                <span x-show="recomputing">Computing...</span>
+            </button>
+            <button @click="exportCSV()"
+                    class="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors">
+                Export CSV
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Technicians</p>
+            <p class="text-xl font-bold text-slate-900 mt-1" x-text="totalTechnicians"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Total Visits</p>
+            <p class="text-xl font-bold text-slate-700 mt-1" x-text="totalVisits.toLocaleString()"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-4">
+            <p class="text-[10px] font-medium text-emerald-500 uppercase">Grade A</p>
+            <p class="text-xl font-bold text-emerald-600 mt-1" x-text="gradeDist.A || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
+            <p class="text-[10px] font-medium text-blue-500 uppercase">Grade B</p>
+            <p class="text-xl font-bold text-blue-600 mt-1" x-text="gradeDist.B || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-amber-200 p-4">
+            <p class="text-[10px] font-medium text-amber-500 uppercase">Grade C</p>
+            <p class="text-xl font-bold text-amber-600 mt-1" x-text="gradeDist.C || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-red-200 p-4">
+            <p class="text-[10px] font-medium text-red-500 uppercase">Grade D</p>
+            <p class="text-xl font-bold text-red-600 mt-1" x-text="gradeDist.D || 0"></p>
+        </div>
+    </div>
+
+    <!-- Grade Distribution Chart -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Grade Distribution</h3>
+            <canvas id="gradeChart" height="200"></canvas>
+        </div>
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">Performance Trend (All Months)</h3>
+            <canvas id="trendChart" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+        <div class="flex flex-wrap items-end gap-4">
+            <div class="w-40">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Sort By</label>
+                <select x-model="sortBy" @change="loadArchive()"
+                        class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                    <option value="completion_rate">Completion Rate</option>
+                    <option value="visits_per_day">Visits/Day</option>
+                    <option value="total_visits">Total Visits</option>
+                    <option value="grade">Grade</option>
+                </select>
+            </div>
+            <div class="w-40">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Filter Grade</label>
+                <select x-model="gradeFilter"
+                        class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                    <option value="">All Grades</option>
+                    <option value="A">Grade A</option>
+                    <option value="B">Grade B</option>
+                    <option value="C">Grade C</option>
+                    <option value="D">Grade D</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Search</label>
+                <input type="text" x-model="search" placeholder="Technician name..."
+                       class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-left">
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-8">#</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Technician</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Segment</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-center">Grade</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Planned</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Completed</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Visits</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Days</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">V/Day</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Complete %</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Avg Dur</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">On-Time %</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">History</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+                <template x-for="(t, idx) in filteredTechnicians" :key="t.technician_id">
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-4 py-3 text-slate-400 text-xs" x-text="idx + 1"></td>
+                        <td class="px-4 py-3">
+                            <a :href="'/enterprise/technicians/' + t.technician_id" class="font-medium text-slate-800 hover:text-[#F97316]" x-text="t.name"></a>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600" x-text="t.segment"></span>
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold"
+                                  :class="{
+                                      'bg-emerald-100 text-emerald-700': t.grade === 'A',
+                                      'bg-blue-100 text-blue-700': t.grade === 'B',
+                                      'bg-amber-100 text-amber-700': t.grade === 'C',
+                                      'bg-red-100 text-red-600': t.grade === 'D'
+                                  }"
+                                  x-text="t.grade"></span>
+                        </td>
+                        <td class="px-4 py-3 text-right text-slate-600" x-text="t.total_planned"></td>
+                        <td class="px-4 py-3 text-right text-slate-600" x-text="t.total_completed"></td>
+                        <td class="px-4 py-3 text-right font-medium text-slate-800" x-text="t.total_visits"></td>
+                        <td class="px-4 py-3 text-right text-slate-600" x-text="t.active_days"></td>
+                        <td class="px-4 py-3 text-right font-medium"
+                            :class="{ 'text-emerald-600': t.visits_per_day >= 3, 'text-amber-600': t.visits_per_day >= 2 && t.visits_per_day < 3, 'text-red-500': t.visits_per_day < 2 }"
+                            x-text="t.visits_per_day"></td>
+                        <td class="px-4 py-3 text-right font-medium"
+                            :class="{ 'text-emerald-600': t.completion_rate >= 90, 'text-amber-600': t.completion_rate >= 70 && t.completion_rate < 90, 'text-red-500': t.completion_rate < 70 }"
+                            x-text="t.completion_rate + '%'"></td>
+                        <td class="px-4 py-3 text-right text-slate-600" x-text="t.avg_duration_min + ' min'"></td>
+                        <td class="px-4 py-3 text-right"
+                            :class="{ 'text-emerald-600': t.on_time_rate >= 80, 'text-amber-600': t.on_time_rate >= 50, 'text-red-500': t.on_time_rate < 50 }"
+                            x-text="t.on_time_rate + '%'"></td>
+                        <td class="px-4 py-3 text-right">
+                            <a :href="'/enterprise/technicians/' + t.technician_id + '/rapor?months=12'"
+                               class="text-xs text-[#F97316] hover:underline">View</a>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+
+        <div x-show="filteredTechnicians.length === 0" class="px-6 py-8 text-center text-slate-400">
+            <p>No KPI data for this month. Click "Recompute" to generate.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+function kpiArchive() {
+    return {
+        selectedMonth: '',
+        availableMonths: [],
+        technicians: [],
+        totalTechnicians: 0,
+        totalVisits: 0,
+        gradeDist: { A: 0, B: 0, C: 0, D: 0 },
+        sortBy: 'completion_rate',
+        gradeFilter: '',
+        search: '',
+        recomputing: false,
+        role: '',
+        gradeChart: null,
+        trendChart: null,
+
+        get filteredTechnicians() {
+            let list = this.technicians;
+            if (this.gradeFilter) {
+                list = list.filter(t => t.grade === this.gradeFilter);
+            }
+            if (this.search) {
+                const q = this.search.toLowerCase();
+                list = list.filter(t => t.name?.toLowerCase().includes(q));
+            }
+            return list;
+        },
+
+        async init() {
+            const user = JSON.parse(localStorage.getItem('sanocare_user') || '{}');
+            this.role = user.role || '';
+            await this.loadMonths();
+            if (this.availableMonths.length > 0) {
+                this.selectedMonth = this.availableMonths[0].year_month;
+            }
+            await this.loadArchive();
+        },
+
+        async loadMonths() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/technicians/kpi-archive/available-months');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.availableMonths = data.months || [];
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async loadArchive() {
+            if (!this.selectedMonth) return;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const params = new URLSearchParams({ month: this.selectedMonth, sort_by: this.sortBy });
+                const res = await _fetch(`/api/v1/enterprise/technicians/kpi-archive?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.technicians = data.technicians || [];
+                    this.totalTechnicians = data.total_technicians || 0;
+                    this.totalVisits = data.total_visits || 0;
+                    this.gradeDist = data.grade_distribution || { A: 0, B: 0, C: 0, D: 0 };
+                    this.renderGradeChart();
+                    this.renderTrendChart();
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async recompute() {
+            this.recomputing = true;
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/technicians/kpi-archive/recompute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ month: this.selectedMonth })
+                });
+                if (res.ok) {
+                    await this.loadMonths();
+                    await this.loadArchive();
+                }
+            } catch (e) { console.error(e); }
+            this.recomputing = false;
+        },
+
+        renderGradeChart() {
+            const ctx = document.getElementById('gradeChart');
+            if (!ctx) return;
+            if (this.gradeChart) this.gradeChart.destroy();
+            this.gradeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Grade A', 'Grade B', 'Grade C', 'Grade D'],
+                    datasets: [{
+                        data: [this.gradeDist.A, this.gradeDist.B, this.gradeDist.C, this.gradeDist.D],
+                        backgroundColor: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444'],
+                        borderWidth: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+                    }
+                }
+            });
+        },
+
+        renderTrendChart() {
+            const ctx = document.getElementById('trendChart');
+            if (!ctx) return;
+            if (this.trendChart) this.trendChart.destroy();
+
+            // Build trend from available months
+            const months = [...this.availableMonths].reverse();
+            const labels = months.map(m => this.formatMonth(m.year_month));
+            const counts = months.map(m => m.technician_count);
+
+            this.trendChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Technicians with Data',
+                        data: counts,
+                        backgroundColor: '#F97316',
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        },
+
+        exportCSV() {
+            const headers = ['Name', 'Segment', 'Grade', 'Planned', 'Completed', 'Visits', 'Active Days', 'V/Day', 'Complete%', 'Avg Dur', 'On-Time%'];
+            const csvRows = [headers.join(',')];
+            for (const t of this.filteredTechnicians) {
+                csvRows.push([
+                    '"' + (t.name || '') + '"', t.segment, t.grade,
+                    t.total_planned, t.total_completed, t.total_visits,
+                    t.active_days, t.visits_per_day, t.completion_rate,
+                    t.avg_duration_min, t.on_time_rate
+                ].join(','));
+            }
+            const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `kpi_archive_${this.selectedMonth}.csv`;
+            a.click();
+        },
+
+        formatMonth(ym) {
+            if (!ym) return '-';
+            const [y, m] = ym.split('-');
+            const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return months[parseInt(m)] + ' ' + y;
+        }
+    }
+}
+</script>
+{% endblock %}

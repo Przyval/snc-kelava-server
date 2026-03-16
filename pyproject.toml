@@ -1,0 +1,55 @@
+[project]
+name = "kelava-server-analytics"
+version = "0.1.0"
+description = "Professional Data Science Environment for Kelava Server Analytics"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "plotly>=5.15.0",
+    "streamlit>=1.24.0",
+    "altair>=5.0.0",
+    "scipy>=1.10.0",
+    "statsmodels>=0.14.0",
+    "great_tables>=0.3.0",
+    "jinja2>=3.1.0",
+    "reportlab>=4.0.0",
+    "weasyprint>=60.0.0",
+    "kaleido>=0.2.1",
+    "sqlalchemy>=2.0.0",
+    "psycopg[binary]>=3.1.0",
+    "duckdb>=0.9.0",
+    "polars>=0.19.0",
+    "python-dotenv>=1.0.0",
+    "flask>=3.0.0",
+    "pyyaml>=6.0.0",
+    "httpx>=0.25.0",
+    "pymysql>=1.1.0",
+    "cryptography>=41.0.0",
+    "supabase>=2.28.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.1.0",
+    "pre-commit>=3.3.0",
+    "jupyter>=1.0.0",
+    "black>=23.3.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "PL", "RUF"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

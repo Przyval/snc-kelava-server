@@ -1,0 +1,15 @@
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.db
+*.log
+.env
+analytics/
+data/
+docs/
+mobile/
+scripts/
+infra/
+.github/

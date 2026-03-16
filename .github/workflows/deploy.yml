@@ -1,0 +1,58 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+
+env:
+  REMOTE: root@104.194.154.108
+  DEPLOY_DIR: /root/kil-server
+
+jobs:
+  # ── 1. Lint ──────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "check kil/"
+
+  # ── 2. Deploy ────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy → safencare.work
+    needs: lint
+    runs-on: ubuntu-latest
+    environment: production          # requires manual approval if configured
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.REMOTE }} >> ~/.ssh/known_hosts
+
+      - name: Sync kil/backend/ to server
+        run: |
+          rsync -avz --delete \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.DS_Store' \
+            --exclude='*.db' \
+            kil/backend/ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/kil/backend/
+
+      - name: Restart service
+        run: |
+          ssh ${{ env.REMOTE }} \
+            'systemctl restart kil-api && sleep 3 && systemctl status kil-api --no-pager'
+
+      - name: Run smoke tests
+        run: |
+          ssh ${{ env.REMOTE }} \
+            '${{ env.DEPLOY_DIR }}/.venv/bin/python3 \
+             ${{ env.DEPLOY_DIR }}/kil/backend/scripts/smoke_test.py'

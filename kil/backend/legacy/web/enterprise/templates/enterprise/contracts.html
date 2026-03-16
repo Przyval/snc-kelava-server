@@ -1,0 +1,285 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Contract Management{% endblock %}
+
+{% block content %}
+<div x-data="contractsDashboard()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Contract Management</h1>
+            <p class="text-slate-500 text-sm">Contract lifecycle, renewals, and area mapping</p>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Total</p>
+            <p class="text-xl font-bold text-slate-900 mt-1" x-text="stats.total_contracts || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-4">
+            <p class="text-[10px] font-medium text-emerald-500 uppercase">Active</p>
+            <p class="text-xl font-bold text-emerald-600 mt-1" x-text="stats.active_contracts || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Expired</p>
+            <p class="text-xl font-bold text-slate-400 mt-1" x-text="stats.expired_contracts || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <p class="text-[10px] font-medium text-slate-400 uppercase">Customers</p>
+            <p class="text-xl font-bold text-slate-700 mt-1" x-text="stats.unique_customers || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-red-200 p-4 cursor-pointer hover:bg-red-50 transition-colors"
+             @click="statusFilter = 'expiring_30d'; loadContracts()">
+            <p class="text-[10px] font-medium text-red-500 uppercase">30 Days</p>
+            <p class="text-xl font-bold text-red-600 mt-1" x-text="stats.expiring_30d || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-amber-200 p-4 cursor-pointer hover:bg-amber-50 transition-colors"
+             @click="statusFilter = 'expiring_60d'; loadContracts()">
+            <p class="text-[10px] font-medium text-amber-500 uppercase">60 Days</p>
+            <p class="text-xl font-bold text-amber-600 mt-1" x-text="stats.expiring_60d || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-4">
+            <p class="text-[10px] font-medium text-blue-500 uppercase">90 Days</p>
+            <p class="text-xl font-bold text-blue-600 mt-1" x-text="stats.expiring_90d || 0"></p>
+        </div>
+    </div>
+
+    <!-- Renewal Pipeline Alert -->
+    <div x-show="renewalPipeline.length > 0" class="bg-gradient-to-r from-red-50 to-amber-50 rounded-xl border border-red-200 p-4 mb-6">
+        <div class="flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+            <h3 class="text-sm font-bold text-red-800">Renewal Pipeline - Immediate Attention Required</h3>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <template x-for="r in renewalPipeline.slice(0, 6)" :key="r.id">
+                <a :href="'/enterprise/contracts/' + r.id"
+                   class="bg-white rounded-lg border p-3 hover:shadow-md transition-all"
+                   :class="{
+                       'border-red-300': r.urgency === 'CRITICAL',
+                       'border-amber-300': r.urgency === 'WARNING',
+                       'border-blue-200': r.urgency === 'UPCOMING'
+                   }">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs font-bold"
+                              :class="{
+                                  'text-red-600': r.urgency === 'CRITICAL',
+                                  'text-amber-600': r.urgency === 'WARNING',
+                                  'text-blue-600': r.urgency === 'UPCOMING'
+                              }"
+                              x-text="r.days_remaining + 'd remaining'"></span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                              :class="{
+                                  'bg-red-100 text-red-700': r.urgency === 'CRITICAL',
+                                  'bg-amber-100 text-amber-700': r.urgency === 'WARNING',
+                                  'bg-blue-100 text-blue-700': r.urgency === 'UPCOMING'
+                              }"
+                              x-text="r.urgency"></span>
+                    </div>
+                    <p class="text-sm font-medium text-slate-800 truncate" x-text="r.customer_name"></p>
+                    <p class="text-xs text-slate-400" x-text="'Ends: ' + formatDate(r.end_date)"></p>
+                </a>
+            </template>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+        <div class="flex flex-wrap items-end gap-4">
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Search</label>
+                <input type="text" x-model="search" placeholder="Contract or customer name..."
+                       @input.debounce.300ms="page = 1; loadContracts()"
+                       class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+            </div>
+            <div class="w-44">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Status</label>
+                <select x-model="statusFilter" @change="page = 1; loadContracts()"
+                        class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-[#F97316] focus:border-[#F97316]">
+                    <option value="">All Contracts</option>
+                    <option value="active">Active</option>
+                    <option value="expired">Expired</option>
+                    <option value="expiring_30d">Expiring in 30d</option>
+                    <option value="expiring_60d">Expiring in 60d</option>
+                </select>
+            </div>
+            <button @click="search = ''; statusFilter = ''; page = 1; loadContracts()"
+                    class="text-xs text-slate-400 hover:text-slate-600 underline pb-2">Reset</button>
+        </div>
+    </div>
+
+    <!-- Contracts Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 text-left">
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Customer</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Contract</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Remaining</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Areas</th>
+                    <th class="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Action</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+                <template x-for="c in contracts" :key="c.id">
+                    <tr class="hover:bg-slate-50 transition-colors"
+                        :class="{
+                            'bg-red-50/30': c.renewal_urgency === 'CRITICAL',
+                            'bg-amber-50/30': c.renewal_urgency === 'WARNING'
+                        }">
+                        <td class="px-4 py-3">
+                            <a :href="'/enterprise/customers/' + c.customer_id" class="hover:text-[#F97316]">
+                                <p class="font-medium text-slate-800" x-text="c.customer_name"></p>
+                                <p class="text-xs text-slate-400" x-text="c.customer_code"></p>
+                            </a>
+                        </td>
+                        <td class="px-4 py-3">
+                            <p class="text-slate-700" x-text="c.no_kontrak"></p>
+                            <p class="text-xs text-slate-400" x-text="c.kode_akses ? 'Code: ' + c.kode_akses : ''"></p>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-slate-600">
+                            <p x-text="formatDate(c.start_date) + ' - ' + formatDate(c.end_date)"></p>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-1 rounded text-xs font-bold"
+                                  :class="{
+                                      'bg-emerald-100 text-emerald-700': c.status_computed === 'ACTIVE',
+                                      'bg-slate-100 text-slate-500': c.status_computed === 'EXPIRED',
+                                      'bg-blue-100 text-blue-700': c.status_computed === 'FUTURE',
+                                      'bg-slate-50 text-slate-400': c.status_computed === 'INACTIVE'
+                                  }"
+                                  x-text="c.status_computed"></span>
+                            <template x-if="c.renewal_urgency">
+                                <span class="ml-1 text-[10px] font-bold"
+                                      :class="{
+                                          'text-red-600': c.renewal_urgency === 'CRITICAL',
+                                          'text-amber-600': c.renewal_urgency === 'WARNING',
+                                          'text-blue-500': c.renewal_urgency === 'UPCOMING'
+                                      }"
+                                      x-text="c.renewal_urgency"></span>
+                            </template>
+                        </td>
+                        <td class="px-4 py-3">
+                            <template x-if="c.days_remaining > 0">
+                                <span class="text-sm font-bold"
+                                      :class="{
+                                          'text-red-600': c.days_remaining <= 30,
+                                          'text-amber-600': c.days_remaining <= 60,
+                                          'text-slate-700': c.days_remaining > 60
+                                      }"
+                                      x-text="c.days_remaining + 'd'"></span>
+                            </template>
+                            <template x-if="c.days_remaining <= 0">
+                                <span class="text-sm font-bold text-slate-400"
+                                      x-text="Math.abs(c.days_remaining) + 'd ago'"></span>
+                            </template>
+                        </td>
+                        <td class="px-4 py-3 text-slate-600" x-text="c.area_count || 0"></td>
+                        <td class="px-4 py-3 text-right">
+                            <a :href="'/enterprise/contracts/' + c.id"
+                               class="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-[#F97316] hover:text-white transition-colors">
+                                View Detail
+                            </a>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+
+        <div x-show="contracts.length === 0" class="px-6 py-8 text-center text-slate-400">
+            <p>No contracts found</p>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div x-show="pagination.total > pagination.per_page" class="flex items-center justify-between mt-4">
+        <p class="text-sm text-slate-500" x-text="'Showing ' + contracts.length + ' of ' + pagination.total"></p>
+        <div class="flex gap-2">
+            <button @click="page--; loadContracts()" :disabled="page <= 1"
+                    class="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50">Previous</button>
+            <button @click="page++; loadContracts()" :disabled="page * pagination.per_page >= pagination.total"
+                    class="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50">Next</button>
+        </div>
+    </div>
+
+    <!-- Recently Expired Section -->
+    <div x-show="recentlyExpired.length > 0" class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-500 mb-3">Recently Expired (Last 90 Days)</h3>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="divide-y divide-slate-50">
+                <template x-for="r in recentlyExpired" :key="r.id">
+                    <div class="flex items-center justify-between px-4 py-3 hover:bg-slate-50">
+                        <div>
+                            <p class="text-sm font-medium text-slate-700" x-text="r.customer_name"></p>
+                            <p class="text-xs text-slate-400" x-text="r.no_kontrak + ' | Expired: ' + formatDate(r.end_date)"></p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-red-500 font-medium" x-text="r.days_since_expired + 'd ago'"></span>
+                            <a :href="'/enterprise/customers/' + r.customer_id"
+                               class="text-xs text-[#F97316] hover:underline">View Customer</a>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function contractsDashboard() {
+    return {
+        stats: {},
+        contracts: [],
+        renewalPipeline: [],
+        recentlyExpired: [],
+        search: '',
+        statusFilter: '',
+        page: 1,
+        pagination: { total: 0, per_page: 25 },
+
+        async init() {
+            await Promise.all([this.loadDashboard(), this.loadContracts()]);
+        },
+
+        async loadDashboard() {
+            try {
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch('/api/v1/enterprise/contracts/dashboard');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.stats = data.stats || {};
+                    this.renewalPipeline = data.renewal_pipeline || [];
+                    this.recentlyExpired = data.recently_expired || [];
+                }
+            } catch (e) { console.error('Dashboard error:', e); }
+        },
+
+        async loadContracts() {
+            try {
+                const params = new URLSearchParams({ page: this.page, per_page: 25 });
+                if (this.search) params.set('search', this.search);
+                if (this.statusFilter) params.set('status', this.statusFilter);
+
+                const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+                const res = await _fetch(`/api/v1/enterprise/contracts?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.contracts = data.contracts || [];
+                    this.pagination = data.pagination || { total: 0, per_page: 25 };
+                }
+            } catch (e) { console.error('List error:', e); }
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+    }
+}
+</script>
+{% endblock %}

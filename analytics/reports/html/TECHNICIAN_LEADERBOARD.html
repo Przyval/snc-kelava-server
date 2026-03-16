@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SanoCare Technician Leaderboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5a67d8;
+            --success: #48bb78;
+            --warning: #ed8936;
+            --danger: #f56565;
+            --dark: #1a202c;
+            --gray-100: #f7fafc;
+            --gray-200: #edf2f7;
+            --gray-300: #e2e8f0;
+            --gray-600: #718096;
+            --gray-800: #2d3748;
+            --gold: #ffd700;
+            --silver: #c0c0c0;
+            --bronze: #cd7f32;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #1a1c2e 0%, #2d1b4e 50%, #1a2a4a 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .header .subtitle {
+            color: var(--gray-600);
+            font-size: 1.1rem;
+        }
+
+        .header .update-time {
+            color: var(--gray-600);
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card .label {
+            color: var(--gray-600);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-card .change {
+            font-size: 0.85rem;
+            color: var(--success);
+            margin-top: 5px;
+        }
+
+        /* Podium */
+        .podium-section {
+            margin-bottom: 40px;
+        }
+
+        .podium-section h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 1.5rem;
+            color: var(--gray-300);
+        }
+
+        .podium {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .podium-place {
+            text-align: center;
+            transition: transform 0.3s;
+        }
+
+        .podium-place:hover {
+            transform: scale(1.05);
+        }
+
+        .podium-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0 auto 10px;
+            color: #fff;
+        }
+
+        .podium-place.first .podium-avatar {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+        }
+
+        .podium-place.second .podium-avatar {
+            background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%);
+            box-shadow: 0 0 20px rgba(192, 192, 192, 0.5);
+        }
+
+        .podium-place.third .podium-avatar {
+            background: linear-gradient(135deg, #cd7f32 0%, #b87333 100%);
+            box-shadow: 0 0 20px rgba(205, 127, 50, 0.5);
+        }
+
+        .podium-name {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 5px;
+        }
+
+        .podium-score {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .podium-stats {
+            font-size: 0.8rem;
+            color: var(--gray-600);
+        }
+
+        .podium-bar {
+            width: 120px;
+            margin-top: 15px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 10px;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .podium-place.first .podium-bar {
+            height: 150px;
+            background: linear-gradient(180deg, rgba(255, 215, 0, 0.3) 0%, rgba(255, 215, 0, 0.1) 100%);
+            border: 2px solid rgba(255, 215, 0, 0.5);
+        }
+
+        .podium-place.second .podium-bar {
+            height: 120px;
+            background: linear-gradient(180deg, rgba(192, 192, 192, 0.3) 0%, rgba(192, 192, 192, 0.1) 100%);
+            border: 2px solid rgba(192, 192, 192, 0.5);
+        }
+
+        .podium-place.third .podium-bar {
+            height: 90px;
+            background: linear-gradient(180deg, rgba(205, 127, 50, 0.3) 0%, rgba(205, 127, 50, 0.1) 100%);
+            border: 2px solid rgba(205, 127, 50, 0.5);
+        }
+
+        /* Leaderboard Table */
+        .leaderboard-section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .leaderboard-section h2 {
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .leaderboard-table th {
+            text-align: left;
+            padding: 15px 12px;
+            color: var(--gray-600);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .leaderboard-table td {
+            padding: 16px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.95rem;
+        }
+
+        .leaderboard-table tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .rank-1 { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+        .rank-2 { background: linear-gradient(135deg, #c0c0c0, #a0a0a0); color: #000; }
+        .rank-3 { background: linear-gradient(135deg, #cd7f32, #b87333); color: #fff; }
+        .rank-default { background: rgba(255, 255, 255, 0.1); }
+
+        .grade-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .grade-A { background: rgba(72, 187, 120, 0.2); color: #48bb78; }
+        .grade-B { background: rgba(102, 126, 234, 0.2); color: #667eea; }
+        .grade-C { background: rgba(237, 137, 54, 0.2); color: #ed8936; }
+        .grade-D { background: rgba(245, 101, 101, 0.2); color: #f56565; }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-fill.high { background: linear-gradient(90deg, #48bb78, #38a169); }
+        .progress-fill.medium { background: linear-gradient(90deg, #ed8936, #dd6b20); }
+        .progress-fill.low { background: linear-gradient(90deg, #f56565, #e53e3e); }
+
+        /* Charts Section */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chart-card h3 {
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+            color: var(--gray-300);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--gray-600);
+            font-size: 0.85rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8rem; }
+            .podium { flex-direction: column; align-items: center; }
+            .podium-place { order: 0; }
+            .podium-place.first { order: -1; }
+            .charts-grid { grid-template-columns: 1fr; }
+            .leaderboard-table { font-size: 0.8rem; }
+            .leaderboard-table th, .leaderboard-table td { padding: 10px 6px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🏆 Technician Leaderboard</h1>
+            <p class="subtitle">SanoCare Pest Control - Performance Dashboard</p>
+            <p class="update-time">Data Period: Jan 2025 - Present | Updated: <span id="updateTime"></span></p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Technicians</div>
+                <div class="value">53</div>
+                <div class="change">Active in 2025</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Visits</div>
+                <div class="value">10,584</div>
+                <div class="change">Completed YTD</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Avg Completion Rate</div>
+                <div class="value">99.5%</div>
+                <div class="change">↑ Excellent</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Grade A Performers</div>
+                <div class="value">8</div>
+                <div class="change">Top 15%</div>
+            </div>
+        </div>
+
+        <!-- Podium -->
+        <div class="podium-section">
+            <h2>🥇 Top 3 Performers</h2>
+            <div class="podium">
+                <div class="podium-place second">
+                    <div class="podium-avatar">CA</div>
+                    <div class="podium-name">Choirul Anam</div>
+                    <div class="podium-score">100.0</div>
+                    <div class="podium-stats">1,058 visits • 3.8/day</div>
+                    <div class="podium-bar">2</div>
+                </div>
+                <div class="podium-place first">
+                    <div class="podium-avatar">AR</div>
+                    <div class="podium-name">Akbar Rohmatulah</div>
+                    <div class="podium-score">100.0</div>
+                    <div class="podium-stats">913 visits • 3.1/day</div>
+                    <div class="podium-bar">1</div>
+                </div>
+                <div class="podium-place third">
+                    <div class="podium-avatar">AN</div>
+                    <div class="podium-name">Andik Noroyan F.</div>
+                    <div class="podium-score">100.0</div>
+                    <div class="podium-stats">923 visits • 3.2/day</div>
+                    <div class="podium-bar">3</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full Leaderboard -->
+        <div class="leaderboard-section">
+            <h2>📊 Full Leaderboard (Qualified Technicians)</h2>
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Technician</th>
+                        <th>Visits</th>
+                        <th>Completion</th>
+                        <th>On-Time</th>
+                        <th>Avg Duration</th>
+                        <th>Visits/Day</th>
+                        <th>Score</th>
+                        <th>Grade</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>📈 Score Distribution</h3>
+                <canvas id="scoreChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>📊 Visits per Technician (Top 10)</h3>
+                <canvas id="visitsChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>SanoCare Technician Leaderboard v1.0 | Generated by Antigravity</p>
+            <p>Data Source: PostgreSQL @ app.kelava.id (read-only access via VPS)</p>
+        </div>
+    </div>
+
+    <script>
+        // Leaderboard Data
+        const leaderboardData = [
+            { rank: 1, id: 385, name: "Akbar Rohmatulah", visits: 913, assigned: 913, completion: 100.0, ontime: 100.0, duration: 118.2, days: 297, customers: 53, vpd: 3.1, score: 100.0, grade: "A" },
+            { rank: 2, id: 379, name: "Choirul Anam", visits: 1058, assigned: 1059, completion: 99.9, ontime: 100.0, duration: 117.6, days: 281, customers: 60, vpd: 3.8, score: 100.0, grade: "A" },
+            { rank: 3, id: 392, name: "Andik Noroyan Fananiar", visits: 923, assigned: 924, completion: 99.9, ontime: 100.0, duration: 98.3, days: 287, customers: 37, vpd: 3.2, score: 100.0, grade: "A" },
+            { rank: 4, id: 386, name: "Suparman", visits: 874, assigned: 876, completion: 99.8, ontime: 100.0, duration: 122.8, days: 285, customers: 96, vpd: 3.1, score: 99.9, grade: "A" },
+            { rank: 5, id: 389, name: "Moh. Mahrus", visits: 874, assigned: 878, completion: 99.5, ontime: 100.0, duration: 122.5, days: 275, customers: 42, vpd: 3.2, score: 99.8, grade: "A" },
+            { rank: 6, id: 399, name: "Ananda Almas", visits: 814, assigned: 814, completion: 100.0, ontime: 100.0, duration: 102.6, days: 293, customers: 82, vpd: 2.8, score: 98.3, grade: "A" },
+            { rank: 7, id: 391, name: "Lucky Adi Putra", visits: 815, assigned: 817, completion: 99.8, ontime: 100.0, duration: 142.3, days: 287, customers: 39, vpd: 2.8, score: 98.2, grade: "A" },
+            { rank: 8, id: 396, name: "M. Abu Samsudin", visits: 735, assigned: 735, completion: 100.0, ontime: 100.0, duration: 179.4, days: 292, customers: 29, vpd: 2.5, score: 92.8, grade: "A" },
+            { rank: 9, id: 407, name: "I Wayan Rendy", visits: 133, assigned: 133, completion: 100.0, ontime: 100.0, duration: 90.5, days: 78, customers: 74, vpd: 1.7, score: 89.2, grade: "B" },
+            { rank: 10, id: 443, name: "Ibad Qurthubi", visits: 287, assigned: 287, completion: 100.0, ontime: 100.0, duration: 178.8, days: 145, customers: 92, vpd: 2.0, score: 88.7, grade: "B" },
+            { rank: 11, id: 448, name: "Dwi Cipto Kurniawan", visits: 73, assigned: 73, completion: 100.0, ontime: 100.0, duration: 100.7, days: 46, customers: 39, vpd: 1.6, score: 88.3, grade: "B" },
+            { rank: 12, id: 456, name: "Dicky Darmawan", visits: 64, assigned: 64, completion: 100.0, ontime: 100.0, duration: 122.7, days: 40, customers: 31, vpd: 1.6, score: 88.3, grade: "B" },
+            { rank: 13, id: 434, name: "Syaiful Bahri", visits: 31, assigned: 31, completion: 100.0, ontime: 100.0, duration: 166.2, days: 16, customers: 23, vpd: 1.9, score: 87.8, grade: "B" },
+            { rank: 14, id: 403, name: "Adam Abdillah", visits: 396, assigned: 403, completion: 98.3, ontime: 100.0, duration: 114.7, days: 246, customers: 121, vpd: 1.6, score: 87.7, grade: "B" },
+            { rank: 15, id: 442, name: "Argantara Alif Saputra", visits: 121, assigned: 121, completion: 100.0, ontime: 100.0, duration: 149.3, days: 83, customers: 44, vpd: 1.5, score: 87.5, grade: "B" },
+            { rank: 16, id: 388, name: "Hendra Mulalinda", visits: 283, assigned: 287, completion: 98.6, ontime: 100.0, duration: 150.6, days: 147, customers: 160, vpd: 1.9, score: 87.3, grade: "B" },
+            { rank: 17, id: 428, name: "Moch Maulana", visits: 212, assigned: 218, completion: 97.2, ontime: 100.0, duration: 104.9, days: 130, customers: 108, vpd: 1.6, score: 87.3, grade: "B" },
+            { rank: 18, id: 416, name: "Petra Saputra", visits: 198, assigned: 198, completion: 100.0, ontime: 100.0, duration: 172.7, days: 110, customers: 58, vpd: 1.8, score: 87.0, grade: "B" },
+            { rank: 19, id: 439, name: "Abdul Rahman Soleh", visits: 152, assigned: 152, completion: 100.0, ontime: 100.0, duration: 154.3, days: 83, customers: 58, vpd: 1.8, score: 87.0, grade: "B" },
+            { rank: 20, id: 450, name: "Mahesa Ramadhan", visits: 203, assigned: 205, completion: 99.0, ontime: 100.0, duration: 194.3, days: 111, customers: 58, vpd: 1.8, score: 86.6, grade: "B" }
+        ];
+
+        // Populate table
+        function populateTable() {
+            const tbody = document.getElementById('leaderboardBody');
+            tbody.innerHTML = leaderboardData.map(t => `
+                <tr>
+                    <td><span class="rank-badge ${t.rank <= 3 ? 'rank-' + t.rank : 'rank-default'}">${t.rank}</span></td>
+                    <td><strong>${t.name}</strong></td>
+                    <td>${t.visits.toLocaleString()}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>${t.completion}%</span>
+                            <div class="progress-bar" style="width: 60px;">
+                                <div class="progress-fill ${t.completion >= 99 ? 'high' : t.completion >= 95 ? 'medium' : 'low'}" style="width: ${t.completion}%"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${t.ontime}%</td>
+                    <td>${t.duration} min</td>
+                    <td>${t.vpd}</td>
+                    <td><strong>${t.score}</strong></td>
+                    <td><span class="grade-badge grade-${t.grade}">${t.grade}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // Score Distribution Chart
+        function createScoreChart() {
+            const ctx = document.getElementById('scoreChart').getContext('2d');
+            const gradeA = leaderboardData.filter(t => t.grade === 'A').length;
+            const gradeB = leaderboardData.filter(t => t.grade === 'B').length;
+            const gradeC = leaderboardData.filter(t => t.grade === 'C').length;
+            const gradeD = leaderboardData.filter(t => t.grade === 'D').length;
+
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Grade A (≥90)', 'Grade B (80-89)', 'Grade C (70-79)', 'Grade D (60-69)'],
+                    datasets: [{
+                        data: [gradeA, gradeB, gradeC, gradeD],
+                        backgroundColor: [
+                            'rgba(72, 187, 120, 0.8)',
+                            'rgba(102, 126, 234, 0.8)',
+                            'rgba(237, 137, 54, 0.8)',
+                            'rgba(245, 101, 101, 0.8)'
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#a0aec0' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Visits Chart
+        function createVisitsChart() {
+            const ctx = document.getElementById('visitsChart').getContext('2d');
+            const top10 = leaderboardData.slice(0, 10);
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: top10.map(t => t.name.split(' ')[0]),
+                    datasets: [{
+                        label: 'Visits Completed',
+                        data: top10.map(t => t.visits),
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: '#a0aec0' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#a0aec0' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize
+        document.getElementById('updateTime').textContent = new Date().toLocaleString('id-ID');
+        populateTable();
+        createScoreChart();
+        createVisitsChart();
+    </script>
+</body>
+</html>

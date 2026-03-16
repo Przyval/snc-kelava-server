@@ -1,0 +1,281 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Weekly Report{% endblock %}
+
+{% block content %}
+<div x-data="weeklyReport()" x-init="init()" class="p-6 max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Weekly Operations Report</h1>
+            <p class="text-sm text-gray-500 mt-1">Automated performance summary</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <button @click="generateReport()" :disabled="generating"
+                    class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2">
+                <svg x-show="generating" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span x-text="generating ? 'Generating...' : 'Generate This Week'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Report Selector -->
+    <div x-show="reportHistory.length > 0" class="mb-4">
+        <select @change="loadReport($event.target.value)" class="border rounded-lg px-3 py-2 text-sm">
+            <option value="preview">This Week (Preview)</option>
+            <template x-for="r in reportHistory" :key="r.id">
+                <option :value="r.id" x-text="r.week_start + ' to ' + r.week_end"></option>
+            </template>
+        </select>
+    </div>
+
+    <template x-if="report">
+        <div>
+            <!-- Period Banner -->
+            <div class="bg-gray-50 rounded-xl p-4 mb-6 flex items-center justify-between">
+                <div>
+                    <span class="text-sm text-gray-500">Report Period</span>
+                    <p class="font-semibold text-gray-900" x-text="report.week_start + ' — ' + report.week_end"></p>
+                </div>
+                <span class="text-xs text-gray-400" x-text="'Generated: ' + (report.generated_at || '').substring(0,16)"></span>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                <div class="bg-white rounded-xl border p-4">
+                    <p class="text-xs text-gray-400 uppercase">Planned</p>
+                    <p class="text-2xl font-bold text-gray-900 mt-1" x-text="report.summary?.total_planned || 0"></p>
+                </div>
+                <div class="bg-white rounded-xl border p-4">
+                    <p class="text-xs text-green-500 uppercase">Completed</p>
+                    <p class="text-2xl font-bold text-green-600 mt-1" x-text="report.summary?.total_completed || 0"></p>
+                </div>
+                <div class="bg-white rounded-xl border p-4">
+                    <p class="text-xs text-blue-500 uppercase">Rate</p>
+                    <p class="text-2xl font-bold text-blue-600 mt-1" x-text="(report.summary?.completion_rate || 0) + '%'"></p>
+                </div>
+                <div class="bg-white rounded-xl border p-4">
+                    <p class="text-xs text-purple-500 uppercase">Technicians</p>
+                    <p class="text-2xl font-bold text-purple-600 mt-1" x-text="report.summary?.active_technicians || 0"></p>
+                </div>
+                <div class="bg-white rounded-xl border p-4">
+                    <p class="text-xs text-orange-500 uppercase">Customers</p>
+                    <p class="text-2xl font-bold text-orange-600 mt-1" x-text="report.summary?.customers_served || 0"></p>
+                </div>
+            </div>
+
+            <!-- Daily Breakdown Chart -->
+            <div class="bg-white rounded-xl border shadow-sm mb-6">
+                <div class="px-5 py-4 border-b">
+                    <h3 class="font-semibold text-gray-900">Daily Breakdown</h3>
+                </div>
+                <div class="p-5">
+                    <div class="flex items-end gap-2 h-32">
+                        <template x-for="d in (report.daily_breakdown || [])" :key="d.date">
+                            <div class="flex-1 flex flex-col items-center gap-1">
+                                <div class="w-full flex flex-col gap-0.5">
+                                    <div class="w-full bg-green-400 rounded-t" :style="'height:' + Math.max(2, (d.completed / Math.max(...(report.daily_breakdown||[]).map(x=>x.planned||1))) * 100) + 'px'"></div>
+                                    <div class="w-full bg-gray-200 rounded-b" :style="'height:' + Math.max(1, ((d.planned - d.completed) / Math.max(...(report.daily_breakdown||[]).map(x=>x.planned||1))) * 100) + 'px'"></div>
+                                </div>
+                                <span class="text-[10px] text-gray-400" x-text="dayName(d.date)"></span>
+                                <span class="text-[10px] font-medium" x-text="d.completed + '/' + d.planned"></span>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="flex gap-4 mt-3 text-xs text-gray-500 justify-center">
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-green-400 rounded"></span> Completed</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-gray-200 rounded"></span> Missed</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two Column: Tech Ranking + Alerts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Tech Ranking -->
+                <div class="bg-white rounded-xl border shadow-sm">
+                    <div class="px-5 py-4 border-b">
+                        <h3 class="font-semibold text-gray-900">Technician Ranking</h3>
+                    </div>
+                    <div class="divide-y max-h-80 overflow-y-auto">
+                        <template x-for="(t, i) in (report.technician_ranking || [])" :key="t.id">
+                            <div class="px-5 py-3 flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+                                          :class="i < 3 ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-600'"
+                                          x-text="i + 1"></span>
+                                    <span class="text-sm font-medium text-gray-700" x-text="t.fullname"></span>
+                                </div>
+                                <div class="flex items-center gap-3 text-sm">
+                                    <span class="text-gray-500" x-text="t.completed + '/' + t.planned"></span>
+                                    <span class="font-semibold" :class="t.completion_rate >= 80 ? 'text-green-600' : t.completion_rate >= 60 ? 'text-yellow-600' : 'text-red-600'"
+                                          x-text="t.completion_rate + '%'"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Complaints + Contracts -->
+                <div class="space-y-6">
+                    <!-- Complaints -->
+                    <div class="bg-white rounded-xl border shadow-sm">
+                        <div class="px-5 py-4 border-b">
+                            <h3 class="font-semibold text-gray-900">Complaints This Week</h3>
+                        </div>
+                        <div class="p-5 grid grid-cols-2 gap-3">
+                            <div class="bg-red-50 rounded-lg p-3 text-center">
+                                <p class="text-xl font-bold text-red-600" x-text="report.complaints?.open_count || 0"></p>
+                                <p class="text-xs text-red-500">Open</p>
+                            </div>
+                            <div class="bg-yellow-50 rounded-lg p-3 text-center">
+                                <p class="text-xl font-bold text-yellow-600" x-text="report.complaints?.in_progress || 0"></p>
+                                <p class="text-xs text-yellow-500">In Progress</p>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-3 text-center">
+                                <p class="text-xl font-bold text-green-600" x-text="report.complaints?.resolved || 0"></p>
+                                <p class="text-xs text-green-500">Resolved</p>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-3 text-center">
+                                <p class="text-xl font-bold text-gray-600" x-text="report.complaints?.critical_count || 0"></p>
+                                <p class="text-xs text-gray-500">Critical</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contract Alerts -->
+                    <div class="bg-white rounded-xl border shadow-sm">
+                        <div class="px-5 py-4 border-b">
+                            <h3 class="font-semibold text-gray-900">Contract Alerts</h3>
+                        </div>
+                        <div class="p-5 space-y-2">
+                            <div class="flex justify-between py-1">
+                                <span class="text-sm text-gray-600">Expiring in 30 days</span>
+                                <span class="text-sm font-bold text-red-600" x-text="report.contract_alerts?.expiring_30d || 0"></span>
+                            </div>
+                            <div class="flex justify-between py-1">
+                                <span class="text-sm text-gray-600">Expiring in 60 days</span>
+                                <span class="text-sm font-bold text-yellow-600" x-text="report.contract_alerts?.expiring_60d || 0"></span>
+                            </div>
+                            <div class="flex justify-between py-1">
+                                <span class="text-sm text-gray-600">Just expired (7d)</span>
+                                <span class="text-sm font-bold text-gray-600" x-text="report.contract_alerts?.just_expired || 0"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Duration Stats -->
+            <div class="bg-white rounded-xl border shadow-sm">
+                <div class="px-5 py-4 border-b">
+                    <h3 class="font-semibold text-gray-900">Visit Duration Analysis</h3>
+                </div>
+                <div class="p-5 grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-gray-900" x-text="(report.duration_stats?.avg_min || '—') + ' min'"></p>
+                        <p class="text-xs text-gray-500">Average</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-gray-900" x-text="(report.duration_stats?.min_min || '—') + ' min'"></p>
+                        <p class="text-xs text-gray-500">Shortest</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-gray-900" x-text="(report.duration_stats?.max_min || '—') + ' min'"></p>
+                        <p class="text-xs text-gray-500">Longest</p>
+                    </div>
+                    <div class="bg-red-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-red-600" x-text="report.duration_stats?.under_15min || 0"></p>
+                        <p class="text-xs text-red-500">&lt;15 min (suspect)</p>
+                    </div>
+                    <div class="bg-yellow-50 rounded-lg p-3">
+                        <p class="text-lg font-bold text-yellow-600" x-text="report.duration_stats?.over_2h || 0"></p>
+                        <p class="text-xs text-yellow-500">&gt;2h (review)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <div x-show="!report && !loading" class="text-center py-16 text-gray-400">
+        <p class="text-lg">No report loaded</p>
+        <p class="text-sm mt-1">Click "Generate This Week" to create a new report</p>
+    </div>
+</div>
+
+<script>
+function weeklyReport() {
+    return {
+        report: null,
+        reportHistory: [],
+        loading: false,
+        generating: false,
+
+        async init() {
+            await this.loadHistory();
+            await this.loadPreview();
+        },
+
+        async loadPreview() {
+            this.loading = true;
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/weekly-report/preview');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.report = data.report;
+                }
+            } catch (e) { console.error(e); }
+            this.loading = false;
+        },
+
+        async loadHistory() {
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/weekly-report/history');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.reportHistory = data.reports || [];
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async loadReport(id) {
+            if (id === 'preview') return this.loadPreview();
+            this.loading = true;
+            try {
+                const resp = await authenticatedFetch(`/api/v1/enterprise/weekly-report/${id}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    // Parse stored JSON if needed
+                    const r = data.report;
+                    this.report = typeof r.report_data === 'string' ? JSON.parse(r.report_data) : r.report_data;
+                }
+            } catch (e) { console.error(e); }
+            this.loading = false;
+        },
+
+        async generateReport() {
+            this.generating = true;
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/weekly-report/generate', {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.report = data.report;
+                    await this.loadHistory();
+                }
+            } catch (e) { console.error(e); }
+            this.generating = false;
+        },
+
+        dayName(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return ['Min','Sen','Sel','Rab','Kam','Jum','Sab'][d.getDay()];
+        }
+    };
+}
+</script>
+{% endblock %}

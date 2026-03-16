@@ -1,0 +1,211 @@
+{% extends "enterprise/base.html" %}
+{% block title %}WhatsApp Bot{% endblock %}
+
+{% block content %}
+<div x-data="waBot()" x-init="init()" class="p-6 max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">WhatsApp Bot Gateway</h1>
+            <p class="text-sm text-gray-500 mt-1">Send notifications & view message log</p>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-gray-400 uppercase">Total Messages</p>
+            <p class="text-2xl font-bold text-gray-900 mt-1" x-text="logStats?.total || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-green-500 uppercase">Sent</p>
+            <p class="text-2xl font-bold text-green-600 mt-1" x-text="logStats?.sent || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-blue-500 uppercase">Received</p>
+            <p class="text-2xl font-bold text-blue-600 mt-1" x-text="logStats?.received || 0"></p>
+        </div>
+        <div class="bg-white rounded-xl border p-4">
+            <p class="text-xs text-red-500 uppercase">Failed</p>
+            <p class="text-2xl font-bold text-red-600 mt-1" x-text="logStats?.failed || 0"></p>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Send Message -->
+        <div class="bg-white rounded-xl border shadow-sm">
+            <div class="px-5 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Kirim Pesan</h3>
+            </div>
+            <div class="p-5 space-y-3">
+                <div>
+                    <label class="text-xs text-gray-500">Nomor HP</label>
+                    <input type="text" x-model="sendForm.phone" placeholder="08123456789" class="w-full border rounded-lg px-3 py-2 text-sm mt-1">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500">Pesan</label>
+                    <textarea x-model="sendForm.message" rows="3" placeholder="Ketik pesan..." class="w-full border rounded-lg px-3 py-2 text-sm mt-1"></textarea>
+                </div>
+                <button @click="sendMessage()" :disabled="sending" class="w-full bg-green-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-green-600 disabled:opacity-50">
+                    <span x-text="sending ? 'Mengirim...' : 'Kirim via WhatsApp'"></span>
+                </button>
+                <div x-show="sendResult" class="text-sm p-2 rounded" :class="sendResult?.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'" x-text="sendResult?.detail"></div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="bg-white rounded-xl border shadow-sm">
+            <div class="px-5 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Aksi Cepat</h3>
+            </div>
+            <div class="p-5 space-y-3">
+                <button @click="sendScheduleReminder()" :disabled="reminderSending"
+                        class="w-full bg-blue-500 text-white rounded-lg py-3 text-sm font-medium hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    <span x-text="reminderSending ? 'Mengirim...' : 'Kirim Pengingat Jadwal Besok'"></span>
+                </button>
+                <div x-show="reminderResult" class="text-sm p-3 bg-blue-50 rounded-lg">
+                    <p class="font-medium text-blue-700" x-text="'Terkirim: ' + (reminderResult?.sent || 0) + ' | Gagal: ' + (reminderResult?.failed || 0) + ' | Tanpa HP: ' + (reminderResult?.no_phone || 0)"></p>
+                </div>
+
+                <div class="border-t pt-3 mt-3">
+                    <p class="text-xs text-gray-500 mb-2">Template Tersedia:</p>
+                    <template x-for="t in templates" :key="t.name">
+                        <div class="flex items-center justify-between py-1.5 text-sm">
+                            <span class="text-gray-700" x-text="t.description"></span>
+                            <span class="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded" x-text="t.name"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Log -->
+    <div class="bg-white rounded-xl border shadow-sm">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+            <h3 class="font-semibold text-gray-900">Message Log</h3>
+            <div class="flex items-center gap-2">
+                <select x-model="logDays" @change="loadLog()" class="border rounded-lg px-3 py-1.5 text-sm">
+                    <option value="1">24 jam</option>
+                    <option value="7">7 hari</option>
+                    <option value="30">30 hari</option>
+                </select>
+                <select x-model="logDirection" @change="loadLog()" class="border rounded-lg px-3 py-1.5 text-sm">
+                    <option value="">Semua</option>
+                    <option value="outgoing">Keluar</option>
+                    <option value="incoming">Masuk</option>
+                </select>
+            </div>
+        </div>
+        <div class="divide-y max-h-96 overflow-y-auto">
+            <template x-for="m in messages" :key="m.id">
+                <div class="px-5 py-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                                  :class="m.direction === 'outgoing' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'"
+                                  x-text="m.direction === 'outgoing' ? 'Keluar' : 'Masuk'"></span>
+                            <span class="text-sm font-medium text-gray-700" x-text="m.phone"></span>
+                            <span x-show="m.sender_name" class="text-xs text-gray-400" x-text="m.sender_name"></span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs" :class="m.status === 'sent' ? 'text-green-500' : m.status === 'failed' ? 'text-red-500' : 'text-gray-400'" x-text="m.status"></span>
+                            <span class="text-xs text-gray-400" x-text="formatTime(m.created_at)"></span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-600 whitespace-pre-line" x-text="(m.message || '').substring(0, 200)"></p>
+                </div>
+            </template>
+            <div x-show="messages.length === 0" class="px-5 py-8 text-center text-gray-400 text-sm">No messages yet</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function waBot() {
+    return {
+        messages: [],
+        logStats: null,
+        templates: [],
+        logDays: '7',
+        logDirection: '',
+        sendForm: { phone: '', message: '' },
+        sending: false,
+        sendResult: null,
+        reminderSending: false,
+        reminderResult: null,
+
+        async init() {
+            await Promise.all([this.loadLog(), this.loadTemplates()]);
+        },
+
+        async loadLog() {
+            try {
+                let url = `/api/v1/enterprise/wa-bot/log?days=${this.logDays}`;
+                if (this.logDirection) url += `&direction=${this.logDirection}`;
+                const resp = await authenticatedFetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.messages = data.messages || [];
+                    this.logStats = data.stats || {};
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async loadTemplates() {
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/wa-bot/templates');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.templates = data.templates || [];
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        async sendMessage() {
+            if (!this.sendForm.phone || !this.sendForm.message) return;
+            this.sending = true;
+            this.sendResult = null;
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/wa-bot/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.sendForm),
+                });
+                this.sendResult = await resp.json();
+                if (this.sendResult.success) {
+                    this.sendForm = { phone: '', message: '' };
+                    await this.loadLog();
+                }
+            } catch (e) { this.sendResult = { success: false, detail: 'Network error' }; }
+            this.sending = false;
+        },
+
+        async sendScheduleReminder() {
+            this.reminderSending = true;
+            this.reminderResult = null;
+            try {
+                const resp = await authenticatedFetch('/api/v1/enterprise/wa-bot/send-schedule-reminder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+                this.reminderResult = await resp.json();
+                await this.loadLog();
+            } catch (e) { console.error(e); }
+            this.reminderSending = false;
+        },
+
+        formatTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) + ' ' +
+                   d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>
+{% endblock %}
