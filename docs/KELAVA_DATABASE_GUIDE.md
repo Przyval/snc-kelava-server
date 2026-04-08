@@ -59,7 +59,7 @@ Login:    POST /api/v1/auth/login
 
 - `snc_read` has **SELECT** on all 209 tables in the `public` schema
 - **READ ONLY** — no INSERT, UPDATE, DELETE
-- PostgreSQL 10 — no `gen_random_uuid()`, no `FILTER` syntax on old PG features
+- PostgreSQL 10 — no `gen_random_uuid()` (available from PG 13+). `FILTER` clause **works fine**.
 - Whitelist: only IP `104.194.154.108` (production server) can connect directly
 
 ---
@@ -569,7 +569,7 @@ curl "https://safencare.work/api/v1/docs"
 | Rule | Detail |
 |------|--------|
 | Access | SELECT only — no write |
-| PostgreSQL version | PG 10 — no `gen_random_uuid()`, `FILTER` clause works |
+| PostgreSQL version | PG 10 — no `gen_random_uuid()` (PG 13+). `FILTER` clause works fine. |
 | IP whitelist | Only `104.194.154.108` can connect directly |
 | Local dev | Must use SSH tunnel (port 5433) |
 | Max pool size | 5 connections per pool (configured in `kelava_db.py`) |
