@@ -201,7 +201,7 @@ app.register_blueprint(mobile_bp)
 
 # API Documentation
 from kil.backend.legacy.api.api_docs import api_docs_bp
-app.register_blueprint(api_docs_bp, url_prefix="/api/v1/docs")
+app.register_blueprint(api_docs_bp)  # routes defined in module: /api/v1/openapi.json, /api/v1/docs
 
 # ── Meeting Features Phase 2 (2026-03-11) ─────────────────────
 

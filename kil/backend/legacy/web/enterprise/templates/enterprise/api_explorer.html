@@ -1,0 +1,417 @@
+{% extends "enterprise/base.html" %}
+{% block title %}API Explorer — SanoCare{% endblock %}
+
+{% block content %}
+<div x-data="apiExplorer()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-[#0F172A]">API Explorer</h1>
+            <p class="text-sm text-[#64748B]">Browse semua endpoint live, klik untuk test langsung ke server Kelava.</p>
+        </div>
+        <div class="flex gap-2 items-center">
+            <span class="text-xs text-[#94A3B8]" x-text="totalEndpoints + ' endpoints'"></span>
+            <a href="/enterprise/swagger" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#64748B] hover:border-[#F97316] hover:text-[#F97316] transition-colors">
+                Swagger UI
+            </a>
+            <a href="/api/v1/openapi.json" target="_blank" class="px-3 py-2 rounded-lg bg-[#F1F5F9] text-sm font-mono text-[#475569] hover:bg-[#E2E8F0] transition-colors">
+                openapi.json ↗
+            </a>
+        </div>
+    </div>
+
+    <!-- Auth status bar -->
+    <div class="mb-4 p-3 rounded-xl border flex items-center gap-3 text-sm"
+         :class="isAuthed ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'">
+        <div class="w-2 h-2 rounded-full flex-shrink-0" :class="isAuthed ? 'bg-green-500' : 'bg-red-400'"></div>
+        <span x-text="isAuthed ? 'Authenticated — JWT aktif, semua endpoint bisa dicoba.' : 'Belum login — endpoint yang butuh auth akan return 401.'"></span>
+        <a x-show="!isAuthed" href="/enterprise/login" class="ml-auto underline font-medium">Login</a>
+        <span x-show="isAuthed" class="ml-auto text-xs text-green-600 font-mono" x-text="'Bearer ' + (token || '').slice(0,20) + '...'"></span>
+    </div>
+
+    <div class="flex gap-4" style="height: calc(100vh - 220px)">
+
+        <!-- Left: Endpoint List -->
+        <div class="w-80 flex-shrink-0 flex flex-col gap-2">
+            <!-- Search + Filter -->
+            <div class="flex gap-2">
+                <div class="relative flex-1">
+                    <input type="text" x-model="search" @input="filterEndpoints()"
+                           placeholder="Cari endpoint..."
+                           class="w-full pl-8 pr-3 py-2 text-sm border border-[#E2E8F0] rounded-lg focus:ring-[#F97316] focus:border-[#F97316]">
+                    <svg class="w-4 h-4 absolute left-2.5 top-2.5 text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+                <select x-model="filterMethod" @change="filterEndpoints()"
+                        class="px-2 py-2 text-xs border border-[#E2E8F0] rounded-lg text-[#475569]">
+                    <option value="">All</option>
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="DELETE">DELETE</option>
+                </select>
+            </div>
+
+            <!-- Endpoint list -->
+            <div class="flex-1 overflow-y-auto border border-[#E2E8F0] rounded-xl bg-white divide-y divide-[#F1F5F9]">
+                <template x-if="loading">
+                    <div class="p-6 text-center text-sm text-[#94A3B8]">Memuat endpoints...</div>
+                </template>
+
+                <template x-for="group in filteredGroups" :key="group.name">
+                    <div>
+                        <!-- Group header -->
+                        <button @click="toggleGroup(group.name)"
+                                class="w-full px-3 py-2 flex items-center justify-between bg-[#F8FAFC] hover:bg-[#F1F5F9] transition-colors">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-[#64748B]" x-text="group.name"></span>
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] text-[#94A3B8]" x-text="group.endpoints.length"></span>
+                                <svg class="w-3 h-3 text-[#94A3B8] transition-transform" :class="openGroups[group.name] ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </div>
+                        </button>
+
+                        <!-- Endpoints in group -->
+                        <template x-if="openGroups[group.name]">
+                            <div>
+                                <template x-for="ep in group.endpoints" :key="ep.path + ep.methods[0]">
+                                    <button @click="selectEndpoint(ep)"
+                                            class="w-full px-3 py-2 flex items-start gap-2 text-left hover:bg-[#FFF7ED] transition-colors"
+                                            :class="selected?.path === ep.path && selected?.methods[0] === ep.methods[0] ? 'bg-[#FFF7ED] border-l-2 border-[#F97316]' : ''">
+                                        <span class="text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 flex-shrink-0"
+                                              :class="{
+                                                  'bg-blue-100 text-blue-700': ep.methods[0] === 'GET',
+                                                  'bg-green-100 text-green-700': ep.methods[0] === 'POST',
+                                                  'bg-amber-100 text-amber-700': ep.methods[0] === 'PUT',
+                                                  'bg-red-100 text-red-700': ep.methods[0] === 'DELETE',
+                                                  'bg-purple-100 text-purple-700': ep.methods[0] === 'PATCH',
+                                              }"
+                                              x-text="ep.methods[0]"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-[11px] font-mono text-[#0F172A] truncate" x-text="ep.path"></p>
+                                            <p class="text-[10px] text-[#94A3B8] truncate" x-text="ep.summary"></p>
+                                        </div>
+                                        <span x-show="ep.auth" class="text-[#F97316] flex-shrink-0 mt-0.5" title="Butuh auth">
+                                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                                        </span>
+                                    </button>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <template x-if="!loading && filteredGroups.length === 0">
+                    <div class="p-6 text-center text-sm text-[#94A3B8]">Tidak ditemukan.</div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Right: Request / Response Panel -->
+        <div class="flex-1 flex flex-col gap-3 min-w-0">
+
+            <!-- Empty state -->
+            <template x-if="!selected">
+                <div class="flex-1 flex items-center justify-center bg-white border border-[#E2E8F0] rounded-xl">
+                    <div class="text-center">
+                        <svg class="w-12 h-12 text-[#E2E8F0] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                        <p class="text-[#94A3B8] text-sm">Pilih endpoint di kiri untuk mulai.</p>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Request panel -->
+            <template x-if="selected">
+                <div class="flex flex-col gap-3 flex-1 min-h-0">
+
+                    <!-- Endpoint title -->
+                    <div class="bg-white border border-[#E2E8F0] rounded-xl p-4">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="px-2 py-1 rounded text-xs font-bold"
+                                  :class="{
+                                      'bg-blue-100 text-blue-700': activeMethod === 'GET',
+                                      'bg-green-100 text-green-700': activeMethod === 'POST',
+                                      'bg-amber-100 text-amber-700': activeMethod === 'PUT',
+                                      'bg-red-100 text-red-700': activeMethod === 'DELETE',
+                                      'bg-purple-100 text-purple-700': activeMethod === 'PATCH',
+                                  }"
+                                  x-text="activeMethod"></span>
+                            <!-- Method switcher (if multiple) -->
+                            <template x-for="m in selected.methods" :key="m">
+                                <button x-show="selected.methods.length > 1"
+                                        @click="activeMethod = m"
+                                        class="text-xs px-2 py-0.5 rounded border transition-colors"
+                                        :class="activeMethod === m ? 'border-[#F97316] text-[#F97316]' : 'border-[#E2E8F0] text-[#94A3B8]'"
+                                        x-text="m"></button>
+                            </template>
+                            <code class="text-sm font-mono text-[#0F172A] flex-1" x-text="selected.path"></code>
+                            <span x-show="selected.auth" class="text-xs text-[#F97316] flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                                Auth required
+                            </span>
+                        </div>
+                        <p class="text-sm text-[#64748B]" x-text="selected.summary || 'No description.'"></p>
+                    </div>
+
+                    <!-- URL builder -->
+                    <div class="bg-white border border-[#E2E8F0] rounded-xl p-4">
+                        <p class="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-3">Request URL</p>
+                        <div class="flex gap-2">
+                            <div class="flex-1 flex items-center gap-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 font-mono text-sm overflow-x-auto">
+                                <span class="text-[#94A3B8] flex-shrink-0">https://safencare.work</span>
+                                <input x-model="urlPath" @input="buildUrl()"
+                                       class="bg-transparent flex-1 outline-none text-[#0F172A] min-w-0"
+                                       :placeholder="selected.path">
+                            </div>
+                            <button @click="sendRequest()"
+                                    :disabled="sending"
+                                    class="px-5 py-2 bg-[#F97316] hover:bg-[#EA6C0A] disabled:opacity-50 text-white font-bold rounded-lg text-sm transition-colors flex items-center gap-2">
+                                <span x-show="!sending">Send</span>
+                                <span x-show="sending">...</span>
+                                <svg x-show="!sending" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                            </button>
+                        </div>
+
+                        <!-- Query params -->
+                        <div class="mt-3" x-show="queryParams.length > 0">
+                            <p class="text-xs text-[#94A3B8] mb-2">Query Parameters</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <template x-for="(p, i) in queryParams" :key="i">
+                                    <div class="flex gap-1 items-center">
+                                        <span class="text-xs font-mono text-[#64748B] w-28 flex-shrink-0" x-text="p.key + ':'"></span>
+                                        <input x-model="p.value" @input="buildUrl()"
+                                               :placeholder="p.description || p.key"
+                                               class="flex-1 text-xs border border-[#E2E8F0] rounded px-2 py-1 focus:border-[#F97316] focus:outline-none font-mono">
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Body (POST/PUT/PATCH) -->
+                        <div class="mt-3" x-show="['POST','PUT','PATCH'].includes(activeMethod)">
+                            <p class="text-xs text-[#94A3B8] mb-2">Request Body (JSON)</p>
+                            <textarea x-model="requestBody" rows="4"
+                                      placeholder='{"key": "value"}'
+                                      class="w-full text-xs font-mono border border-[#E2E8F0] rounded-lg p-2 focus:border-[#F97316] focus:outline-none resize-none"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Response panel -->
+                    <div class="flex-1 bg-white border border-[#E2E8F0] rounded-xl p-4 flex flex-col min-h-0">
+                        <div class="flex items-center justify-between mb-3">
+                            <p class="text-xs font-bold uppercase tracking-wider text-[#64748B]">Response</p>
+                            <div class="flex items-center gap-3" x-show="response !== null">
+                                <span class="text-xs font-bold px-2 py-0.5 rounded"
+                                      :class="{
+                                          'bg-green-100 text-green-700': responseStatus >= 200 && responseStatus < 300,
+                                          'bg-amber-100 text-amber-700': responseStatus >= 300 && responseStatus < 400,
+                                          'bg-red-100 text-red-700': responseStatus >= 400,
+                                      }"
+                                      x-text="responseStatus + ' ' + responseStatusText"></span>
+                                <span class="text-xs text-[#94A3B8]" x-text="responseTime + 'ms'"></span>
+                                <button @click="copyResponse()" class="text-xs text-[#94A3B8] hover:text-[#F97316] transition-colors">Salin</button>
+                            </div>
+                        </div>
+
+                        <!-- Empty / loading -->
+                        <template x-if="response === null && !sending">
+                            <div class="flex-1 flex items-center justify-center text-[#94A3B8] text-sm">
+                                Tekan Send untuk melihat response.
+                            </div>
+                        </template>
+                        <template x-if="sending">
+                            <div class="flex-1 flex items-center justify-center">
+                                <div class="animate-spin w-6 h-6 border-2 border-[#F97316] border-t-transparent rounded-full"></div>
+                            </div>
+                        </template>
+
+                        <!-- Response body -->
+                        <template x-if="response !== null && !sending">
+                            <pre class="flex-1 overflow-auto text-xs font-mono bg-[#0F172A] text-[#E2E8F0] rounded-lg p-4 leading-relaxed"
+                                 x-text="formattedResponse"></pre>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function apiExplorer() {
+    return {
+        loading: true,
+        groups: [],
+        filteredGroups: [],
+        openGroups: {},
+        search: '',
+        filterMethod: '',
+        selected: null,
+        activeMethod: 'GET',
+        urlPath: '',
+        queryParams: [],
+        requestBody: '',
+        sending: false,
+        response: null,
+        responseStatus: 0,
+        responseStatusText: '',
+        responseTime: 0,
+        formattedResponse: '',
+        token: '',
+        isAuthed: false,
+        totalEndpoints: 0,
+
+        async init() {
+            this.token = localStorage.getItem('sanocare_token') || '';
+            this.isAuthed = !!this.token;
+
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/docs');
+                const data = await res.json();
+                this.totalEndpoints = data.total || 0;
+
+                // Build groups array sorted by name
+                const raw = data.groups || {};
+                this.groups = Object.entries(raw)
+                    .map(([name, endpoints]) => ({ name, endpoints }))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                // Open first group by default
+                if (this.groups.length > 0) {
+                    this.openGroups[this.groups[0].name] = true;
+                }
+
+                this.filteredGroups = this.groups;
+            } catch(e) {
+                console.error('Failed to load API docs:', e);
+            }
+            this.loading = false;
+        },
+
+        toggleGroup(name) {
+            this.openGroups[name] = !this.openGroups[name];
+            this.openGroups = {...this.openGroups};
+        },
+
+        filterEndpoints() {
+            const q = this.search.toLowerCase();
+            const m = this.filterMethod;
+
+            this.filteredGroups = this.groups
+                .map(g => ({
+                    ...g,
+                    endpoints: g.endpoints.filter(ep => {
+                        const matchQ = !q || ep.path.toLowerCase().includes(q) || (ep.summary||'').toLowerCase().includes(q);
+                        const matchM = !m || ep.methods.includes(m);
+                        return matchQ && matchM;
+                    })
+                }))
+                .filter(g => g.endpoints.length > 0);
+
+            // Auto-open groups that match
+            if (q || m) {
+                this.filteredGroups.forEach(g => { this.openGroups[g.name] = true; });
+                this.openGroups = {...this.openGroups};
+            }
+        },
+
+        selectEndpoint(ep) {
+            this.selected = ep;
+            this.activeMethod = ep.methods[0];
+            this.urlPath = ep.path;
+            this.response = null;
+            this.requestBody = '';
+
+            // Extract path params and query params from OpenAPI spec (best effort)
+            // Build default query params from known common patterns
+            this.queryParams = this.guessQueryParams(ep);
+            this.buildUrl();
+        },
+
+        guessQueryParams(ep) {
+            const params = [];
+            const path = ep.path;
+            // Common params based on endpoint patterns
+            if (path.includes('leaderboard') || path.includes('technician')) {
+                params.push({ key: 'start_date', value: '', description: 'YYYY-MM-DD' });
+                params.push({ key: 'end_date', value: '', description: 'YYYY-MM-DD' });
+                params.push({ key: 'limit', value: '20', description: 'Max results' });
+            }
+            if (path.includes('rapor')) {
+                const now = new Date();
+                params.push({ key: 'month', value: now.toISOString().slice(0,7), description: 'YYYY-MM' });
+            }
+            if (path.includes('briefing') || path.includes('today')) {
+                const today = new Date().toISOString().slice(0,10);
+                params.push({ key: 'date', value: today, description: 'YYYY-MM-DD' });
+            }
+            if (path.includes('export') || path.includes('accurate') || path.includes('download')) {
+                const now = new Date();
+                params.push({ key: 'month', value: now.toISOString().slice(0,7), description: 'YYYY-MM' });
+            }
+            return params;
+        },
+
+        buildUrl() {
+            let url = this.urlPath;
+            const filled = this.queryParams.filter(p => p.value);
+            if (filled.length > 0) {
+                url += '?' + filled.map(p => encodeURIComponent(p.key) + '=' + encodeURIComponent(p.value)).join('&');
+            }
+            return url;
+        },
+
+        async sendRequest() {
+            if (this.sending) return;
+            this.sending = true;
+            this.response = null;
+
+            const url = this.buildUrl();
+            const tok = localStorage.getItem('sanocare_token') || this.token;
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (tok) headers['Authorization'] = 'Bearer ' + tok;
+
+            const opts = { method: this.activeMethod, headers };
+            if (['POST','PUT','PATCH'].includes(this.activeMethod) && this.requestBody) {
+                opts.body = this.requestBody;
+            }
+
+            const t0 = Date.now();
+            try {
+                const res = await fetch(url, opts);
+                this.responseTime = Date.now() - t0;
+                this.responseStatus = res.status;
+                this.responseStatusText = res.statusText;
+
+                const ct = res.headers.get('content-type') || '';
+                if (ct.includes('json')) {
+                    const data = await res.json();
+                    this.response = data;
+                    this.formattedResponse = JSON.stringify(data, null, 2);
+                } else {
+                    const text = await res.text();
+                    this.response = text;
+                    this.formattedResponse = text;
+                }
+            } catch(e) {
+                this.responseTime = Date.now() - t0;
+                this.responseStatus = 0;
+                this.responseStatusText = 'Network Error';
+                this.response = { error: e.message };
+                this.formattedResponse = JSON.stringify({ error: e.message }, null, 2);
+            }
+            this.sending = false;
+        },
+
+        copyResponse() {
+            navigator.clipboard.writeText(this.formattedResponse).then(() => {
+                // Brief feedback
+            });
+        },
+    }
+}
+</script>
+{% endblock %}

@@ -283,3 +283,15 @@ def watchlist_page():
 def lokasi_page():
     """Lokasi (Customer) management — Kelava-style list."""
     return render_template("enterprise/lokasi.html")
+
+
+@enterprise_bp.route("/swagger")
+def swagger_ui():
+    """Swagger UI — interactive API documentation powered by OpenAPI spec."""
+    return render_template("enterprise/swagger.html")
+
+
+@enterprise_bp.route("/api-explorer")
+def api_explorer():
+    """API Explorer — browse and call live API endpoints interactively."""
+    return render_template("enterprise/api_explorer.html")

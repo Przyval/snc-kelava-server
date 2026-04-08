@@ -1,0 +1,107 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Swagger UI — SanoCare API{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h1 class="text-2xl font-bold text-[#0F172A]">Swagger UI</h1>
+        <p class="text-sm text-[#64748B]">Interactive API documentation — browse, authenticate, and try all endpoints live.</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/enterprise/api-explorer" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#64748B] hover:border-[#F97316] hover:text-[#F97316] transition-colors">
+            API Explorer
+        </a>
+        <a href="/api/v1/openapi.json" target="_blank" class="px-3 py-2 rounded-lg bg-[#F1F5F9] text-sm text-[#475569] hover:bg-[#E2E8F0] transition-colors font-mono">
+            openapi.json ↗
+        </a>
+    </div>
+</div>
+
+<!-- Auth helper banner -->
+<div id="auth-banner" class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 flex items-center gap-3">
+    <svg class="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+    <span>Klik <strong>Authorize</strong> di Swagger lalu paste token JWT kamu. Token tersedia di <a href="/enterprise/login" class="underline">Login</a> atau dari localStorage <code>sanocare_token</code>.</span>
+    <button onclick="copyTokenToClipboard()" class="ml-auto px-3 py-1 bg-amber-100 hover:bg-amber-200 rounded-lg text-amber-900 font-medium text-xs transition-colors whitespace-nowrap">
+        Salin JWT
+    </button>
+</div>
+
+<!-- Swagger UI container -->
+<div class="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+    <div id="swagger-ui" class="p-2"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Swagger UI CDN -->
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+(function() {
+    // Get stored token
+    const token = localStorage.getItem('sanocare_token') || '';
+
+    const ui = SwaggerUIBundle({
+        url: '/api/v1/openapi.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+        layout: 'BaseLayout',
+        defaultModelsExpandDepth: -1,
+        defaultModelExpandDepth: 1,
+        docExpansion: 'none',
+        filter: true,
+        tryItOutEnabled: true,
+        requestInterceptor: (request) => {
+            // Auto-inject stored JWT into all requests
+            const tok = localStorage.getItem('sanocare_token');
+            if (tok && !request.headers['Authorization']) {
+                request.headers['Authorization'] = 'Bearer ' + tok;
+            }
+            return request;
+        },
+        onComplete: () => {
+            // Pre-fill the Authorize dialog with stored token
+            if (token) {
+                ui.preauthorizeApiKey('bearerAuth', token);
+            }
+        },
+    });
+
+    window.swaggerUi = ui;
+})();
+
+function copyTokenToClipboard() {
+    const token = localStorage.getItem('sanocare_token') || '';
+    if (!token) {
+        alert('Belum login. Silakan login dulu di /enterprise/login');
+        return;
+    }
+    navigator.clipboard.writeText(token).then(() => {
+        const btn = event.target;
+        btn.textContent = 'Tersalin!';
+        btn.classList.add('bg-green-100', 'text-green-800');
+        setTimeout(() => {
+            btn.textContent = 'Salin JWT';
+            btn.classList.remove('bg-green-100', 'text-green-800');
+        }, 2000);
+    });
+}
+</script>
+
+<style>
+/* Override Swagger UI styles to fit our design */
+#swagger-ui .swagger-ui .topbar { display: none; }
+#swagger-ui .swagger-ui .info { margin: 16px 0 8px; }
+#swagger-ui .swagger-ui .info .title { font-size: 1.4rem; color: #0F172A; }
+#swagger-ui .swagger-ui .scheme-container { background: #F8FAFC; box-shadow: none; border-bottom: 1px solid #E2E8F0; padding: 12px 20px; }
+#swagger-ui .swagger-ui .btn.authorize { background: #F97316; border-color: #F97316; }
+#swagger-ui .swagger-ui .btn.authorize svg { fill: white; }
+#swagger-ui .swagger-ui section.models { display: none; }
+#swagger-ui .swagger-ui .opblock.opblock-get .opblock-summary-method { background: #3B82F6; }
+#swagger-ui .swagger-ui .opblock.opblock-post .opblock-summary-method { background: #10B981; }
+#swagger-ui .swagger-ui .opblock.opblock-put .opblock-summary-method { background: #F59E0B; }
+#swagger-ui .swagger-ui .opblock.opblock-delete .opblock-summary-method { background: #EF4444; }
+#swagger-ui .swagger-ui .opblock.opblock-patch .opblock-summary-method { background: #8B5CF6; }
+</style>
+{% endblock %}
