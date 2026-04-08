@@ -133,16 +133,18 @@ function raporList() {
             const data = await res.json();
             const lb = data.leaderboard || [];
 
-            // Calculate grades
+            // Calculate grades — aligned with KPI breakdown thresholds
             this.technicians = lb.map(t => {
                 const m = t.metrics || {};
                 const vpd = parseFloat(m.visits_per_day) || 0;
                 const cr = parseFloat(m.completion_rate_pct) || 0;
-                const score = (vpd / 4 * 40) + (cr / 100 * 60);
+                // Approximate KPI score: kunjungan (35%) + kedisiplinan proxy (35%) + complain+grooming (30%)
+                const kunj = Math.min(20, cr / 100 * 20) + Math.min(10, vpd / 5 * 10) + Math.min(5, (m.active_days || 22) / 24 * 5);
+                const score = kunj + 24.5 + 30; // kedis ~24.5 avg, complain+grooming ~30 default
                 let grade = 'D';
-                if (score >= 80) grade = 'A';
-                else if (score >= 65) grade = 'B';
-                else if (score >= 50) grade = 'C';
+                if (score >= 85) grade = 'A';
+                else if (score >= 70) grade = 'B';
+                else if (score >= 55) grade = 'C';
 
                 return {
                     id: t.id,

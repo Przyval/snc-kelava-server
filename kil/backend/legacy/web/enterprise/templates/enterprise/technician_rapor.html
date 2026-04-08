@@ -121,10 +121,16 @@
             <h1 class="text-xl font-bold text-[#0F172A]">Rapor Kinerja Teknisi</h1>
         </div>
         <div class="flex items-center gap-2">
+            <select x-model="kpiMonth" @change="loadData()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm">
+                <option value="">KPI: 3 Bulan Terakhir</option>
+                <template x-for="m in monthOptions" :key="m.value">
+                    <option :value="m.value" x-text="'KPI: ' + m.label"></option>
+                </template>
+            </select>
             <select x-model="months" @change="loadData()" class="px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm">
-                <option value="3">3 Bulan</option>
-                <option value="6">6 Bulan</option>
-                <option value="12">12 Bulan</option>
+                <option value="3">Tren: 3 Bulan</option>
+                <option value="6">Tren: 6 Bulan</option>
+                <option value="12">Tren: 12 Bulan</option>
             </select>
             <button onclick="window.print()" class="px-4 py-2 rounded-lg bg-[#0F172A] text-white text-sm font-medium hover:bg-[#1E293B] transition-colors shadow-sm flex items-center gap-1.5">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
@@ -410,48 +416,57 @@
             </template>
         </div>
 
-        <!-- ── RINGKASAN NILAI ── -->
+        <!-- ── RINGKASAN PENILAIAN KPI ── -->
         <div class="mb-8">
-            <div class="section-title">F. Ringkasan Penilaian</div>
-            <table class="rapor-table">
+            <div class="section-title">F. Ringkasan Penilaian KPI
+                <span class="text-xs font-normal ml-2 text-[#94A3B8]" x-text="kpiBreakdown.employee_type === 'station' ? '(Station)' : '(Mobile)'"></span>
+            </div>
+            <table class="rapor-table" style="font-size:12px">
                 <thead>
                     <tr>
-                        <th style="width: 40%">Aspek Penilaian</th>
-                        <th style="width: 15%">Bobot</th>
-                        <th style="width: 15%">Skor</th>
-                        <th style="width: 15%">Nilai</th>
-                        <th style="width: 15%">Predikat</th>
+                        <th style="width:30px">No</th>
+                        <th style="width:120px">Kategori</th>
+                        <th style="width:90px">Sub Penilaian</th>
+                        <th>Indikator Penilaian</th>
+                        <th style="width:55px">Bobot</th>
+                        <th style="width:55px">Skor</th>
+                        <th style="width:100px">Keterangan</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td class="label-cell">Produktivitas (Visit/Hari)</td>
-                        <td>40%</td>
-                        <td class="font-bold" x-text="overallScore.productivityScore"></td>
-                        <td class="font-bold" x-text="overallScore.productivityWeighted"></td>
-                        <td>
-                            <span class="nilai-badge text-sm"
-                                  :class="overallScore.productivityScore >= 80 ? 'bg-green-50 text-green-700 border-green-400' : overallScore.productivityScore >= 60 ? 'bg-amber-50 text-amber-700 border-amber-400' : 'bg-red-50 text-red-700 border-red-400'"
-                                  x-text="overallScore.productivityScore >= 80 ? 'A' : overallScore.productivityScore >= 60 ? 'B' : 'C'"></span>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="label-cell">Completion Rate</td>
-                        <td>60%</td>
-                        <td class="font-bold" x-text="overallScore.completionScore"></td>
-                        <td class="font-bold" x-text="overallScore.completionWeighted"></td>
-                        <td>
-                            <span class="nilai-badge text-sm"
-                                  :class="overallScore.completionScore >= 90 ? 'bg-green-50 text-green-700 border-green-400' : overallScore.completionScore >= 75 ? 'bg-amber-50 text-amber-700 border-amber-400' : 'bg-red-50 text-red-700 border-red-400'"
-                                  x-text="overallScore.completionScore >= 90 ? 'A' : overallScore.completionScore >= 75 ? 'B' : 'C'"></span>
-                        </td>
-                    </tr>
-                    <tr style="background: #f8f4ee;">
-                        <td class="label-cell font-black text-[#0F172A]" style="font-size: 14px;">TOTAL NILAI</td>
+                    <template x-for="(cat, catIdx) in kpiCategories" :key="cat.key">
+                        <template x-for="(item, idx) in cat.items" :key="cat.key+idx">
+                            <tr>
+                                <td x-show="idx === 0" :rowspan="cat.items.length" class="font-bold" style="vertical-align:middle" x-text="catIdx + 1"></td>
+                                <td x-show="idx === 0" :rowspan="cat.items.length" class="label-cell font-bold" style="vertical-align:middle; text-transform:capitalize" x-text="cat.label"></td>
+                                <td class="text-[11px] text-[#64748B]" x-text="item.sub || ''"></td>
+                                <td class="text-left text-[11px]" x-text="'- ' + item.label"></td>
+                                <td class="font-bold" x-text="item.bobot + '%'"></td>
+                                <td :class="item.score_pct >= item.bobot ? 'text-green-700 font-bold' : item.score_pct > 0 ? 'text-amber-700 font-bold' : 'text-red-700 font-bold'"
+                                    x-text="item.score_pct + '%'"></td>
+                                <td class="text-[10px] text-[#64748B]" x-text="item.keterangan"></td>
+                            </tr>
+                        </template>
+                    </template>
+
+                    <!-- Category subtotals -->
+                    <template x-for="(cat, catIdx) in kpiCategories" :key="'sub'+cat.key">
+                        <tr :style="'background:' + ['#f0f7ff','#fef9f0','#fef2f2','#f0fdf4','#faf5ff'][catIdx % 5]">
+                            <td colspan="4" class="text-right font-bold text-[11px]" x-text="'Subtotal ' + cat.label"></td>
+                            <td class="font-bold" x-text="cat.max_pct + '%'"></td>
+                            <td class="font-bold" :class="cat.total_pct >= cat.max_pct * 0.7 ? 'text-green-700' : 'text-amber-700'"
+                                x-text="cat.total_pct + '%'"></td>
+                            <td></td>
+                        </tr>
+                    </template>
+
+                    <!-- TOTAL -->
+                    <tr style="background:#f8f4ee; border-top: 2px solid #1a1a1a;">
+                        <td colspan="4" class="font-black text-[#0F172A] text-right" style="font-size:14px">TOTAL NILAI</td>
                         <td class="font-bold">100%</td>
-                        <td class="font-black text-lg text-[#0F172A]" colspan="1" x-text="overallScore.total"></td>
-                        <td colspan="2">
-                            <div class="flex items-center justify-center gap-2">
+                        <td class="font-black text-lg text-[#0F172A]" x-text="(kpiBreakdown.total_score || 0) + '%'"></td>
+                        <td>
+                            <div class="flex items-center justify-center gap-1">
                                 <span class="nilai-badge text-lg"
                                       :class="{
                                           'bg-green-100 text-green-800 border-green-500': grade === 'A',
@@ -459,14 +474,14 @@
                                           'bg-amber-100 text-amber-800 border-amber-500': grade === 'C',
                                           'bg-red-100 text-red-800 border-red-500': grade === 'D',
                                       }" x-text="grade"></span>
-                                <span class="font-bold text-sm" x-text="gradeLabel"></span>
                             </div>
                         </td>
                     </tr>
                 </tbody>
             </table>
             <div class="mt-2 text-[10px] text-[#94A3B8] border border-dashed border-[#CBD5E1] rounded px-3 py-2">
-                <strong>Keterangan Predikat:</strong> A = Sangat Baik (&ge;80) | B = Baik (65-79) | C = Cukup (50-64) | D = Perlu Perbaikan (&lt;50)
+                <strong>Keterangan Predikat:</strong> A = Sangat Baik (&ge;85%) | B = Baik (70-84%) | C = Cukup (55-69%) | D = Perlu Perbaikan (&lt;55%)
+                <br><strong>Sumber data:</strong> Otomatis dari Kelava + HRIS Database. Skor bertanda "(HRIS)" dari data input SPV. "(Default)" belum ada data manual.
             </div>
         </div>
 
@@ -507,15 +522,46 @@ function raporPage() {
         grade: '-',
         gradeLabel: '',
         overall: {},
-        overallScore: { productivityScore: 0, completionScore: 0, productivityWeighted: 0, completionWeighted: 0, total: 0 },
+        kpiBreakdown: {},
         monthlyKpi: [],
         punctuality: [],
         issues: [],
         months: 3,
+        kpiMonth: '',
         chart: null,
         generatedAt: '',
         reportPeriod: '',
         todayFormatted: '',
+
+        get monthOptions() {
+            const opts = [];
+            const now = new Date();
+            for (let i = 0; i < 6; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                opts.push({
+                    value: d.toISOString().slice(0, 7),
+                    label: d.toLocaleString('id-ID', { month: 'long', year: 'numeric' }),
+                });
+            }
+            return opts;
+        },
+
+        get kpiCategories() {
+            // Dynamically extract categories from kpiBreakdown (works for both mobile and station)
+            const skip = ['total_score', 'grade', 'employee_type'];
+            const cats = [];
+            for (const [key, val] of Object.entries(this.kpiBreakdown || {})) {
+                if (skip.includes(key) || !val?.items) continue;
+                cats.push({
+                    key,
+                    label: key.charAt(0).toUpperCase() + key.slice(1),
+                    items: val.items,
+                    total_pct: val.total_pct || 0,
+                    max_pct: val.max_pct || 0,
+                });
+            }
+            return cats;
+        },
 
         formatMonth(dateStr) {
             if (!dateStr) return '-';
@@ -528,45 +574,41 @@ function raporPage() {
             return Math.round(p.on_time_days / p.total_days * 100);
         },
 
-        monthGrade(m) {
+        monthScore(m) {
+            // Approximate KPI score per month using available data
+            // Kunjungan (35%): completion + hours proxy + days proxy
+            const cr = (m.completion_rate || 0) / 100;
             const vpd = m.visits_per_day || 0;
-            const cr = m.completion_rate || 0;
-            const score = (vpd / 4 * 40) + (cr / 100 * 60);
-            if (score >= 80) return 'bg-green-50 text-green-700 border-green-400';
-            if (score >= 65) return 'bg-blue-50 text-blue-700 border-blue-400';
-            if (score >= 50) return 'bg-amber-50 text-amber-700 border-amber-400';
+            const days = m.active_days || 0;
+            const kunj = Math.min(0.20, cr * 0.20) + Math.min(0.10, vpd / 5 * 0.10) + Math.min(0.05, days / 24 * 0.05);
+            // Kedisiplinan proxy (35%): assume ~70% average (scaled items + defaults)
+            const kedis = 0.245;
+            // Complain + Grooming (30%): assume pass
+            const other = 0.30;
+            return Math.round((kunj + kedis + other) * 100);
+        },
+
+        monthGrade(m) {
+            const s = this.monthScore(m);
+            if (s >= 85) return 'bg-green-50 text-green-700 border-green-400';
+            if (s >= 70) return 'bg-blue-50 text-blue-700 border-blue-400';
+            if (s >= 55) return 'bg-amber-50 text-amber-700 border-amber-400';
             return 'bg-red-50 text-red-700 border-red-400';
         },
 
         monthGradeLetter(m) {
-            const vpd = m.visits_per_day || 0;
-            const cr = m.completion_rate || 0;
-            const score = (vpd / 4 * 40) + (cr / 100 * 60);
-            if (score >= 80) return 'A';
-            if (score >= 65) return 'B';
-            if (score >= 50) return 'C';
+            const s = this.monthScore(m);
+            if (s >= 85) return 'A';
+            if (s >= 70) return 'B';
+            if (s >= 55) return 'C';
             return 'D';
-        },
-
-        calcOverallScore() {
-            const vpd = parseFloat(this.overall.visits_per_day) || 0;
-            const cr = parseFloat(this.overall.completion_rate) || 0;
-
-            const prodScore = Math.round(Math.min(vpd / 4 * 100, 100));
-            const compScore = Math.round(cr);
-
-            this.overallScore = {
-                productivityScore: prodScore,
-                completionScore: compScore,
-                productivityWeighted: Math.round(prodScore * 0.4),
-                completionWeighted: Math.round(compScore * 0.6),
-                total: Math.round(prodScore * 0.4 + compScore * 0.6),
-            };
         },
 
         async loadData() {
             const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
-            const res = await _fetch(`/api/v1/enterprise/technicians/${this.techId}/rapor?months=${this.months}`);
+            let url = `/api/v1/enterprise/technicians/${this.techId}/rapor?months=${this.months}`;
+            if (this.kpiMonth) url += `&month=${this.kpiMonth}`;
+            const res = await _fetch(url);
             const data = await res.json();
 
             this.tech = data.technician || {};
@@ -575,7 +617,11 @@ function raporPage() {
             this.monthlyKpi = data.monthly_kpi || [];
             this.punctuality = data.punctuality || [];
             this.issues = data.issues || [];
+            this.kpiBreakdown = data.kpi_breakdown || {};
             this.generatedAt = data.generated_at || new Date().toISOString();
+
+            // Grade from KPI breakdown
+            if (this.kpiBreakdown.grade) this.grade = this.kpiBreakdown.grade;
 
             // Grade label
             const labels = { A: 'Sangat Baik', B: 'Baik', C: 'Cukup', D: 'Perlu Perbaikan' };
@@ -583,14 +629,18 @@ function raporPage() {
 
             // Period text
             const now = new Date();
-            const start = new Date(now);
-            start.setMonth(start.getMonth() - this.months);
-            this.reportPeriod = start.toLocaleString('id-ID', { month: 'long', year: 'numeric' }) + ' - ' + now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+            if (this.kpiMonth) {
+                const md = new Date(this.kpiMonth + '-01');
+                this.reportPeriod = md.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+            } else {
+                const start = new Date(now);
+                start.setMonth(start.getMonth() - this.months);
+                this.reportPeriod = start.toLocaleString('id-ID', { month: 'long', year: 'numeric' }) + ' - ' + now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+            }
 
             // Today formatted
             this.todayFormatted = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-            this.calcOverallScore();
             this.$nextTick(() => this.renderChart());
         },
 

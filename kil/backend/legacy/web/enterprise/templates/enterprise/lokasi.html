@@ -1,0 +1,231 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Lokasi{% endblock %}
+
+{% block content %}
+<style>
+    .kelava-page { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .kelava-header { background: #fff; border-bottom: 1px solid #ddd; padding: 15px 20px; }
+    .kelava-header h1 { font-size: 22px; font-weight: 300; color: #5bc0de; margin: 0; }
+    .kelava-toolbar { background: #fff; border-bottom: 1px solid #eee; padding: 12px 20px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .kelava-btn-new { background: #5bc0de; color: #fff; border: none; padding: 8px 18px; border-radius: 4px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; }
+    .kelava-btn-new:hover { background: #46b8da; }
+    .kelava-filter-bar { background: #fff; padding: 10px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .kelava-filter { display: flex; align-items: center; gap: 0; }
+    .kelava-filter-icon { background: #f5f5f5; border: 1px solid #ddd; border-right: none; padding: 6px 8px; border-radius: 3px 0 0 3px; color: #999; font-size: 12px; }
+    .kelava-filter select, .kelava-filter input {
+        border: 1px solid #ddd; padding: 6px 10px; font-size: 12px; color: #555;
+        border-radius: 0 3px 3px 0; background: #fff; min-width: 80px; outline: none;
+    }
+    .kelava-filter select:focus, .kelava-filter input:focus { border-color: #5bc0de; }
+    .kelava-pagination { background: #fff; padding: 8px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; }
+    .kelava-pager { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #555; }
+    .kelava-pager button { background: #f5f5f5; border: 1px solid #ddd; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; color: #555; }
+    .kelava-pager button:hover:not(:disabled) { background: #e8e8e8; }
+    .kelava-pager button:disabled { opacity: 0.4; cursor: default; }
+    .kelava-pager input { width: 40px; text-align: center; border: 1px solid #ddd; padding: 4px; border-radius: 3px; font-size: 12px; }
+    .kelava-right-tools { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #555; }
+    .kelava-right-tools select { border: 1px solid #ddd; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+    .kelava-right-tools button { background: none; border: none; color: #5bc0de; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+    .kelava-table { width: 100%; border-collapse: collapse; background: #fff; }
+    .kelava-table thead th {
+        background: #5bc0de; color: #fff; font-size: 12px; font-weight: 600;
+        padding: 10px 14px; text-align: left; text-transform: uppercase; letter-spacing: 0.3px;
+        position: sticky; top: 0; z-index: 2;
+    }
+    .kelava-table tbody tr { border-bottom: 1px solid #f0f0f0; }
+    .kelava-table tbody tr:hover { background: #f8fcfe; }
+    .kelava-table tbody td { padding: 10px 14px; font-size: 13px; color: #333; vertical-align: top; }
+    .kelava-table tbody td.action { text-align: right; }
+    .kelava-edit-btn { color: #999; cursor: pointer; font-size: 14px; }
+    .kelava-edit-btn:hover { color: #5bc0de; }
+    .kelava-empty { text-align: center; padding: 40px; color: #999; font-size: 14px; }
+    .kelava-record-count { font-size: 13px; color: #888; }
+</style>
+
+<div class="kelava-page" x-data="lokasiPage()" x-init="init()">
+
+    <!-- Header -->
+    <div class="kelava-header">
+        <h1>Lokasi</h1>
+    </div>
+
+    <!-- New Button -->
+    <div class="kelava-toolbar">
+        <button class="kelava-btn-new" @click="showAdd = true">
+            <span style="font-size:16px">+</span> Baru
+        </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="kelava-filter-bar">
+        <div class="kelava-filter" style="margin-right: 2px;">
+            <span class="kelava-filter-icon">&#9776;</span>
+        </div>
+
+        <div class="kelava-filter">
+            <span class="kelava-filter-icon" style="font-size:11px">Nama Lokasi:</span>
+            <input type="text" x-model.debounce.400ms="filters.name" placeholder="All" style="width:100px"
+                   @input="page=1; loadData()">
+        </div>
+
+        <div class="kelava-filter">
+            <span class="kelava-filter-icon" style="font-size:11px">Alamat:</span>
+            <input type="text" x-model.debounce.400ms="filters.address" placeholder="All" style="width:80px"
+                   @input="page=1; loadData()">
+        </div>
+
+        <div class="kelava-filter">
+            <span class="kelava-filter-icon" style="font-size:11px">Nama PIC:</span>
+            <select x-model="filters.pic" @change="page=1; loadData()">
+                <option value="">All</option>
+                <template x-for="p in filterOptions.pics" :key="p">
+                    <option :value="p" x-text="p"></option>
+                </template>
+            </select>
+        </div>
+
+        <div class="kelava-filter">
+            <span class="kelava-filter-icon" style="font-size:11px">Owner:</span>
+            <select x-model="filters.owner" @change="page=1; loadData()">
+                <option value="">All</option>
+                <template x-for="o in filterOptions.owners" :key="o">
+                    <option :value="o" x-text="o"></option>
+                </template>
+            </select>
+        </div>
+
+        <div class="kelava-filter">
+            <span class="kelava-filter-icon" style="font-size:11px">No. Telp:</span>
+            <input type="text" x-model.debounce.400ms="filters.phone" placeholder="All" style="width:80px"
+                   @input="page=1; loadData()">
+        </div>
+    </div>
+
+    <!-- Pagination Bar -->
+    <div class="kelava-pagination">
+        <div class="kelava-pager">
+            <span>Page:</span>
+            <button @click="goPage(1)" :disabled="page <= 1">&#x23EE;</button>
+            <button @click="goPage(page - 1)" :disabled="page <= 1">&#x276E;</button>
+            <input type="number" :value="page" min="1" :max="totalPages"
+                   @change="goPage(Math.max(1, Math.min(totalPages, parseInt($event.target.value) || 1)))">
+            <button @click="goPage(page + 1)" :disabled="page >= totalPages">&#x276F;</button>
+            <button @click="goPage(totalPages)" :disabled="page >= totalPages">&#x23ED;</button>
+            <span class="kelava-record-count" x-text="'of ' + totalPages + '  ' + total + ' Records'"></span>
+        </div>
+        <div class="kelava-right-tools">
+            <span>&#x2913;</span>
+            <select x-model="perPage" @change="page=1; loadData()">
+                <option value="25">25 rows / page</option>
+                <option value="50">50 rows / page</option>
+                <option value="100">100 rows / page</option>
+            </select>
+            <button @click="loadData()">&#x21BB; Refresh</button>
+            <span>&#x2195;</span>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div style="overflow-x:auto;">
+        <table class="kelava-table">
+            <thead>
+                <tr>
+                    <th style="width:50px">NO.</th>
+                    <th>NAMA LOKASI</th>
+                    <th>ALAMAT</th>
+                    <th>NAMA PIC</th>
+                    <th>TELEPON PIC</th>
+                    <th>OWNER</th>
+                    <th style="width:40px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="(r, idx) in records" :key="r.id">
+                    <tr>
+                        <td x-text="(page - 1) * perPage + idx + 1"></td>
+                        <td style="font-weight:500" x-text="r.name"></td>
+                        <td x-text="r.address || ''"></td>
+                        <td x-text="r.nama_pic || ''"></td>
+                        <td x-text="r.telepon_pic || ''"></td>
+                        <td x-text="r.owner || ''"></td>
+                        <td class="action">
+                            <a :href="'/enterprise/customers/' + r.id" class="kelava-edit-btn" title="Edit">&#9998;</a>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+        <div x-show="records.length === 0 && !loading" class="kelava-empty">
+            Tidak ada data ditemukan
+        </div>
+        <div x-show="loading" class="kelava-empty">
+            Memuat data...
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function lokasiPage() {
+    return {
+        records: [],
+        total: 0,
+        page: 1,
+        perPage: 25,
+        totalPages: 1,
+        loading: false,
+        filters: { name: '', address: '', pic: '', owner: '', phone: '' },
+        filterOptions: { owners: [], pics: [] },
+        showAdd: false,
+
+        async init() {
+            await this.loadFilters();
+            await this.loadData();
+        },
+
+        async loadFilters() {
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/lokasi/filters');
+                if (res.ok) {
+                    const d = await res.json();
+                    this.filterOptions = d;
+                }
+            } catch(e) {}
+        },
+
+        async loadData() {
+            this.loading = true;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const params = new URLSearchParams({
+                page: this.page,
+                per_page: this.perPage,
+            });
+            if (this.filters.name) params.set('name', this.filters.name);
+            if (this.filters.address) params.set('address', this.filters.address);
+            if (this.filters.pic) params.set('pic', this.filters.pic);
+            if (this.filters.owner) params.set('owner', this.filters.owner);
+            if (this.filters.phone) params.set('phone', this.filters.phone);
+
+            try {
+                const res = await _fetch('/api/v1/enterprise/lokasi?' + params);
+                if (res.ok) {
+                    const d = await res.json();
+                    this.records = d.records;
+                    this.total = d.total;
+                    this.totalPages = d.total_pages;
+                    this.page = d.page;
+                }
+            } catch(e) {}
+            this.loading = false;
+        },
+
+        goPage(p) {
+            this.page = Math.max(1, Math.min(this.totalPages, p));
+            this.loadData();
+        },
+    }
+}
+</script>
+{% endblock %}

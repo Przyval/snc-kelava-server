@@ -247,7 +247,15 @@ app.register_blueprint(accurate_bp, url_prefix="/api/v1/enterprise/accurate")
 
 # Ontology Layer (Palantir-style semantic data layer)
 from kil.backend.legacy.api.ontology import ontology_bp
-app.register_blueprint(ontology_bp, url_prefix="/api/v1/enterprise")
+app.register_blueprint(ontology_bp, url_prefix="/api/v1/enterprise/ontology")
+
+# Priority Watchlist (P1/P2 + AT_RISK/OVERDUE customers)
+from kil.backend.legacy.api.watchlist import watchlist_bp
+app.register_blueprint(watchlist_bp, url_prefix="/api/v1/enterprise")
+
+# Lokasi (Customer Management — Kelava-compatible)
+from kil.backend.legacy.api.lokasi import lokasi_bp
+app.register_blueprint(lokasi_bp, url_prefix="/api/v1/enterprise")
 
 # Enterprise Web Dashboard
 app.register_blueprint(enterprise_bp, url_prefix="/enterprise")

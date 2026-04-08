@@ -74,6 +74,53 @@
         </div>
     </div>
 
+    <!-- Customer Health Strip -->
+    <div x-show="watchlist.revenue_at_risk > 0 || watchlist.total > 0"
+        class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <!-- Revenue at Risk -->
+        <a href="/enterprise/watchlist"
+            class="col-span-2 bg-gradient-to-r from-red-600 to-orange-500 rounded-xl px-4 py-3 flex items-center gap-3 hover:shadow-lg transition-shadow cursor-pointer group">
+            <div class="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-[10px] text-white/70 uppercase font-semibold tracking-wide">Revenue at Risk / Bulan</p>
+                <p class="text-xl font-bold text-white"
+                    x-text="'Rp ' + fmtRp(watchlist.revenue_at_risk)"></p>
+            </div>
+            <svg class="w-4 h-4 text-white/50 group-hover:text-white transition-colors flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+        </a>
+        <!-- P1 Count -->
+        <a href="/enterprise/watchlist"
+            class="bg-white rounded-xl border border-red-100 px-4 py-3 flex items-center gap-3 hover:shadow-md transition-shadow cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                <span class="text-xs font-black text-red-600">P1</span>
+            </div>
+            <div>
+                <p class="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">Critical</p>
+                <p class="text-xl font-bold text-red-600" x-text="watchlist.p1_count ?? '—'"></p>
+            </div>
+        </a>
+        <!-- AT_RISK + OVERDUE Count -->
+        <a href="/enterprise/watchlist"
+            class="bg-white rounded-xl border border-amber-100 px-4 py-3 flex items-center gap-3 hover:shadow-md transition-shadow cursor-pointer">
+            <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">At Risk</p>
+                <p class="text-xl font-bold text-amber-600"
+                    x-text="(watchlist.at_risk_count ?? 0) + (watchlist.overdue_count ?? 0)"></p>
+            </div>
+        </a>
+    </div>
+
     <!-- KPI Cards Row -->
     <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <!-- Planned Visits -->
@@ -216,6 +263,102 @@
         </div>
     </div>
 
+    <!-- ── Briefing Widgets (4 panels) ── -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        <!-- A) Kontrak Baru Belum Di-Plot -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">+</span>
+                    Kontrak Baru Belum Di-Plot
+                </h3>
+                <span class="text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700" x-text="briefing.new_unplotted_count + ' kontrak'"></span>
+            </div>
+            <div class="space-y-2 max-h-56 overflow-y-auto">
+                <template x-for="c in briefing.new_unplotted?.slice(0, 20) || []" :key="c.id">
+                    <div class="flex items-center justify-between py-2 px-3 bg-blue-50/50 rounded-lg border border-blue-100">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-medium text-sm text-slate-800 truncate" x-text="c.name"></div>
+                            <div class="text-xs text-slate-500 truncate" x-text="c.no_kontrak + ' — mulai ' + c.start_date"></div>
+                        </div>
+                        <span class="text-xs text-blue-600 font-medium whitespace-nowrap ml-2">Belum ada jadwal</span>
+                    </div>
+                </template>
+                <div x-show="!briefing.new_unplotted?.length" class="text-center py-4 text-xs text-slate-400">Semua kontrak baru sudah dijadwalkan</div>
+            </div>
+        </div>
+
+        <!-- B) Cancel Kemarin -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold">&times;</span>
+                    Cancel Kemarin
+                </h3>
+                <span class="text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700" x-text="briefing.cancelled_yesterday_count + ' cancel'"></span>
+            </div>
+            <div class="space-y-2 max-h-56 overflow-y-auto">
+                <template x-for="c in briefing.cancelled_yesterday || []" :key="c.id">
+                    <div class="flex items-center justify-between py-2 px-3 bg-red-50/50 rounded-lg border border-red-100">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-medium text-sm text-slate-800 truncate" x-text="c.customer_name"></div>
+                            <div class="text-xs text-slate-500 truncate" x-text="c.technician_name + ' — ' + (c.type || '-')"></div>
+                        </div>
+                        <span class="text-xs text-red-500 font-medium whitespace-nowrap ml-2" x-text="c.customer_code || ''"></span>
+                    </div>
+                </template>
+                <div x-show="!briefing.cancelled_yesterday?.length" class="text-center py-4 text-xs text-slate-400">Tidak ada cancel kemarin</div>
+            </div>
+        </div>
+
+        <!-- C) Cancel Belum Reschedule -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold">!</span>
+                    Cancel Belum Reschedule
+                </h3>
+                <span class="text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700" x-text="briefing.cancel_no_reschedule_count + ' belum dijadwalkan'"></span>
+            </div>
+            <div class="space-y-2 max-h-56 overflow-y-auto">
+                <template x-for="c in briefing.cancel_no_reschedule?.slice(0, 20) || []" :key="c.id">
+                    <div class="flex items-center justify-between py-2 px-3 bg-amber-50/50 rounded-lg border border-amber-100">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-medium text-sm text-slate-800 truncate" x-text="c.customer_name"></div>
+                            <div class="text-xs text-slate-500 truncate" x-text="c.technician_name + ' — cancel ' + c.cancel_date"></div>
+                        </div>
+                        <span class="text-xs text-amber-600 font-medium whitespace-nowrap ml-2">Perlu dijadwalkan</span>
+                    </div>
+                </template>
+                <div x-show="!briefing.cancel_no_reschedule?.length" class="text-center py-4 text-xs text-slate-400">Semua cancel sudah dijadwalkan ulang</div>
+            </div>
+        </div>
+
+        <!-- D) Complete Bulan Ini -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold">&#10003;</span>
+                    Complete Bulan Ini
+                </h3>
+                <span class="text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700" x-text="briefing.completed_month_count + ' customer'"></span>
+            </div>
+            <div class="space-y-2 max-h-56 overflow-y-auto">
+                <template x-for="c in briefing.completed_month?.slice(0, 20) || []" :key="c.id">
+                    <div class="flex items-center justify-between py-2 px-3 bg-green-50/50 rounded-lg border border-green-100">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-medium text-sm text-slate-800 truncate" x-text="c.name"></div>
+                            <div class="text-xs text-slate-500" x-text="c.total_visits + ' kunjungan — terakhir ' + c.last_visit_date"></div>
+                        </div>
+                        <span class="text-xs text-green-600 font-bold whitespace-nowrap ml-2">&#10003; Done</span>
+                    </div>
+                </template>
+                <div x-show="!briefing.completed_month?.length" class="text-center py-4 text-xs text-slate-400">Belum ada yang complete</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Expiring Contracts Alert -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div class="flex items-center justify-between mb-4">
@@ -266,6 +409,8 @@ function executiveDashboard() {
         byType: [],
         expiringContracts: [],
         topTechs: [],
+        watchlist: {},
+        briefing: {},
         trendChart: null,
         typeChart: null,
         countdown: 60,
@@ -294,22 +439,26 @@ function executiveDashboard() {
 
             const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
 
-            const [kpiRes, attnRes, trendRes, typeRes, contractRes, leaderRes] = await Promise.all([
+            const [kpiRes, attnRes, trendRes, typeRes, contractRes, leaderRes, watchlistRes, briefingRes] = await Promise.all([
                 _fetch(`/api/v1/enterprise/executive/kpis?${params}`),
                 _fetch('/api/v1/enterprise/executive/attention-required').catch(() => null),
                 _fetch('/api/v1/enterprise/executive/trends?days=30'),
                 _fetch(`/api/v1/enterprise/executive/visits-by-type?${params}`),
                 _fetch('/api/v1/enterprise/executive/contracts/expiring?days=30&limit=20'),
                 _fetch('/api/v1/enterprise/executive/leaderboard-mini').catch(() => null),
+                _fetch('/api/v1/enterprise/watchlist').catch(() => null),
+                _fetch('/api/v1/enterprise/executive/briefing-widgets').catch(() => null),
             ]);
 
-            const [kpiData, attnData, trendData, typeData, contractData, leaderData] = await Promise.all([
+            const [kpiData, attnData, trendData, typeData, contractData, leaderData, watchlistData, briefingData] = await Promise.all([
                 kpiRes.json(),
                 attnRes ? attnRes.json() : {},
                 trendRes.json(),
                 typeRes.json(),
                 contractRes.json(),
                 leaderRes ? leaderRes.json() : {},
+                watchlistRes ? watchlistRes.json() : {},
+                briefingRes ? briefingRes.json() : {},
             ]);
 
             this.kpis = kpiData.kpis || {};
@@ -319,6 +468,8 @@ function executiveDashboard() {
             this.byType = typeData.by_type || [];
             this.expiringContracts = contractData.contracts || [];
             this.topTechs = leaderData.technicians || [];
+            this.watchlist = watchlistData.stats || {};
+            this.briefing = briefingData || {};
 
             this.renderTrendChart();
             this.renderTypeChart();
@@ -358,6 +509,14 @@ function executiveDashboard() {
                     scales: { y: { beginAtZero: true } }
                 }
             });
+        },
+
+        fmtRp(n) {
+            if (!n) return '0';
+            if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'M';
+            if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'Jt';
+            if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
+            return Math.round(n).toLocaleString('id-ID');
         },
 
         renderTypeChart() {

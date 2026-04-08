@@ -118,7 +118,6 @@ def visits_today():
             LEFT JOIN m_customer c ON c.id = rp.id_customer
             LEFT JOIN m_customer_kontrak k ON k.id = rp.id_kontrak
             LEFT JOIN p_user pu ON pu.id = rp.id_user
-            LEFT JOIN enterprise_users eu ON eu.p_user_id = rp.id_user
             LEFT JOIN mobile_visits mv ON mv.road_plan_id = rp.id
             WHERE DATE(rp.visit_date) = %s
             ORDER BY rp.visit_date
@@ -191,7 +190,6 @@ def visits_schedule():
             LEFT JOIN m_customer c ON c.id = rp.id_customer
             LEFT JOIN m_customer_kontrak k ON k.id = rp.id_kontrak
             LEFT JOIN p_user pu ON pu.id = rp.id_user
-            LEFT JOIN enterprise_users eu ON eu.p_user_id = rp.id_user
             LEFT JOIN mobile_visits mv ON mv.road_plan_id = rp.id
             WHERE DATE(rp.visit_date) = %s
             ORDER BY rp.visit_date
@@ -488,17 +486,28 @@ def list_approvals():
         """
         SELECT sa.id, sa.action_type, sa.status, sa.trigger_reason AS description,
                sa.scheduled_date, sa.created_at,
-               eu.full_name AS created_by_name,
-               eu2.full_name AS technician_name,
+               sa.created_by, sa.target_technician_id,
                c.name AS customer_name
         FROM supervisory_actions sa
-        LEFT JOIN enterprise_users eu ON eu.id = sa.created_by
-        LEFT JOIN enterprise_users eu2 ON eu2.id = sa.target_technician_id
         LEFT JOIN m_customer c ON c.id = sa.target_customer_id
         WHERE sa.status = 'PENDING_APPROVAL'
         ORDER BY sa.created_at DESC
         """,
     )
+
+    # Fetch user names from local enterprise DB
+    user_ids = set()
+    for r in rows:
+        if r.get("created_by"):
+            user_ids.add(r["created_by"])
+        if r.get("target_technician_id"):
+            user_ids.add(r["target_technician_id"])
+    names = {}
+    if user_ids:
+        name_rows = execute_kelava_query(
+            f"SELECT id, full_name FROM enterprise_users WHERE id = ANY(ARRAY[{','.join(str(i) for i in user_ids)}])"
+        )
+        names = {r["id"]: r["full_name"] for r in name_rows}
 
     return jsonify([
         {
@@ -510,8 +519,8 @@ def list_approvals():
                 if hasattr(r.get("scheduled_date"), "isoformat")
                 else r.get("scheduled_date"),
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-            "created_by_name": r["created_by_name"],
-            "technician_name": r["technician_name"],
+            "created_by_name": names.get(r.get("created_by"), "-"),
+            "technician_name": names.get(r.get("target_technician_id"), "-"),
             "customer_name": r["customer_name"],
         }
         for r in rows

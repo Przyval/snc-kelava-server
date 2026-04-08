@@ -22,6 +22,8 @@ def _fmt(row):
     for k, v in item.items():
         if hasattr(v, "isoformat"):
             item[k] = v.isoformat()
+        elif hasattr(v, "__float__") and not isinstance(v, (int, float, bool)):
+            item[k] = float(v)
     return item
 
 
@@ -84,11 +86,14 @@ def latest_positions():
         (target_date,),
     )
 
+    # Tag source before merging
+    rows = [{**dict(r), "gps_source": "live"} for r in rows]
+
     # Merge: GPS positions take priority
     seen_techs = {r["tech_id"] for r in rows}
     for vp in visit_positions:
         if vp["tech_id"] not in seen_techs:
-            rows.append(vp)
+            rows.append({**dict(vp), "gps_source": "checkin"})
             seen_techs.add(vp["tech_id"])
 
     # Enrich with visit progress per tech for this date
@@ -151,6 +156,9 @@ def latest_positions():
         # Photo URL (convention: /enterprise/static/img/staff/{tech_id}.jpg)
         item["photo_url"] = f"/enterprise/static/img/staff/{tid}.jpg"
 
+        # GPS source transparency
+        item["gps_source"] = r.get("gps_source", "checkin")
+
         enriched.append(item)
 
     return jsonify({
@@ -158,6 +166,79 @@ def latest_positions():
         "total": len(enriched),
         "date": target_date,
         "fetched_at": datetime.now().isoformat(),
+    })
+
+
+# ── Today's Planned Route Overlay ────────────────────────────
+
+
+@gps_live_bp.route("/today-route", methods=["GET"])
+@require_auth
+def today_route():
+    """
+    All planned visits for a date with last-known GPS coordinates per stop.
+    Uses today's check-in coords first; falls back to last historical GPS for the customer.
+    Returns grouped by tech_id for route overlay rendering.
+    Query params: date (YYYY-MM-DD, default: today)
+    """
+    target_date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+    rows = execute_kelava_query(
+        """
+        SELECT
+            rp.id_user       AS tech_id,
+            u.fullname        AS tech_name,
+            rp.id             AS road_plan_id,
+            rp.status,
+            rp.id_customer,
+            c.name            AS customer_name,
+            COALESCE(tv_today.latitude,  hist.lat) AS lat,
+            COALESCE(tv_today.longitude, hist.lng) AS lng
+        FROM t_road_plan rp
+        JOIN p_user u ON u.id = rp.id_user
+        LEFT JOIN m_customer c ON c.id = rp.id_customer
+        -- Today's own check-in (highest fidelity)
+        LEFT JOIN t_visit tv_today
+               ON tv_today.id_road_plan = rp.id
+              AND tv_today.latitude  IS NOT NULL AND tv_today.latitude  != 0
+              AND tv_today.longitude IS NOT NULL AND tv_today.longitude != 0
+        -- Historical last-known GPS per customer (fallback)
+        LEFT JOIN (
+            SELECT DISTINCT ON (rp2.id_customer)
+                rp2.id_customer,
+                tv2.latitude  AS lat,
+                tv2.longitude AS lng
+            FROM t_visit tv2
+            JOIN t_road_plan rp2 ON rp2.id = tv2.id_road_plan
+            WHERE tv2.latitude  IS NOT NULL AND tv2.latitude  != 0
+              AND tv2.longitude IS NOT NULL AND tv2.longitude != 0
+            ORDER BY rp2.id_customer, tv2.check_in DESC
+        ) hist ON hist.id_customer = rp.id_customer
+        WHERE rp.visit_date::date = %s
+          AND COALESCE(rp.is_cancel, false) = false
+        ORDER BY rp.id_user, rp.id
+        """,
+        (target_date,),
+    )
+
+    # Group stops by tech
+    techs: dict = {}
+    for r in rows:
+        tid = r["tech_id"]
+        if tid not in techs:
+            techs[tid] = {
+                "tech_id": tid,
+                "tech_name": r["tech_name"],
+                "stops": [],
+            }
+        stop = _fmt(r)
+        stop["has_gps"] = bool(r["lat"] and r["lng"])
+        techs[tid]["stops"].append(stop)
+
+    return jsonify({
+        "routes": list(techs.values()),
+        "date": target_date,
+        "total_stops": len(rows),
     })
 
 
@@ -362,4 +443,148 @@ def available_dates():
             }
             for r in rows
         ],
+    })
+
+
+# ── Visit Timeline per Technician ────────────────────────────
+
+
+@gps_live_bp.route("/timeline/<int:tech_id>", methods=["GET"])
+@require_auth
+def tech_timeline(tech_id: int):
+    """
+    Full day visit timeline for one technician.
+    Includes check-in/out times, duration, customer info, and RFM status.
+    Query params: date (YYYY-MM-DD, default: today)
+    """
+    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+    rows = execute_kelava_query(
+        """
+        SELECT
+            rp.id           AS road_plan_id,
+            rp.status,
+            rp.id_customer,
+            c.name          AS customer_name,
+            c.address,
+            v.check_in,
+            v.check_out,
+            v.latitude      AS lat,
+            v.longitude     AS lng,
+            CASE WHEN v.check_in IS NOT NULL AND v.check_out IS NOT NULL
+                 THEN EXTRACT(EPOCH FROM (v.check_out - v.check_in))::int / 60
+                 ELSE NULL END AS duration_min,
+            CASE WHEN v.check_in IS NOT NULL AND v.check_out IS NULL
+                 THEN EXTRACT(EPOCH FROM (NOW() - v.check_in))::int / 60
+                 ELSE NULL END AS elapsed_min,
+            rfm.account_status,
+            rfm.days_since_last_visit,
+            rfm.value_monthly,
+            pa.priority
+        FROM t_road_plan rp
+        LEFT JOIN m_customer c ON c.id = rp.id_customer
+        LEFT JOIN t_visit v ON v.id_road_plan = rp.id
+        LEFT JOIN v_customer_rfm_segment rfm ON rfm.customer_id = rp.id_customer
+        LEFT JOIN v_customer_priority_action pa ON pa.customer_id = rp.id_customer
+        WHERE rp.id_user = %s
+          AND rp.visit_date::date = %s
+          AND COALESCE(rp.is_cancel, false) = false
+        ORDER BY v.check_in ASC NULLS LAST, rp.id
+        """,
+        (tech_id, date),
+    )
+
+    # Day summary: first check-in, last check-out, total duration
+    check_ins  = [r["check_in"]  for r in rows if r.get("check_in")]
+    check_outs = [r["check_out"] for r in rows if r.get("check_out")]
+    total_dur  = sum((r.get("duration_min") or 0) for r in rows)
+
+    return jsonify({
+        "tech_id": tech_id,
+        "date": date,
+        "timeline": [_fmt(r) for r in rows],
+        "total": len(rows),
+        "completed": sum(1 for r in rows if r["status"] == "Selesai"),
+        "in_progress": sum(1 for r in rows if r["status"] == "Berjalan"),
+        "first_checkin": min(check_ins).isoformat() if check_ins else None,
+        "last_checkout": max(check_outs).isoformat() if check_outs else None,
+        "total_duration_min": int(total_dur),
+    })
+
+
+# ── AT_RISK Customer Locations ────────────────────────────────
+
+
+@gps_live_bp.route("/atrisk-locations", methods=["GET"])
+@require_auth
+def atrisk_locations():
+    """
+    AT_RISK / OVERDUE / P1 customers with last-known GPS coordinates.
+    Used to overlay watchlist customers on the live map.
+    """
+    rows = execute_kelava_query(
+        """
+        SELECT
+            c.id, c.name, c.code, c.address,
+            rfm.account_status,
+            rfm.days_since_last_visit,
+            rfm.missed_cycles,
+            rfm.value_monthly,
+            pa.priority,
+            pa.ui_badge,
+            hist.lat,
+            hist.lng
+        FROM m_customer c
+        JOIN v_customer_rfm_segment rfm ON rfm.customer_id = c.id
+        JOIN v_customer_priority_action pa ON pa.customer_id = c.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (rp2.id_customer)
+                rp2.id_customer,
+                tv2.latitude  AS lat,
+                tv2.longitude AS lng
+            FROM t_visit tv2
+            JOIN t_road_plan rp2 ON rp2.id = tv2.id_road_plan
+            WHERE tv2.latitude  IS NOT NULL AND tv2.latitude  != 0
+              AND tv2.longitude IS NOT NULL AND tv2.longitude != 0
+            ORDER BY rp2.id_customer, tv2.check_in DESC
+        ) hist ON hist.id_customer = c.id
+        WHERE rfm.account_status IN ('AT_RISK', 'OVERDUE')
+           OR pa.priority = 'P1'
+        ORDER BY
+            CASE rfm.account_status WHEN 'OVERDUE' THEN 1 WHEN 'AT_RISK' THEN 2 ELSE 3 END,
+            rfm.days_since_last_visit DESC NULLS LAST
+        LIMIT 300
+        """
+    )
+
+    # Customers visited or in-progress today
+    try:
+        today_active = execute_kelava_query(
+            """
+            SELECT DISTINCT id_customer
+            FROM t_road_plan
+            WHERE visit_date::date = CURRENT_DATE
+              AND status IN ('Selesai', 'Berjalan')
+              AND COALESCE(is_cancel, false) = false
+            """
+        )
+        visited_today_ids = {r["id_customer"] for r in today_active}
+    except Exception:
+        visited_today_ids = set()
+
+    with_gps = []
+    for r in rows:
+        if not r["lat"] or not r["lng"]:
+            continue
+        d = _fmt(r)
+        d["visited_today"] = r["id"] in visited_today_ids
+        with_gps.append(d)
+
+    without_gps = len(rows) - len(with_gps)
+
+    return jsonify({
+        "customers": with_gps,
+        "total_with_gps": len(with_gps),
+        "total": len(rows),
+        "without_gps": without_gps,
     })

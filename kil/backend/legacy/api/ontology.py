@@ -265,19 +265,23 @@ def technician_object(tech_id):
     Merges: p_user + enterprise_users + v_tech_verification_score
     + recent visits, flagged visits, today's road plans.
     """
+    # Kelava query: p_user + verification view (no enterprise_* tables — avoids local DB routing)
     base = execute_kelava_query_single(
         """
         SELECT u.id, u.fullname AS name, u.email,
-               eu.role, eu.is_active,
-               -- Verification score (30d)
                vs.total_visits, vs.no_photo_visits, vs.no_gps_visits,
                vs.gps_drift_visits, vs.too_short_visits,
                vs.compliance_pct, vs.avg_photos_per_visit
         FROM p_user u
-        LEFT JOIN enterprise_users eu ON eu.p_user_id = u.id
         LEFT JOIN v_tech_verification_score vs ON vs.technician_id = u.id
         WHERE u.id = %s
         """,
+        (tech_id,),
+    )
+
+    # Local DB query: enterprise_users role/status (separate connection)
+    ent_user = execute_kelava_query_single(
+        "SELECT role, is_active FROM enterprise_users WHERE p_user_id = %s",
         (tech_id,),
     )
 
@@ -362,6 +366,7 @@ def technician_object(tech_id):
     )
 
     b = _fmt(base)
+    eu = _fmt(ent_user) or {}
     kpi = _fmt(month_kpi) or {}
     selesai = kpi.get("selesai") or 0
     planned = kpi.get("planned") or 0
@@ -372,8 +377,8 @@ def technician_object(tech_id):
         "properties": {
             "name": b.get("name"),
             "email": b.get("email"),
-            "role": b.get("role"),
-            "is_active": b.get("is_active"),
+            "role": eu.get("role"),
+            "is_active": eu.get("is_active"),
             # Verification score (from v_tech_verification_score)
             "total_visits_30d": b.get("total_visits") or 0,
             "compliance_pct": float(b.get("compliance_pct") or 0),
@@ -446,13 +451,12 @@ def search():
             })
 
     if "technician" in types:
+        # Kelava only — no enterprise_* tables to avoid local DB routing
         technicians = execute_kelava_query(
             """
             SELECT u.id, u.fullname AS name, u.email,
-                   eu.role,
                    vs.compliance_pct, vs.total_visits
             FROM p_user u
-            LEFT JOIN enterprise_users eu ON eu.p_user_id = u.id
             LEFT JOIN v_tech_verification_score vs ON vs.technician_id = u.id
             WHERE LOWER(u.fullname) LIKE %s OR LOWER(u.email) LIKE %s
             ORDER BY u.fullname
@@ -465,7 +469,7 @@ def search():
                 "type": "technician",
                 "id": r["id"],
                 "label": r["name"],
-                "sublabel": r.get("role"),
+                "sublabel": r.get("email"),
                 "badge": f"{round(float(r['compliance_pct'] or 0))}% compliance",
                 "url": f"/enterprise/technicians/{r['id']}",
             })

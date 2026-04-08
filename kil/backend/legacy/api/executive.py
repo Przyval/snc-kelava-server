@@ -475,3 +475,106 @@ def contracts_expiring():
             "generated_at": datetime.now().isoformat(),
         }
     )
+
+
+# ── Briefing Widgets ──────────────────────────────────────────
+
+
+@executive_bp.route("/executive/briefing-widgets", methods=["GET"])
+@require_auth
+def briefing_widgets():
+    """Four operational briefing widgets for the executive dashboard."""
+
+    def _fmt(row):
+        d = dict(row)
+        for k, v in d.items():
+            if hasattr(v, "isoformat"):
+                d[k] = v.isoformat()
+            elif hasattr(v, "__float__") and not isinstance(v, (int, float, bool)):
+                d[k] = float(v)
+        return d
+
+    # A) Kontrak Baru Belum Di-Plot
+    #    Contracts started in last 30 days with no scheduled visit
+    new_unplotted = execute_kelava_query("""
+        SELECT c.id, c.name, c.code, c.address,
+               k.no_kontrak, k.start_date, k.end_date
+        FROM m_customer_kontrak k
+        JOIN m_customer c ON c.id = k.id_customer
+        WHERE UPPER(TRIM(COALESCE(k.is_active, ''))) IN ('YES','ACTIVE','Y','1','TRUE')
+          AND k.start_date >= CURRENT_DATE - INTERVAL '30 days'
+          AND NOT EXISTS (
+              SELECT 1 FROM t_road_plan rp
+              WHERE rp.id_customer = k.id_customer
+                AND rp.visit_date::date >= k.start_date
+                AND COALESCE(rp.is_cancel, false) = false
+          )
+        ORDER BY k.start_date DESC
+        LIMIT 50
+    """)
+
+    # B) Cancel Kemarin
+    #    Visits cancelled yesterday
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    cancelled_yesterday = execute_kelava_query("""
+        SELECT rp.id, rp.visit_date::date AS visit_date, rp.type,
+               c.name AS customer_name, c.code AS customer_code,
+               u.fullname AS technician_name
+        FROM t_road_plan rp
+        LEFT JOIN m_customer c ON c.id = rp.id_customer
+        LEFT JOIN p_user u ON u.id = rp.id_user
+        WHERE rp.is_cancel = true
+          AND rp.visit_date::date = %s
+        ORDER BY c.name
+    """, (yesterday,))
+
+    # C) Cancel Belum Reschedule
+    #    Cancelled this month with no future visit for that customer
+    cancel_no_resched = execute_kelava_query("""
+        SELECT rp.id, rp.visit_date::date AS cancel_date,
+               c.id AS customer_id, c.name AS customer_name, c.code,
+               u.fullname AS technician_name
+        FROM t_road_plan rp
+        JOIN m_customer c ON c.id = rp.id_customer
+        LEFT JOIN p_user u ON u.id = rp.id_user
+        WHERE rp.is_cancel = true
+          AND rp.visit_date::date >= DATE_TRUNC('month', CURRENT_DATE)
+          AND NOT EXISTS (
+              SELECT 1 FROM t_road_plan rp2
+              WHERE rp2.id_customer = rp.id_customer
+                AND rp2.visit_date::date > rp.visit_date::date
+                AND COALESCE(rp2.is_cancel, false) = false
+          )
+        ORDER BY rp.visit_date::date DESC
+        LIMIT 50
+    """)
+
+    # D) Complete Bulan Ini
+    #    Customers where ALL visits this month are Selesai
+    completed_month = execute_kelava_query("""
+        SELECT c.id, c.name, c.code,
+               COUNT(*) AS total_visits,
+               MAX(rp.visit_date::date) AS last_visit_date
+        FROM t_road_plan rp
+        JOIN m_customer c ON c.id = rp.id_customer
+        WHERE rp.visit_date::date >= DATE_TRUNC('month', CURRENT_DATE)
+          AND rp.visit_date::date <= CURRENT_DATE
+          AND COALESCE(rp.is_cancel, false) = false
+        GROUP BY c.id, c.name, c.code
+        HAVING COUNT(*) = COUNT(*) FILTER (WHERE rp.status = 'Selesai')
+           AND COUNT(*) > 0
+        ORDER BY c.name
+        LIMIT 100
+    """)
+
+    return jsonify({
+        "new_unplotted": [_fmt(r) for r in new_unplotted],
+        "new_unplotted_count": len(new_unplotted),
+        "cancelled_yesterday": [_fmt(r) for r in cancelled_yesterday],
+        "cancelled_yesterday_count": len(cancelled_yesterday),
+        "cancel_no_reschedule": [_fmt(r) for r in cancel_no_resched],
+        "cancel_no_reschedule_count": len(cancel_no_resched),
+        "completed_month": [_fmt(r) for r in completed_month],
+        "completed_month_count": len(completed_month),
+        "generated_at": datetime.now().isoformat(),
+    })

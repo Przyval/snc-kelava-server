@@ -267,6 +267,108 @@
             </div>
         </div>
 
+        <!-- ── 4 Briefing Widgets ── -->
+
+        <!-- A) Kontrak Baru Belum Di-Plot -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden" :class="bw.new_unplotted_count > 0 ? 'border-blue-200' : 'border-[#E2E8F0]'">
+            <div class="px-4 py-3 border-b flex items-center gap-2" :class="bw.new_unplotted_count > 0 ? 'border-blue-200 bg-blue-50' : 'border-[#E2E8F0] bg-[#F8FAFC]'">
+                <svg class="w-4 h-4" :class="bw.new_unplotted_count > 0 ? 'text-blue-600' : 'text-[#64748B]'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+                <h2 class="text-sm font-bold" :class="bw.new_unplotted_count > 0 ? 'text-blue-800' : 'text-[#0F172A]'">Kontrak Baru Belum Di-Plot</h2>
+                <span class="ml-auto text-xs font-bold" :class="bw.new_unplotted_count > 0 ? 'text-blue-600' : 'text-[#64748B]'" x-text="bw.new_unplotted_count + ' kontrak'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <template x-for="c in (bw.new_unplotted || []).slice(0, 20)" :key="c.id">
+                    <div class="px-4 py-2.5 hover:bg-blue-50/50">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-[#0F172A] truncate" x-text="c.name"></p>
+                                <p class="text-[10px] text-[#94A3B8] truncate" x-text="c.no_kontrak + ' — mulai ' + (c.start_date || '').slice(0,10)"></p>
+                            </div>
+                            <span class="text-[10px] font-bold text-blue-600 whitespace-nowrap ml-2">Belum ada jadwal</span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="!bw.new_unplotted?.length" class="px-4 py-6 text-center text-green-600 text-sm font-medium">
+                    Semua kontrak baru sudah dijadwalkan
+                </div>
+            </div>
+        </div>
+
+        <!-- B) Cancel Kemarin -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden" :class="bw.cancelled_yesterday_count > 0 ? 'border-red-200' : 'border-[#E2E8F0]'">
+            <div class="px-4 py-3 border-b flex items-center gap-2" :class="bw.cancelled_yesterday_count > 0 ? 'border-red-200 bg-red-50' : 'border-[#E2E8F0] bg-[#F8FAFC]'">
+                <svg class="w-4 h-4" :class="bw.cancelled_yesterday_count > 0 ? 'text-red-600' : 'text-[#64748B]'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                <h2 class="text-sm font-bold" :class="bw.cancelled_yesterday_count > 0 ? 'text-red-800' : 'text-[#0F172A]'">Cancel Kemarin</h2>
+                <span class="ml-auto text-xs font-bold" :class="bw.cancelled_yesterday_count > 0 ? 'text-red-600' : 'text-[#64748B]'" x-text="bw.cancelled_yesterday_count + ' cancel'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <template x-for="c in bw.cancelled_yesterday || []" :key="c.id">
+                    <div class="px-4 py-2.5 hover:bg-red-50/50">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-[#0F172A] truncate" x-text="c.customer_name"></p>
+                                <p class="text-[10px] text-[#94A3B8]" x-text="c.technician_name + ' — ' + (c.type || '-')"></p>
+                            </div>
+                            <span class="text-[10px] font-mono text-red-500" x-text="c.customer_code || ''"></span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="!bw.cancelled_yesterday?.length" class="px-4 py-6 text-center text-green-600 text-sm font-medium">
+                    Tidak ada cancel kemarin
+                </div>
+            </div>
+        </div>
+
+        <!-- C) Cancel Belum Reschedule -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden" :class="bw.cancel_no_reschedule_count > 0 ? 'border-amber-200' : 'border-[#E2E8F0]'">
+            <div class="px-4 py-3 border-b flex items-center gap-2" :class="bw.cancel_no_reschedule_count > 0 ? 'border-amber-200 bg-amber-50' : 'border-[#E2E8F0] bg-[#F8FAFC]'">
+                <svg class="w-4 h-4" :class="bw.cancel_no_reschedule_count > 0 ? 'text-amber-600' : 'text-[#64748B]'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <h2 class="text-sm font-bold" :class="bw.cancel_no_reschedule_count > 0 ? 'text-amber-800' : 'text-[#0F172A]'">Cancel Belum Reschedule</h2>
+                <span class="ml-auto text-xs font-bold" :class="bw.cancel_no_reschedule_count > 0 ? 'text-amber-600' : 'text-[#64748B]'" x-text="bw.cancel_no_reschedule_count + ' belum'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <template x-for="c in (bw.cancel_no_reschedule || []).slice(0, 20)" :key="c.id">
+                    <div class="px-4 py-2.5 hover:bg-amber-50/50">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-[#0F172A] truncate" x-text="c.customer_name"></p>
+                                <p class="text-[10px] text-[#94A3B8]" x-text="c.technician_name + ' — cancel ' + (c.cancel_date || '').slice(0,10)"></p>
+                            </div>
+                            <span class="text-[10px] font-bold text-amber-600 whitespace-nowrap ml-2">Perlu dijadwalkan</span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="!bw.cancel_no_reschedule?.length" class="px-4 py-6 text-center text-green-600 text-sm font-medium">
+                    Semua cancel sudah dijadwalkan ulang
+                </div>
+            </div>
+        </div>
+
+        <!-- D) Complete Bulan Ini -->
+        <div class="bg-white rounded-xl border shadow-sm overflow-hidden border-[#E2E8F0]">
+            <div class="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center gap-2">
+                <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <h2 class="text-sm font-bold text-[#0F172A]">Complete Bulan Ini</h2>
+                <span class="ml-auto text-xs font-bold text-green-600" x-text="bw.completed_month_count + ' customer'"></span>
+            </div>
+            <div class="divide-y divide-[#F1F5F9] max-h-64 overflow-y-auto">
+                <template x-for="c in (bw.completed_month || []).slice(0, 20)" :key="c.id">
+                    <div class="px-4 py-2.5 hover:bg-green-50/50">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-[#0F172A] truncate" x-text="c.name"></p>
+                                <p class="text-[10px] text-[#94A3B8]" x-text="c.total_visits + ' kunjungan — terakhir ' + (c.last_visit_date || '').slice(0,10)"></p>
+                            </div>
+                            <span class="text-[10px] font-bold text-green-600 whitespace-nowrap ml-2">&#10003; Done</span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="!bw.completed_month?.length" class="px-4 py-6 text-center text-[#94A3B8] text-sm">
+                    Belum ada yang complete bulan ini
+                </div>
+            </div>
+        </div>
+
         <!-- Expiring Contracts (full width) -->
         <div class="lg:col-span-2 bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden" x-show="expiringContracts.length > 0">
             <div class="px-4 py-3 border-b border-[#E2E8F0] bg-amber-50 flex items-center gap-2">
@@ -351,6 +453,7 @@ function briefingPage() {
         scheduledCount: 0,
         totalTechs: 0,
         gapCount: 0,
+        bw: {},
         briefingNotes: '',
 
         async loadData() {
@@ -359,8 +462,12 @@ function briefingPage() {
             this.briefingNotes = localStorage.getItem('briefing_notes_' + savedDate) || '';
 
             const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
-            const res = await _fetch('/api/v1/enterprise/briefing/today');
+            const [res, bwRes] = await Promise.all([
+                _fetch('/api/v1/enterprise/briefing/today'),
+                _fetch('/api/v1/enterprise/executive/briefing-widgets').catch(() => null),
+            ]);
             const data = await res.json();
+            this.bw = bwRes ? await bwRes.json() : {};
 
             this.briefingDate = data.date || '';
             this.dayOfWeek = data.day_of_week || '';
@@ -409,6 +516,19 @@ function briefingPage() {
                 lines.push(``, `TOP PERFORMERS KEMARIN:`);
                 this.topPerformers.forEach((p,i) => lines.push(`  ${i+1}. ${p.name} - ${p.completed_visits} visit`));
             }
+            if (this.bw.new_unplotted_count > 0) {
+                lines.push(``, `KONTRAK BARU BELUM DI-PLOT: ${this.bw.new_unplotted_count}`);
+                (this.bw.new_unplotted || []).slice(0,5).forEach(c => lines.push(`  - ${c.name} (${c.no_kontrak})`));
+            }
+            if (this.bw.cancelled_yesterday_count > 0) {
+                lines.push(``, `CANCEL KEMARIN: ${this.bw.cancelled_yesterday_count}`);
+                (this.bw.cancelled_yesterday || []).forEach(c => lines.push(`  - ${c.customer_name} (${c.technician_name})`));
+            }
+            if (this.bw.cancel_no_reschedule_count > 0) {
+                lines.push(``, `CANCEL BELUM RESCHEDULE: ${this.bw.cancel_no_reschedule_count}`);
+                (this.bw.cancel_no_reschedule || []).slice(0,5).forEach(c => lines.push(`  - ${c.customer_name} (cancel ${(c.cancel_date||'').slice(0,10)})`));
+            }
+            lines.push(``, `COMPLETE BULAN INI: ${this.bw.completed_month_count || 0} customer`);
             if (this.briefingNotes.trim()) {
                 lines.push(``, `CATATAN:`, this.briefingNotes);
             }

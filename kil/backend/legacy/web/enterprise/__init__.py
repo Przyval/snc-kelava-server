@@ -271,3 +271,15 @@ def service_forms_page():
 def barcode_page():
     """QR/Barcode Unit Checklist page."""
     return render_template("enterprise/barcode.html")
+
+
+@enterprise_bp.route("/watchlist")
+def watchlist_page():
+    """Priority Watchlist — P1/P2 + AT_RISK/OVERDUE customers."""
+    return render_template("enterprise/watchlist.html")
+
+
+@enterprise_bp.route("/lokasi")
+def lokasi_page():
+    """Lokasi (Customer) management — Kelava-style list."""
+    return render_template("enterprise/lokasi.html")

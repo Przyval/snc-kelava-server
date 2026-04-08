@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, jsonify, request
 from core.security import require_auth
 
-from kil.db.kelava_db import execute_kelava_query, execute_kelava_query_single
+from kil.db.kelava_db import execute_kelava_query, execute_kelava_query_single, _get_local_pool
 
 technicians_bp = Blueprint("technicians", __name__)
 
@@ -469,8 +469,10 @@ def technician_rapor(tech_id: int):
 
     Query params:
         months: Number of months to look back (default: 3)
+        month: Specific month YYYY-MM (overrides months param for KPI scoring)
     """
     months = int(request.args.get("months", 3))
+    specific_month = request.args.get("month", "").strip()  # e.g. "2026-03"
 
     # Basic info
     tech = execute_kelava_query_single(
@@ -486,6 +488,24 @@ def technician_rapor(tech_id: int):
     )
     if not tech:
         return jsonify({"error": "Technician not found"}), 404
+
+    # Detect employee type from HRIS or segment
+    emp_type = "mobile"  # default
+    try:
+        with _get_local_pool().connection() as lconn:
+            with lconn.cursor() as lcur:
+                lcur.execute("SELECT employee_type, site_assignment FROM hris_employees WHERE full_name = %s OR p_user_id = %s LIMIT 1",
+                             (tech["name"], tech_id))
+                hris_row = lcur.fetchone()
+                if hris_row:
+                    emp_type = hris_row["employee_type"]
+                    tech = dict(tech)
+                    tech["employee_type"] = emp_type
+                    tech["site_assignment"] = hris_row["site_assignment"]
+    except Exception:
+        pass
+    if tech.get("segment") == "STATION":
+        emp_type = "station"
 
     # Monthly KPI breakdown
     monthly_kpi = execute_kelava_query(
@@ -579,31 +599,62 @@ def technician_rapor(tech_id: int):
         (tech_id,),
     )
 
-    # Calculate overall grade
+    # Date range for KPI scoring — specific month or last N months
+    if specific_month:
+        # e.g. "2026-03" → score only that month
+        kpi_date_filter_rp = "DATE_TRUNC('month', rp.visit_date::date) = %s::date"
+        kpi_date_filter_v = "DATE_TRUNC('month', v.realization_date) = %s::date"
+        kpi_date_filter_c = "DATE_TRUNC('month', created_at) = %s::date"
+        kpi_date_param = specific_month + "-01"
+        kpi_months_divisor = 1
+    else:
+        kpi_date_filter_rp = "rp.visit_date::date >= CURRENT_DATE - 90"
+        kpi_date_filter_v = "v.realization_date >= CURRENT_DATE - 90"
+        kpi_date_filter_c = "created_at >= CURRENT_DATE - 90"
+        kpi_date_param = None
+        kpi_months_divisor = months or 3
+
+    rp_params = (tech_id, kpi_date_param, tech_id, kpi_date_param) if kpi_date_param else (tech_id, tech_id)
+    p_params = (tech_id, kpi_date_param) if kpi_date_param else (tech_id,)
+    c_params = (tech_id, kpi_date_param) if kpi_date_param else (tech_id,)
+
+    rp_where = kpi_date_filter_rp if kpi_date_param else "rp.visit_date::date >= CURRENT_DATE - 90"
+    v_where = kpi_date_filter_v if kpi_date_param else "v.realization_date >= CURRENT_DATE - 90"
+
     overall_metrics = execute_kelava_query_single(
-        """
+        f"""
         WITH stats AS (
             SELECT
                 COUNT(*) as total_planned,
                 COUNT(*) FILTER (WHERE rp.status = 'Selesai') as completed,
+                COUNT(*) FILTER (WHERE rp.is_cancel = true) as cancelled,
                 COUNT(DISTINCT rp.visit_date::date) as active_days
             FROM t_road_plan rp
             WHERE rp.id_user = %s
-              AND rp.visit_date::date >= CURRENT_DATE - 90
-              AND COALESCE(rp.is_cancel, false) = false
+              AND {rp_where}
         ),
         vstats AS (
-            SELECT COUNT(v.id) as total_visits
+            SELECT
+                COUNT(v.id) as total_visits,
+                COALESCE(SUM(LEAST(EXTRACT(EPOCH FROM (v.check_out - v.check_in)) / 3600, 8)), 0) as total_hours,
+                COUNT(v.id) FILTER (
+                    WHERE v.check_in IS NOT NULL AND v.check_out IS NOT NULL
+                ) as with_checkout
             FROM t_visit v
             JOIN t_road_plan rp ON rp.id = v.id_road_plan
             WHERE rp.id_user = %s
-              AND v.realization_date >= CURRENT_DATE - 90
+              AND {v_where}
+              AND v.check_in IS NOT NULL AND v.check_out IS NOT NULL
+              AND EXTRACT(EPOCH FROM (v.check_out - v.check_in)) / 60 BETWEEN 1 AND 480
         )
         SELECT
             s.total_planned,
             s.completed,
+            s.cancelled,
             s.active_days,
             v.total_visits,
+            ROUND(v.total_hours::numeric, 1) as total_hours,
+            v.with_checkout,
             CASE WHEN s.active_days > 0
                 THEN ROUND(v.total_visits::numeric / s.active_days, 1)
                 ELSE 0
@@ -614,27 +665,330 @@ def technician_rapor(tech_id: int):
             END as completion_rate
         FROM stats s, vstats v
         """,
-        (tech_id, tech_id),
+        rp_params,
     )
 
-    # Grade calculation
-    grade = "D"
-    if overall_metrics:
-        vpd = float(overall_metrics.get("visits_per_day", 0))
-        cr = float(overall_metrics.get("completion_rate", 0))
-        score = (vpd / 4 * 40) + (cr / 100 * 60)  # 40% volume, 60% completion
-        if score >= 80:
-            grade = "A"
-        elif score >= 65:
-            grade = "B"
-        elif score >= 50:
-            grade = "C"
+    punct_overall = execute_kelava_query_single(
+        f"""
+        WITH daily_first AS (
+            SELECT v.realization_date, MIN(v.check_in)::time as first_checkin
+            FROM t_visit v
+            JOIN t_road_plan rp ON rp.id = v.id_road_plan
+            WHERE rp.id_user = %s
+              AND {v_where}
+              AND v.check_in IS NOT NULL
+            GROUP BY v.realization_date
+        )
+        SELECT
+            COUNT(*) as total_days,
+            COUNT(*) FILTER (WHERE first_checkin <= '08:30:00'::time) as on_time_days,
+            COUNT(*) FILTER (WHERE first_checkin > '08:30:00'::time) as late_days
+        FROM daily_first
+        """,
+        p_params,
+    )
+
+    complaint_data = execute_kelava_query_single(
+        f"""
+        SELECT COUNT(*) as total_complaints,
+               COUNT(*) FILTER (WHERE severity IN ('critical','high')) as major_complaints
+        FROM complaint_tickets
+        WHERE assigned_to = %s
+          AND {kpi_date_filter_c}
+        """,
+        c_params,
+    )
+    if not complaint_data:
+        complaint_data = {"total_complaints": 0, "major_complaints": 0}
+
+    # ── KPI Scoring ──
+    # Mobile: 13 indicators (kedisiplinan 35%, complain 20%, grooming 10%, kunjungan 35%)
+    # Station: 11 indicators (kedisiplinan 30%, kinerja 25%, complain 10%, grooming 10%, penilaian 25%)
+
+    om = overall_metrics or {}
+    po = punct_overall or {}
+
+    planned_noncx = float(om.get("total_planned", 0)) - float(om.get("cancelled", 0))
+    planned_noncx = max(1, planned_noncx)
+    completed = float(om.get("completed", 0))
+    cancelled = float(om.get("cancelled", 0))
+    total_visits = float(om.get("total_visits", 0))
+    total_hours = float(om.get("total_hours", 0))
+    active_days = float(om.get("active_days", 0))
+    with_checkout = float(om.get("with_checkout", 0))
+    total_days_punct = float(po.get("total_days", 0)) or 1
+    on_time = float(po.get("on_time_days", 0))
+    late_days = total_days_punct - on_time
+    major_complaints = float(complaint_data.get("major_complaints", 0))
+    total_complaints = float(complaint_data.get("total_complaints", 0))
+
+    # 1. KEDISIPLINAN (30%)
+    # Administrasi — Check In/Out sesuai jadwal (5%)
+    # Count visits where check-in/out not at location = issues
+    checkin_issues = max(0, total_visits - with_checkout)
+    adm_checkinout = 0.05 if checkin_issues == 0 else 0.0
+    # Administrasi — Laporan lengkap (5%) — no automated data, default pass
+    adm_laporan = 0.05
+
+    # Waktu — Tidak terlambat (5%)
+    waktu_telat = 0.05 if late_days == 0 else 0.0
+    # Waktu — Tidak cancel (5%)
+    waktu_cancel = 0.05 if cancelled == 0 else 0.0
+    # Waktu — Tidak izin mendadak (5%) — proxy: same as punctuality
+    waktu_izin = 0.05 if late_days <= 1 else 0.0
+
+    # Kinerja — pull QC/SPV/Grooming from HRIS DB if available
+    hris_qc = None
+    hris_spv = None
+    hris_grooming = None
+    kpi_month = int(specific_month.split("-")[1]) if specific_month else None
+    kpi_year = int(specific_month.split("-")[0]) if specific_month else 2025
+    try:
+        with _get_local_pool().connection() as lconn:
+            with lconn.cursor() as lcur:
+                # Find HRIS employee by matching name to Kelava p_user
+                lcur.execute(
+                    "SELECT id FROM hris_employees WHERE p_user_id = %s", (tech_id,))
+                hris_emp = lcur.fetchone()
+                if not hris_emp:
+                    # Try name match
+                    lcur.execute(
+                        "SELECT he.id FROM hris_employees he "
+                        "JOIN enterprise_users eu ON eu.full_name = he.full_name "
+                        "WHERE eu.p_user_id = %s LIMIT 1", (tech_id,))
+                    hris_emp = lcur.fetchone()
+
+                if hris_emp:
+                    hris_eid = hris_emp["id"]
+                    # Build month filter
+                    if kpi_month:
+                        month_filter = "AND s.period_month = %s AND s.period_year = %s"
+                        month_params = (hris_eid, kpi_month, kpi_year)
+                    else:
+                        # Latest available month
+                        month_filter = "AND s.period_year = %s ORDER BY s.period_month DESC"
+                        month_params = (hris_eid, kpi_year)
+
+                    lcur.execute(f"""
+                        SELECT t.indicator, s.score_pct, s.raw_value, s.keterangan
+                        FROM hris_kpi_scores s
+                        JOIN hris_kpi_templates t ON t.id = s.template_id
+                        WHERE s.employee_id = %s {month_filter}
+                    """, month_params)
+                    for row in lcur.fetchall():
+                        ind = row["indicator"].lower()
+                        if "penilaian tim qc" in ind:
+                            hris_qc = float(row["score_pct"])
+                        elif "arahan spv" in ind or "melaksanakan arahan" in ind:
+                            hris_spv = float(row["score_pct"])
+                        elif "grooming" in ind or "berpenampilan rapi" in ind:
+                            hris_grooming = float(row["score_pct"])
+    except Exception:
+        pass  # Fall back to defaults if HRIS unavailable
+
+    # QC (5%): from HRIS or default 4/5
+    if hris_qc is not None:
+        kinerja_qc = hris_qc
+        qc_value = round(hris_qc / 0.05 * 5, 1)  # reverse to display as X/5
+        qc_source = "HRIS"
+    else:
+        qc_value = 4.0
+        kinerja_qc = round(qc_value / 5 * 0.05, 4)
+        qc_source = "Default"
+
+    # SPV (5%): from HRIS or default 4.6/5
+    if hris_spv is not None:
+        kinerja_spv = hris_spv
+        spv_value = round(hris_spv / 0.05 * 5, 1)
+        spv_source = "HRIS"
+    else:
+        spv_value = 4.6
+        kinerja_spv = round(spv_value / 5 * 0.05, 4)
+        spv_source = "Default"
+
+    kedisiplinan = round(adm_checkinout + adm_laporan + waktu_telat + waktu_cancel + waktu_izin + kinerja_qc + kinerja_spv, 4)
+
+    # 2. COMPLAIN (20%)
+    # Frekuensi major (10%) — any major = 0
+    complain_freq = 0.10 if major_complaints == 0 else 0.0
+    # Responsibility (10%) — default pass unless total > 2
+    complain_resp = 0.10 if total_complaints <= 1 else 0.0
+    complain = round(complain_freq + complain_resp, 4)
+
+    # 3. GROOMING (10%) — from HRIS or default pass
+    if hris_grooming is not None:
+        grooming = hris_grooming
+        grooming_source = "HRIS"
+    else:
+        grooming = 0.10
+        grooming_source = "Default"
+
+    # 4. KUNJUNGAN (35%)
+    # Jumlah kunjungan 100% (20%): actual / planned * 0.20
+    kunj_jumlah = round(min(0.20, (completed / planned_noncx) * 0.20), 4)
+    # Jam kunjungan 150j/9000m per month (10%): hours / 150 * 0.10
+    target_hours_month = 150.0
+    avg_hours_month = total_hours / kpi_months_divisor
+    kunj_jam = round(min(0.10, (avg_hours_month / target_hours_month) * 0.10), 4)
+    # Hari efektif (5%): active_days per month / 24 * 0.05
+    target_days_month = 24.0
+    avg_days_month = active_days / kpi_months_divisor
+    kunj_hari = round(min(0.05, (avg_days_month / target_days_month) * 0.05), 4)
+
+    kunjungan = round(kunj_jumlah + kunj_jam + kunj_hari, 4)
+
+    if emp_type == "station":
+        # ── STATION KPI (11 indicators, 100%) ──
+        # 1. Kedisiplinan (30%): administrasi 10%, waktu 5%+10%+5%
+        s_adm = 0.10 if checkin_issues == 0 else 0.05  # partial credit
+        s_waktu_telat = 0.05 if late_days == 0 else 0.0
+        s_kehadiran = 0.10 if (total_days_punct >= 20) else (0.05 if total_days_punct >= 18 else 0.0)
+        s_izin = 0.05 if late_days <= 1 else 0.0
+        s_kedisiplinan = round(s_adm + s_waktu_telat + s_kehadiran + s_izin, 4)
+
+        # 2. Kinerja (25%): trend hama 10%, kebersihan 5%, progress 10%
+        # No automated data for these — pull from HRIS or default
+        s_trend = 0.10  # default pass
+        s_kebersihan = 0.05  # default pass
+        s_progress = 0.10  # default pass
+        s_kinerja = round(s_trend + s_kebersihan + s_progress, 4)
+
+        # 3. Complain (10%): no major complaint
+        s_complain = 0.10 if major_complaints == 0 else 0.0
+
+        # 4. Grooming (10%)
+        if hris_grooming is not None:
+            s_grooming = hris_grooming
+        else:
+            s_grooming = 0.10
+
+        # 5. Penilaian (25%): client 15% + SPV 10%
+        # From HRIS or defaults
+        hris_client = None
+        try:
+            with _get_local_pool().connection() as lc2:
+                with lc2.cursor() as lc2c:
+                    lc2c.execute("SELECT id FROM hris_employees WHERE full_name = %s OR p_user_id = %s LIMIT 1", (tech["name"], tech_id))
+                    he = lc2c.fetchone()
+                    if he:
+                        mf = f"AND s.period_month = {int(specific_month.split('-')[1])} AND s.period_year = {int(specific_month.split('-')[0])}" if specific_month else ""
+                        lc2c.execute(f"SELECT t.indicator, s.score_pct FROM hris_kpi_scores s JOIN hris_kpi_templates t ON t.id = s.template_id WHERE s.employee_id = %s AND t.employee_type = 'station' {mf}", (he["id"],))
+                        for row in lc2c.fetchall():
+                            ind = row["indicator"].lower()
+                            if "penilaian client" in ind:
+                                hris_client = float(row["score_pct"])
+                            elif "penilaian atasan" in ind or "spv" in ind:
+                                hris_spv = float(row["score_pct"])
+                                spv_source = "HRIS"
+        except Exception:
+            pass
+
+        s_client_val = hris_client if hris_client is not None else 0.15
+        s_client_source = "HRIS" if hris_client is not None else "Default"
+        s_spv_val = hris_spv if 'hris_spv' in dir() and hris_spv is not None else kinerja_spv * 2  # scale 5% → 10%
+        s_penilaian = round(s_client_val + min(0.10, s_spv_val), 4)
+
+        total_score_pct = round((s_kedisiplinan + s_kinerja + s_complain + s_grooming + s_penilaian) * 100, 1)
+
+        kpi_breakdown = {
+            "kedisiplinan": {
+                "total_pct": round(s_kedisiplinan * 100, 1), "max_pct": 30,
+                "items": [
+                    {"label": "Pengisian administrasi (Daily Treatment & checklist)", "bobot": 10, "score_pct": round(s_adm * 100, 1), "keterangan": f"{int(checkin_issues)} issue" if checkin_issues > 0 else "OK", "sub": "Administrasi"},
+                    {"label": "Tidak ada keterlambatan lebih dari 5 menit", "bobot": 5, "score_pct": round(s_waktu_telat * 100, 1), "keterangan": f"{int(late_days)} hari telat" if late_days > 0 else "OK", "sub": "Waktu"},
+                    {"label": "Kehadiran (minimal 100%)", "bobot": 10, "score_pct": round(s_kehadiran * 100, 1), "keterangan": f"{int(total_days_punct)} hari hadir", "sub": "Waktu"},
+                    {"label": "Tidak izin mendadak", "bobot": 5, "score_pct": round(s_izin * 100, 1), "keterangan": "OK" if late_days <= 1 else f"{int(late_days)} hari", "sub": "Waktu"},
+                ],
+            },
+            "kinerja": {
+                "total_pct": round(s_kinerja * 100, 1), "max_pct": 25,
+                "items": [
+                    {"label": "Trend Hama turun / stabil", "bobot": 10, "score_pct": round(s_trend * 100, 1), "keterangan": "Default"},
+                    {"label": "Kebersihan area kerja dan alat", "bobot": 5, "score_pct": round(s_kebersihan * 100, 1), "keterangan": "Default"},
+                    {"label": "Melaksanakan semua progress", "bobot": 10, "score_pct": round(s_progress * 100, 1), "keterangan": "Default"},
+                ],
+            },
+            "complain": {
+                "total_pct": round(s_complain * 100, 1), "max_pct": 10,
+                "items": [
+                    {"label": "Tidak ada complain Major di Area", "bobot": 10, "score_pct": round(s_complain * 100, 1), "keterangan": f"{int(major_complaints)} major" if major_complaints > 0 else "OK"},
+                ],
+            },
+            "grooming": {
+                "total_pct": round(s_grooming * 100, 1), "max_pct": 10,
+                "items": [
+                    {"label": "Penampilan rapi, APD lengkap", "bobot": 10, "score_pct": round(s_grooming * 100, 1), "keterangan": grooming_source},
+                ],
+            },
+            "penilaian": {
+                "total_pct": round(s_penilaian * 100, 1), "max_pct": 25,
+                "items": [
+                    {"label": "Penilaian Client", "bobot": 15, "score_pct": round(s_client_val * 100, 1), "keterangan": s_client_source},
+                    {"label": "Penilaian Atasan / SPV", "bobot": 10, "score_pct": round(min(0.10, s_spv_val) * 100, 1), "keterangan": f"({spv_source})"},
+                ],
+            },
+            "total_score": total_score_pct,
+            "employee_type": "station",
+        }
+    else:
+        # ── MOBILE KPI (existing) ──
+        total_score_pct = round((kedisiplinan + complain + grooming + kunjungan) * 100, 1)
+
+        kpi_breakdown = {
+            "kedisiplinan": {
+                "total_pct": round(kedisiplinan * 100, 1), "max_pct": 35,
+                "items": [
+                    {"label": "Check In & Out sesuai jadwal", "bobot": 5, "score_pct": round(adm_checkinout * 100, 1), "keterangan": f"{int(checkin_issues)} issue" if checkin_issues > 0 else "OK", "sub": "Administrasi"},
+                    {"label": "Kelengkapan laporan administrasi", "bobot": 5, "score_pct": round(adm_laporan * 100, 1), "keterangan": "Default", "sub": "Administrasi"},
+                    {"label": "Tidak terlambat kunjungan", "bobot": 5, "score_pct": round(waktu_telat * 100, 1), "keterangan": f"{int(late_days)} hari telat" if late_days > 0 else "OK", "sub": "Waktu"},
+                    {"label": "Tidak cancel treatment", "bobot": 5, "score_pct": round(waktu_cancel * 100, 1), "keterangan": f"{int(cancelled)} cancel" if cancelled > 0 else "OK", "sub": "Waktu"},
+                    {"label": "Tidak izin mendadak", "bobot": 5, "score_pct": round(waktu_izin * 100, 1), "keterangan": f"{int(late_days)} hari" if late_days > 1 else "OK", "sub": "Waktu"},
+                    {"label": "Penilaian Tim QC", "bobot": 5, "score_pct": round(kinerja_qc * 100, 1), "keterangan": f"{qc_value}/5 ({qc_source})", "sub": "Kinerja"},
+                    {"label": "Arahan SPV", "bobot": 5, "score_pct": round(kinerja_spv * 100, 1), "keterangan": f"{spv_value}/5 ({spv_source})", "sub": "Kinerja"},
+                ],
+            },
+            "complain": {
+                "total_pct": round(complain * 100, 1), "max_pct": 20,
+                "items": [
+                    {"label": "Frekuensi complain major", "bobot": 10, "score_pct": round(complain_freq * 100, 1), "keterangan": f"{int(major_complaints)} major" if major_complaints > 0 else "OK"},
+                    {"label": "Responsibility penanganan", "bobot": 10, "score_pct": round(complain_resp * 100, 1), "keterangan": f"{int(total_complaints)} total" if total_complaints > 1 else "OK"},
+                ],
+            },
+            "grooming": {
+                "total_pct": round(grooming * 100, 1), "max_pct": 10,
+                "items": [
+                    {"label": "Penampilan & APD lengkap", "bobot": 10, "score_pct": round(grooming * 100, 1), "keterangan": grooming_source},
+                ],
+            },
+            "kunjungan": {
+                "total_pct": round(kunjungan * 100, 1), "max_pct": 35,
+                "items": [
+                    {"label": "Jumlah kunjungan (100%)", "bobot": 20, "score_pct": round(kunj_jumlah * 100, 1), "keterangan": f"{int(completed)}/{int(planned_noncx)}"},
+                    {"label": "Jam kunjungan (150j/bln)", "bobot": 10, "score_pct": round(kunj_jam * 100, 1), "keterangan": f"avg {round(avg_hours_month, 1)}j/bln"},
+                    {"label": "Hari efektif", "bobot": 5, "score_pct": round(kunj_hari * 100, 1), "keterangan": f"avg {round(avg_days_month, 1)}/24 hari"},
+                ],
+            },
+            "total_score": total_score_pct,
+            "employee_type": "mobile",
+        }
+
+    if total_score_pct >= 85:
+        grade = "A"
+    elif total_score_pct >= 70:
+        grade = "B"
+    elif total_score_pct >= 55:
+        grade = "C"
+    else:
+        grade = "D"
+    kpi_breakdown["grade"] = grade
 
     def _fmt_row(row):
         item = dict(row)
         for k, v in item.items():
             if hasattr(v, "isoformat"):
                 item[k] = v.isoformat()
+            elif hasattr(v, "__float__") and not isinstance(v, (int, float, bool)):
+                item[k] = float(v)
         return item
 
     return jsonify({
@@ -644,6 +998,7 @@ def technician_rapor(tech_id: int):
         "monthly_kpi": [_fmt_row(r) for r in monthly_kpi],
         "punctuality": [_fmt_row(r) for r in punctuality],
         "issues": [_fmt_row(r) for r in issues],
+        "kpi_breakdown": kpi_breakdown,
         "period_months": months,
         "generated_at": datetime.now().isoformat(),
     })
