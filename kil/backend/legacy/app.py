@@ -261,6 +261,10 @@ app.register_blueprint(lokasi_bp, url_prefix="/api/v1/enterprise")
 from kil.backend.legacy.api.scheduling_write import scheduling_write_bp
 app.register_blueprint(scheduling_write_bp, url_prefix="/api/v1/enterprise")
 
+# Customers & Contracts Write — merged read + SNC write layer
+from kil.backend.legacy.api.customers_write import customers_write_bp
+app.register_blueprint(customers_write_bp, url_prefix="/api/v1/enterprise")
+
 # Enterprise Web Dashboard
 app.register_blueprint(enterprise_bp, url_prefix="/enterprise")
 

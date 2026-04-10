@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import '../providers/customer_provider.dart';
 import '../../../core/models/customer_model.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../auth/providers/auth_provider.dart';
+import 'create_customer_screen.dart';
+import 'customer_detail_screen.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -31,10 +34,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<CustomerProvider>();
+    final user = context.watch<AuthProvider>().user;
+    final canCreate = user?.isSupervisor ?? false;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pelanggan'),
+        title: Text('Pelanggan (${prov.customers.length})'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -44,10 +49,19 @@ class _CustomersScreenState extends State<CustomersScreen> {
               onChanged: context.read<CustomerProvider>().search,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Cari nama / kode pelanggan...',
+                hintText: 'Cari nama / kota pelanggan...',
                 hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
                 prefixIcon:
                     Icon(Icons.search, color: Colors.white.withOpacity(0.8)),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.white),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          context.read<CustomerProvider>().search('');
+                        },
+                      )
+                    : null,
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.2),
                 border: OutlineInputBorder(
@@ -60,32 +74,73 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ),
         ),
       ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final ok = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const CreateCustomerScreen()),
+                );
+                if (ok == true && mounted) {
+                  context.read<CustomerProvider>().load();
+                }
+              },
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Tambah Pelanggan'),
+            )
+          : null,
       body: prov.loading
           ? const Center(child: CircularProgressIndicator())
-          : prov.customers.isEmpty
+          : prov.error != null
               ? Center(
-                  child: Text(
-                    'Tidak ada pelanggan ditemukan',
-                    style: TextStyle(color: AppColors.textSecondary),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(prov.error!,
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: () => context.read<CustomerProvider>().load(),
+                        child: const Text('Coba Lagi'),
+                      ),
+                    ],
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: () => context.read<CustomerProvider>().load(),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: prov.customers.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (ctx, i) =>
-                        _CustomerCard(customer: prov.customers[i]),
-                  ),
-                ),
+              : prov.customers.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Tidak ada pelanggan ditemukan',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () => context.read<CustomerProvider>().load(),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                        itemCount: prov.customers.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (ctx, i) => _CustomerCard(
+                          customer: prov.customers[i],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => CustomerDetailScreen(
+                                    customer: prov.customers[i])),
+                          ),
+                        ),
+                      ),
+                    ),
     );
   }
 }
 
 class _CustomerCard extends StatelessWidget {
   final CustomerModel customer;
-  const _CustomerCard({required this.customer});
+  final VoidCallback onTap;
+  const _CustomerCard({required this.customer, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -105,18 +160,43 @@ class _CustomerCard extends StatelessWidget {
                 color: AppColors.primary, fontWeight: FontWeight.bold),
           ),
         ),
-        title: Text(
-          customer.name,
-          style: const TextStyle(
-              fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                customer.name,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppColors.textPrimary),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (customer.isSNC)
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text('SNC',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ],
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (customer.address != null)
+            if (customer.city != null || customer.address != null)
               Text(
-                customer.address!,
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                customer.city ?? customer.address ?? '',
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -125,12 +205,14 @@ class _CustomerCard extends StatelessWidget {
               children: [
                 if (customer.segment != null)
                   _Chip(label: customer.segment!, color: AppColors.primary),
-                if (customer.totalVisits != null)
+                if (customer.status != null)
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: _Chip(
-                      label: '${customer.totalVisits} kunjungan',
-                      color: AppColors.accent,
+                      label: customer.status!,
+                      color: customer.status == 'Active'
+                          ? Colors.green
+                          : Colors.grey,
                     ),
                   ),
               ],
@@ -139,7 +221,7 @@ class _CustomerCard extends StatelessWidget {
         ),
         trailing: const Icon(Icons.chevron_right_rounded,
             color: AppColors.textSecondary),
-        onTap: () {},
+        onTap: onTap,
       ),
     );
   }
@@ -158,6 +240,7 @@ class _Chip extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label,
-            style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+            style: TextStyle(
+                fontSize: 10, color: color, fontWeight: FontWeight.w600)),
       );
 }

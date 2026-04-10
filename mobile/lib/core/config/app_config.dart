@@ -17,4 +17,10 @@ class AppConfig {
   // Scheduling write (Fase 2)
   static const String roadPlansPath = '/enterprise/scheduling/road-plans';
   static const String fcmTokenPath = '/enterprise/scheduling/fcm-token';
+
+  // Customers & Contracts write (Fase 3)
+  static const String customersAllPath = '/enterprise/customers/all';
+  static const String customersCreatePath = '/enterprise/customers/create';
+  static const String contractsAllPath = '/enterprise/contracts/all';
+  static const String contractsCreatePath = '/enterprise/contracts/create';
 }
