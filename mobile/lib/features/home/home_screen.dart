@@ -7,6 +7,7 @@ import '../visits/screens/visits_screen.dart';
 import '../customers/screens/customers_screen.dart';
 import '../approvals/screens/approvals_screen.dart';
 import '../profile/screens/profile_screen.dart';
+import '../scheduling/screens/scheduling_screen.dart';
 import '../../core/theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -111,7 +112,13 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ];
 
+    // Scheduling tab — koordinator & supervisor see full day view with create
     if (isSupervisor) {
+      base.insert(2, _Tab(
+        screen: const SchedulingScreen(),
+        icon: Icons.event_note_rounded,
+        label: 'Jadwal',
+      ));
       base.add(_Tab(
         screen: const ApprovalsScreen(),
         icon: Icons.pending_actions_rounded,

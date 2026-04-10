@@ -10,6 +10,7 @@ import 'features/dashboard/providers/dashboard_provider.dart';
 import 'features/visits/providers/visit_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
 import 'features/approvals/providers/approvals_provider.dart';
+import 'features/scheduling/providers/scheduling_provider.dart';
 import 'features/home/home_screen.dart';
 
 void main() async {
@@ -41,6 +42,7 @@ class SNCApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => VisitProvider()),
         ChangeNotifierProvider(create: (_) => CustomerProvider()),
         ChangeNotifierProvider(create: (_) => ApprovalsProvider()),
+        ChangeNotifierProvider(create: (_) => SchedulingProvider()),
       ],
       child: MaterialApp(
         title: 'SNC',

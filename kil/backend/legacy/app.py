@@ -257,6 +257,10 @@ app.register_blueprint(watchlist_bp, url_prefix="/api/v1/enterprise")
 from kil.backend.legacy.api.lokasi import lokasi_bp
 app.register_blueprint(lokasi_bp, url_prefix="/api/v1/enterprise")
 
+# Scheduling Write — koordinator create/update/cancel road plans
+from kil.backend.legacy.api.scheduling_write import scheduling_write_bp
+app.register_blueprint(scheduling_write_bp, url_prefix="/api/v1/enterprise")
+
 # Enterprise Web Dashboard
 app.register_blueprint(enterprise_bp, url_prefix="/enterprise")
 

@@ -13,4 +13,8 @@ class AppConfig {
   static const String mobileVisitsPath = '/mobile/visits';
   static const String mobileCustomersPath = '/mobile/customers';
   static const String mobileApprovalsPath = '/mobile/approvals';
+
+  // Scheduling write (Fase 2)
+  static const String roadPlansPath = '/enterprise/scheduling/road-plans';
+  static const String fcmTokenPath = '/enterprise/scheduling/fcm-token';
 }
