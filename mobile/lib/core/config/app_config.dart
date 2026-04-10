@@ -1,5 +1,5 @@
 class AppConfig {
-  static const String baseUrl = 'https://safeandcare.work/api/v1';
+  static const String baseUrl = 'https://safencare.work/api/v1';
   static const String appName = 'SNC';
   static const String appVersion = '1.0.0';
 

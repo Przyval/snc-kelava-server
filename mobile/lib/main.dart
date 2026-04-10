@@ -1,6 +1,8 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/login_screen.dart';
@@ -13,6 +15,17 @@ import 'features/home/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('id', null);
+
+  // Firebase + Push Notifications
+  // Note: requires google-services.json (Android) and GoogleService-Info.plist (iOS)
+  // to be added before building. Gracefully skip if not configured yet.
+  try {
+    await Firebase.initializeApp();
+    await NotificationService.instance.init();
+  } catch (_) {
+    // Firebase not configured yet — skip, app works without it
+  }
+
   runApp(const SNCApp());
 }
 

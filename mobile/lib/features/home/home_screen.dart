@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../auth/providers/auth_provider.dart';
 import '../dashboard/screens/dashboard_screen.dart';
+import '../visits/providers/visit_provider.dart';
 import '../visits/screens/visits_screen.dart';
 import '../customers/screens/customers_screen.dart';
 import '../approvals/screens/approvals_screen.dart';
 import '../profile/screens/profile_screen.dart';
+import '../../core/theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,17 +30,64 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final tabs = _buildTabs(isSupervisor);
 
+    final visitProvider = context.watch<VisitProvider>();
+    final isOffline = visitProvider.isOffline;
+    final pendingSync = visitProvider.pendingSync;
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: tabs.map((t) => t.screen).toList(),
+      body: Column(
+        children: [
+          // Offline banner
+          if (isOffline)
+            Material(
+              color: Colors.amber.shade700,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          pendingSync > 0
+                              ? 'Offline · $pendingSync aksi menunggu sync'
+                              : 'Offline · Menampilkan data terakhir',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: tabs.map((t) => t.screen).toList(),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (i) => setState(() => _currentIndex = i),
-        items: tabs
-            .map((t) => BottomNavigationBarItem(icon: Icon(t.icon), label: t.label))
-            .toList(),
+        selectedItemColor: AppColors.primary,
+        unselectedItemColor: Colors.grey,
+        items: tabs.map((t) {
+          final showBadge = t.label == 'Aktivitas' && pendingSync > 0;
+          return BottomNavigationBarItem(
+            icon: showBadge
+                ? Badge(label: Text('$pendingSync'), child: Icon(t.icon))
+                : Icon(t.icon),
+            label: t.label,
+          );
+        }).toList(),
       ),
     );
   }
