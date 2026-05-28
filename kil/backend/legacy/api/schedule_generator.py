@@ -15,7 +15,8 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, g, jsonify, request
 from core.security import require_auth, require_role
 
-from kil.db.kelava_db import execute_kelava_query, execute_kelava_query_single
+from kil.db.kelava_db import _get_local_pool, execute_kelava_query, execute_kelava_query_single
+from psycopg.rows import dict_row
 
 schedule_gen_bp = Blueprint("schedule_generator", __name__, url_prefix="/schedule-gen")
 
@@ -206,6 +207,7 @@ def generate_schedule():
 def move_visit():
     """
     Move a road plan to a different date and/or technician (drag-and-drop).
+    Writes a reschedule override to local DB — does NOT write to read-only Kelava.
 
     Body: {
         road_plan_id: int,
@@ -223,43 +225,67 @@ def move_visit():
 
     new_date = data.get("new_date")
     new_tech = data.get("new_technician_id")
+    reason = data.get("reason", "Dipindah via drag-and-drop")
 
     if not new_date and not new_tech:
         return jsonify({"error": "new_date or new_technician_id required"}), 400
 
-    # Get current road plan
+    # Get current road plan from Kelava (read-only)
     current = execute_kelava_query_single(
-        "SELECT * FROM t_road_plan WHERE id = %s",
+        "SELECT id, visit_date, id_user, id_customer, id_kontrak, type, title, remarks FROM t_road_plan WHERE id = %s",
         (rp_id,),
         user_id=uid,
+        cache_ttl=0,
     )
     if not current:
         return jsonify({"error": "Road plan not found"}), 404
 
-    sets = []
-    params = []
+    final_date = new_date or current["visit_date"].strftime("%Y-%m-%d")
+    final_tech_id = int(new_tech) if new_tech else current["id_user"]
+    created_by = int(uid) if uid else 0
 
-    if new_date:
-        sets.append("visit_date = %s::timestamp")
-        params.append(new_date + "T08:00:00")
+    try:
+        with _get_local_pool().connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO snc_road_plans
+                        (kelava_road_plan_id, visit_date, p_user_id, customer_id,
+                         kontrak_id, visit_type, title, remarks, created_by)
+                    VALUES (%s, %s::timestamptz, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (
+                        rp_id, final_date + "T08:00:00", final_tech_id,
+                        current["id_customer"], current.get("id_kontrak"),
+                        current.get("type") or "visit", current.get("title"),
+                        reason, created_by,
+                    ),
+                )
+                new_row = cur.fetchone()
+                new_plan_id = new_row["id"] if new_row else None
 
-    if new_tech:
-        sets.append("id_user = %s")
-        params.append(int(new_tech))
-
-    params.append(rp_id)
-
-    execute_kelava_query(
-        f"UPDATE t_road_plan SET {', '.join(sets)} WHERE id = %s",
-        tuple(params),
-        user_id=uid,
-    )
+                cur.execute(
+                    """
+                    INSERT INTO snc_kelava_cancellations
+                        (kelava_road_plan_id, reason, new_snc_road_plan_id, created_by)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (kelava_road_plan_id) DO UPDATE
+                        SET reason = EXCLUDED.reason,
+                            new_snc_road_plan_id = EXCLUDED.new_snc_road_plan_id,
+                            created_at = NOW()
+                    """,
+                    (rp_id, reason, new_plan_id, created_by),
+                )
+    except Exception as exc:
+        return jsonify({"error": f"Database error: {exc}"}), 500
 
     return jsonify({
         "message": "Visit moved",
         "road_plan_id": rp_id,
-        "new_date": new_date,
-        "new_technician_id": new_tech,
+        "new_snc_road_plan_id": new_plan_id,
+        "new_date": final_date,
+        "new_technician_id": final_tech_id,
     })
 
 
@@ -272,38 +298,77 @@ def move_visit():
 def swap_visits():
     """
     Swap two road plans' technician assignments.
+    Writes reschedule overrides to local DB — does NOT write to read-only Kelava.
 
     Body: { road_plan_id_1: int, road_plan_id_2: int }
     """
     data = request.json or {}
     uid = _auth_user_id()
+    created_by = int(uid) if uid else 0
 
     id1 = data.get("road_plan_id_1")
     id2 = data.get("road_plan_id_2")
     if not id1 or not id2:
         return jsonify({"error": "road_plan_id_1 and road_plan_id_2 required"}), 400
 
-    rp1 = execute_kelava_query_single("SELECT id, id_user FROM t_road_plan WHERE id = %s", (id1,), user_id=uid)
-    rp2 = execute_kelava_query_single("SELECT id, id_user FROM t_road_plan WHERE id = %s", (id2,), user_id=uid)
+    rp1 = execute_kelava_query_single(
+        "SELECT id, visit_date, id_user, id_customer, id_kontrak, type, title, remarks FROM t_road_plan WHERE id = %s",
+        (id1,), user_id=uid, cache_ttl=0,
+    )
+    rp2 = execute_kelava_query_single(
+        "SELECT id, visit_date, id_user, id_customer, id_kontrak, type, title, remarks FROM t_road_plan WHERE id = %s",
+        (id2,), user_id=uid, cache_ttl=0,
+    )
 
     if not rp1 or not rp2:
         return jsonify({"error": "One or both road plans not found"}), 404
 
-    # Swap technicians
-    execute_kelava_query(
-        "UPDATE t_road_plan SET id_user = %s WHERE id = %s",
-        (rp2["id_user"], id1), user_id=uid,
-    )
-    execute_kelava_query(
-        "UPDATE t_road_plan SET id_user = %s WHERE id = %s",
-        (rp1["id_user"], id2), user_id=uid,
-    )
+    reason = "Tukar teknisi via swap"
+
+    def _insert_override(conn, cur, orig, new_tech_id):
+        cur.execute(
+            """
+            INSERT INTO snc_road_plans
+                (kelava_road_plan_id, visit_date, p_user_id, customer_id,
+                 kontrak_id, visit_type, title, remarks, created_by)
+            VALUES (%s, %s::timestamptz, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                orig["id"], orig["visit_date"].strftime("%Y-%m-%dT%H:%M:%S"),
+                new_tech_id, orig["id_customer"], orig.get("id_kontrak"),
+                orig.get("type") or "visit", orig.get("title"), reason, created_by,
+            ),
+        )
+        row = cur.fetchone()
+        new_id = row["id"] if row else None
+        cur.execute(
+            """
+            INSERT INTO snc_kelava_cancellations
+                (kelava_road_plan_id, reason, new_snc_road_plan_id, created_by)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (kelava_road_plan_id) DO UPDATE
+                SET reason = EXCLUDED.reason,
+                    new_snc_road_plan_id = EXCLUDED.new_snc_road_plan_id,
+                    created_at = NOW()
+            """,
+            (orig["id"], reason, new_id, created_by),
+        )
+        return new_id
+
+    try:
+        with _get_local_pool().connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                new1 = _insert_override(conn, cur, rp1, rp2["id_user"])
+                new2 = _insert_override(conn, cur, rp2, rp1["id_user"])
+    except Exception as exc:
+        return jsonify({"error": f"Database error: {exc}"}), 500
 
     return jsonify({
         "message": "Visits swapped",
         "swap": [
-            {"road_plan_id": id1, "new_technician_id": rp2["id_user"]},
-            {"road_plan_id": id2, "new_technician_id": rp1["id_user"]},
+            {"road_plan_id": id1, "new_technician_id": rp2["id_user"], "new_snc_id": new1},
+            {"road_plan_id": id2, "new_technician_id": rp1["id_user"], "new_snc_id": new2},
         ],
     })
 

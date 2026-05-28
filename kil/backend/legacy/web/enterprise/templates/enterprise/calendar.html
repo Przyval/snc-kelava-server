@@ -2,229 +2,629 @@
 {% block title %}Resource Calendar{% endblock %}
 
 {% block content %}
-<div x-data="calendarDispatch()" x-init="loadSchedule()">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
+<div x-data="calendarDispatch()" x-init="init()">
+
+    <!-- ══════════════════════════════════════════
+         HEADER
+    ══════════════════════════════════════════ -->
+    <div class="flex items-center justify-between mb-4 gap-4 flex-wrap">
+        <!-- Title -->
         <div>
-            <h1 class="text-2xl font-bold text-[#0F172A]">Resource Calendar</h1>
-            <p class="text-[#6B7280] text-sm">Dispatch view: Technician × Time slots</p>
+            <h1 class="text-xl font-bold text-[#0F172A]">Resource Calendar</h1>
+            <p class="text-[#6B7280] text-xs">Dispatch view: Technician × Time</p>
         </div>
-        <div class="flex items-center gap-4">
-            <!-- Week Navigation -->
-            <div class="flex items-center gap-2 bg-white rounded-lg border border-[#E5E7EB] p-1">
-                <button @click="prevWeek()" class="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+
+        <!-- Controls row -->
+        <div class="flex items-center gap-2 flex-wrap">
+            <!-- Draft mode banner -->
+            <template x-if="draftMode">
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-lg text-xs font-semibold text-amber-700">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    Draft <span x-text="draftMonth"></span>
+                    <button @click="exitDraft()" class="ml-1 text-amber-500 hover:text-amber-700">✕</button>
+                </div>
+            </template>
+            <!-- Date nav -->
+            <div class="flex items-center gap-1 bg-white rounded-lg border border-[#E5E7EB] px-1 py-1">
+                <button @click="prevWeek()" class="p-1.5 hover:bg-slate-100 rounded transition-colors">
+                    <svg class="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                 </button>
-                <span class="px-3 text-sm font-medium text-[#1F2937]" x-text="weekLabel"></span>
-                <button @click="nextWeek()" class="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                <span class="px-2 text-sm font-semibold text-[#1F2937] min-w-[130px] text-center" x-text="weekLabel"></span>
+                <button @click="nextWeek()" class="p-1.5 hover:bg-slate-100 rounded transition-colors">
+                    <svg class="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </button>
-                <!-- Today Button: PRIMARY CTA (Brand Orange) -->
-                <button @click="goToday()" class="px-3 py-1.5 text-sm font-medium bg-[#F36A1D] text-white rounded-lg hover:bg-[#C2410C] transition-colors">
-                    Today
-                </button>
+            </div>
+            <button @click="goToday()" class="px-3 py-1.5 text-xs font-medium border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors">Hari ini</button>
+            <button @click="goToday()" class="px-3 py-1.5 text-xs font-medium bg-[#F36A1D] text-white rounded-lg hover:bg-[#C2410C] transition-colors">Minggu ini</button>
+
+            <!-- Teknisi filter -->
+            <select x-model="filterTech" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600 bg-white focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                <option value="">Teknisi: Semua</option>
+                <template x-for="t in allTechnicians" :key="t.id">
+                    <option :value="t.id" x-text="t.name"></option>
+                </template>
+            </select>
+
+            <!-- Status filter -->
+            <select x-model="filterStatus" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600 bg-white focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                <option value="">Status: Semua</option>
+                <option value="Baru">Baru</option>
+                <option value="Berjalan">Berjalan</option>
+                <option value="Selesai">Selesai</option>
+            </select>
+
+            <!-- Job Baru -->
+            <button class="flex items-center gap-1.5 px-3 py-1.5 bg-[#F36A1D] text-white text-xs font-semibold rounded-lg hover:bg-[#C2410C] transition-colors shadow-sm">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                Job Baru
+            </button>
+
+            <!-- Auto-Draft button -->
+            <button @click="draftPanelOpen = true"
+                    class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                Auto-Draft
+            </button>
+
+            <!-- Day / Week toggle -->
+            <div class="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+                <button class="px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 transition-colors">Hari</button>
+                <button class="px-3 py-1.5 text-xs font-semibold bg-[#F36A1D] text-white">Minggu</button>
             </div>
         </div>
     </div>
 
-    <!-- Conflict Alerts -->
-    <div x-show="conflicts.has_issues" class="bg-[#FEF2F2] border border-[#DC2626] rounded-xl p-4 mb-6">
-        <div class="flex items-center gap-2 mb-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#DC2626]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-            <h3 class="font-semibold text-[#DC2626]">Scheduling Conflicts Detected</h3>
-        </div>
-        <div class="flex flex-wrap gap-3">
-            <template x-for="conflict in conflicts.overlap_conflicts" :key="conflict.job1.id">
-                <div class="flex items-center gap-2 px-3 py-2 bg-[#FEE2E2] rounded-lg text-[#991B1B] text-sm">
-                    <span class="font-medium" x-text="conflict.tech_name"></span>
-                    <span>has overlap:</span>
-                    <span x-text="conflict.job1.customer"></span>
-                    <span>&</span>
-                    <span x-text="conflict.job2.customer"></span>
+    <!-- ══════════════════════════════════════════
+         WORKLOAD SUMMARY BAR
+    ══════════════════════════════════════════ -->
+    <div class="bg-white rounded-xl border border-[#E5E7EB] px-5 py-4 mb-4">
+        <p class="text-xs font-semibold text-slate-500 mb-3">Ringkasan Beban Kerja</p>
+        <div class="flex items-center gap-6 flex-wrap">
+            <!-- Total Job -->
+            <div>
+                <p class="text-[11px] text-slate-400">Total Job</p>
+                <p class="text-2xl font-bold text-slate-800 leading-tight" x-text="summary.total_jobs || 0"></p>
+            </div>
+            <div class="h-10 w-px bg-slate-100"></div>
+            <!-- Teknisi Aktif -->
+            <div>
+                <p class="text-[11px] text-slate-400">Teknisi Aktif</p>
+                <p class="text-2xl font-bold text-slate-800 leading-tight" x-text="filteredTechs.length"></p>
+            </div>
+            <div class="h-10 w-px bg-slate-100"></div>
+            <!-- Overload -->
+            <div>
+                <p class="text-[11px] text-slate-400">Overload</p>
+                <p class="text-2xl font-bold text-red-600 leading-tight flex items-end gap-1">
+                    <span x-text="overloadCount"></span>
+                    <svg class="w-4 h-4 mb-1 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                </p>
+            </div>
+            <div class="h-10 w-px bg-slate-100"></div>
+            <!-- Optimal -->
+            <div>
+                <p class="text-[11px] text-slate-400">Optimal</p>
+                <p class="text-2xl font-bold text-emerald-600 leading-tight" x-text="optimalCount"></p>
+            </div>
+            <div class="h-10 w-px bg-slate-100"></div>
+            <!-- Rendah -->
+            <div>
+                <p class="text-[11px] text-slate-400">Rendah</p>
+                <p class="text-2xl font-bold text-slate-400 leading-tight" x-text="rendahCount"></p>
+            </div>
+
+            <!-- Donut chart -->
+            <div class="ml-auto flex items-center gap-3">
+                <div class="relative w-14 h-14">
+                    <svg class="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="#F3F4F6" stroke-width="7"/>
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="#F36A1D" stroke-width="7"
+                                :stroke-dasharray="'138.2 138.2'"
+                                :stroke-dashoffset="138.2 - (avgWorkload / 100 * 138.2)"
+                                stroke-linecap="round"/>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <span class="text-xs font-bold text-slate-700" x-text="avgWorkload + '%'"></span>
+                    </div>
                 </div>
-            </template>
-            <template x-for="tech in conflicts.overloaded_technicians" :key="tech.id">
-                <div class="flex items-center gap-2 px-3 py-2 bg-[#FEF3C7] rounded-lg text-[#92400E] text-sm">
-                    <span class="font-medium" x-text="tech.name"></span>
-                    <span>overloaded:</span>
-                    <span x-text="tech.job_count + ' jobs'"></span>
+                <div>
+                    <p class="text-xs font-semibold text-slate-700">Rata-rata</p>
+                    <p class="text-xs text-slate-400">Beban Tim</p>
                 </div>
-            </template>
+            </div>
         </div>
     </div>
 
-    <!-- Calendar Grid -->
-    <div class="bg-white rounded-xl shadow-sm border border-[#E5E7EB] overflow-hidden">
-        <!-- Header: Dates -->
-        <div class="grid border-b border-[#E5E7EB]" :style="'grid-template-columns: 200px repeat(' + dates.length + ', 1fr)'">
-            <div class="p-3 bg-slate-50 border-r border-[#E5E7EB]">
-                <span class="text-sm font-medium text-[#6B7280]">Technician</span>
+    <!-- ══════════════════════════════════════════
+         CALENDAR GRID
+    ══════════════════════════════════════════ -->
+    <div class="bg-white rounded-xl border border-[#E5E7EB] overflow-hidden mb-4">
+
+        <!-- Loading overlay -->
+        <div x-show="loading" class="absolute inset-0 bg-white/80 z-20 flex items-center justify-center rounded-xl">
+            <div class="flex items-center gap-2 text-slate-500 text-sm">
+                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                Memuat jadwal...
+            </div>
+        </div>
+
+        <!-- Date header row -->
+        <div class="grid border-b border-[#E5E7EB] sticky top-0 z-10 bg-white"
+             :style="'grid-template-columns: 176px repeat(' + dates.length + ', 1fr)'">
+            <div class="px-4 py-3 border-r border-[#E5E7EB] flex items-center gap-1 text-xs font-semibold text-slate-500">
+                Teknisi
+                <button class="ml-1 p-0.5 rounded hover:bg-slate-100">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                </button>
             </div>
             <template x-for="d in dates" :key="d.date">
-                <div class="p-3 text-center border-r last:border-r-0 border-[#E5E7EB]"
-                     :class="d.is_today ? 'bg-[#FFF4ED]' : 'bg-slate-50'">
-                    <p class="text-xs text-[#9CA3AF]" x-text="d.day_short"></p>
-                    <p class="text-sm font-semibold" :class="d.is_today ? 'text-[#F36A1D]' : 'text-[#1F2937]'"
-                       x-text="d.date.split('-')[2]"></p>
+                <div class="py-3 text-center border-r last:border-r-0 border-[#F3F4F6]"
+                     :class="d.is_today ? 'bg-orange-50' : ''">
+                    <p class="text-[11px] font-medium" :class="d.is_today ? 'text-[#F36A1D]' : 'text-slate-400'" x-text="d.day_short"></p>
+                    <p class="text-sm font-bold" :class="d.is_today ? 'text-[#F36A1D]' : 'text-slate-700'" x-text="d.date.split('-')[2]"></p>
                 </div>
             </template>
         </div>
 
-        <!-- Body: Technician Rows -->
-        <div class="max-h-[600px] overflow-y-auto">
-            <template x-for="tech in technicians" :key="tech.id">
-                <div class="grid border-b border-slate-100 hover:bg-slate-50/50" 
-                     :style="'grid-template-columns: 200px repeat(' + dates.length + ', 1fr)'">
-                    <!-- Technician Name & Workload -->
-                    <div class="p-3 border-r border-[#E5E7EB] flex items-center gap-3">
-                        <div class="relative">
-                            <div class="w-10 h-10 rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative">
-                                <img :src="'/enterprise/static/img/staff/' + tech.id + '.jpg'" class="w-full h-full object-cover absolute inset-0" onerror="this.remove()" :alt="tech.name">
-                                <span class="flex items-center justify-center w-full h-full text-slate-600 font-bold" x-text="tech.name.charAt(0)"></span>
+        <!-- Technician rows -->
+        <div class="overflow-y-auto" style="max-height: 58vh;">
+            <template x-for="tech in filteredTechs" :key="tech.id">
+                <div class="grid border-b border-slate-100 last:border-b-0"
+                     :style="'grid-template-columns: 176px repeat(' + dates.length + ', 1fr)'">
+
+                    <!-- Tech info cell -->
+                    <div class="px-3 py-3 border-r border-[#F3F4F6] flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2">
+                            <!-- Avatar -->
+                            <div class="relative flex-shrink-0">
+                                <div class="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
+                                    <img :src="'/enterprise/static/img/staff/' + tech.id + '.jpg'"
+                                         class="w-full h-full object-cover"
+                                         onerror="this.style.display='none'"
+                                         :alt="tech.name">
+                                    <span class="text-slate-500 text-xs font-bold" x-text="tech.name.charAt(0)"></span>
+                                </div>
+                                <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
+                                      :class="{
+                                          'bg-red-500': tech.workload_status === 'OVERLOAD',
+                                          'bg-amber-400': tech.workload_status === 'HIGH',
+                                          'bg-emerald-500': tech.workload_status === 'OPTIMAL',
+                                          'bg-slate-300': tech.workload_status === 'LOW'
+                                      }"></span>
                             </div>
-                            <!-- Capacity Indicator Dot -->
-                            <div class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center"
-                                 :class="{
-                                     'bg-emerald-500': tech.workload_status === 'OPTIMAL',
-                                     'bg-amber-500': tech.workload_status === 'HIGH',
-                                     'bg-rose-600 animate-pulse': tech.workload_status === 'OVERLOAD'
-                                 }">
+                            <div class="min-w-0">
+                                <p class="text-xs font-bold text-slate-800 truncate leading-tight" x-text="tech.name"></p>
+                                <p class="text-[10px] text-slate-400" x-text="tech.jobs.length + ' jobs'"></p>
                             </div>
                         </div>
-                        <div>
-                            <p class="text-sm font-bold text-slate-800" x-text="tech.name"></p>
-                            <p class="text-[10px] font-medium px-1.5 py-0.5 rounded-full w-fit mt-1"
-                               :class="{
-                                   'bg-emerald-50 text-emerald-700': tech.workload_status === 'OPTIMAL',
-                                   'bg-amber-50 text-amber-700': tech.workload_status === 'HIGH',
-                                   'bg-rose-50 text-rose-700': tech.workload_status === 'OVERLOAD'
-                               }"
-                               x-text="tech.jobs.length + ' Jobs'"></p>
+                        <!-- Workload badge -->
+                        <div class="flex items-center gap-1.5">
+                            <div class="flex-1 h-1 rounded-full bg-slate-100 overflow-hidden">
+                                <div class="h-full rounded-full transition-all"
+                                     :class="{
+                                         'bg-red-500': tech.workload_pct > 85,
+                                         'bg-amber-400': tech.workload_pct > 65 && tech.workload_pct <= 85,
+                                         'bg-emerald-500': tech.workload_pct >= 40 && tech.workload_pct <= 65,
+                                         'bg-slate-300': tech.workload_pct < 40
+                                     }"
+                                     :style="'width:' + Math.min(100, tech.workload_pct) + '%'"></div>
+                            </div>
+                            <span class="text-[10px] font-semibold"
+                                  :class="{
+                                      'text-red-600': tech.workload_pct > 85,
+                                      'text-amber-600': tech.workload_pct > 65 && tech.workload_pct <= 85,
+                                      'text-emerald-600': tech.workload_pct >= 40 && tech.workload_pct <= 65,
+                                      'text-slate-400': tech.workload_pct < 40
+                                  }"
+                                  x-text="tech.workload_pct + '%'"></span>
                         </div>
+                        <p class="text-[10px] font-semibold"
+                           :class="{
+                               'text-red-600': tech.workload_status === 'OVERLOAD',
+                               'text-amber-600': tech.workload_status === 'HIGH',
+                               'text-emerald-600': tech.workload_status === 'OPTIMAL',
+                               'text-slate-400': tech.workload_status === 'LOW'
+                           }"
+                           x-text="{OVERLOAD:'Overload',HIGH:'Tinggi',OPTIMAL:'Optimal',LOW:'Rendah'}[tech.workload_status] || ''"></p>
                     </div>
-                    
-                    <!-- Jobs per Day -->
+
+                    <!-- Day cells -->
                     <template x-for="d in dates" :key="d.date">
-                        <div class="p-1 border-r last:border-r-0 border-slate-100 min-h-[100px] relative group transition-colors"
-                             :class="d.is_today ? 'bg-[#FFF7ED] border-[#FED7AA]' : 'hover:bg-slate-50'">
-                            
-                            <!-- Empty State CTA -->
-                            <div x-show="getJobsForDate(tech.jobs, d.date).length === 0"
-                                 class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button class="text-[10px] font-medium text-slate-400 border border-dashed border-slate-300 rounded px-2 py-1 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50">
+                        <div class="p-1 border-r last:border-r-0 border-slate-100 min-h-[110px] relative group"
+                             :class="d.is_today ? 'bg-orange-50/40' : 'hover:bg-slate-50/60'">
+
+                            <!-- Hover: Assign button -->
+                            <div x-show="getFilteredJobs(tech.jobs, d.date).length === 0"
+                                 class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+                                <button class="text-[10px] font-medium text-slate-400 border border-dashed border-slate-300 rounded px-2 py-1 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50 transition-colors">
                                     + Assign
                                 </button>
                             </div>
 
-                            <template x-for="job in getJobsForDate(tech.jobs, d.date)" :key="job.id">
-                                <a :href="'/enterprise/customers/' + job.customer_id"
-                                   class="block mb-1 p-2 rounded border shadow-sm cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] relative overflow-hidden"
-                                   :class="{
-                                       'h-14': job.estimated_duration <= 60,
-                                       'h-20': job.estimated_duration > 60 && job.estimated_duration <= 120,
-                                       'h-28': job.estimated_duration > 120,
-                                       'bg-white border-l-4 border-l-emerald-500': job.status === 'Selesai',
-                                       'bg-blue-50 border-l-4 border-l-blue-500': job.status === 'Berjalan',
-                                       'bg-amber-50 border-amber-200 border-l-4 border-l-amber-500': job.color === 'orange', 
-                                       'bg-slate-50 border-slate-200 border-l-4 border-l-slate-400': job.status === 'Baru' || job.status === 'Requested',
-                                       'bg-red-50 border-red-200 border-l-4 border-l-red-500 opacity-75 grayscale': job.is_cancelled
-                                   }">
-                                    
-                                    <!-- Urgency/Status Icons Overlay -->
-                                    <div class="absolute top-1 right-1 flex gap-1">
-                                        <span x-show="job.is_overrun" class="animate-pulse text-red-600" title="Overrun">⚠️</span>
-                                        <span x-show="job.color === 'orange'" class="text-amber-600" title="Missing Checkout">⛔</span>
+                            <template x-for="job in getFilteredJobs(tech.jobs, d.date)" :key="job.id">
+                                <div @click.stop="openJob(job, tech)"
+                                     class="mb-1 p-2 rounded-lg border cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] relative overflow-hidden group/card"
+                                     :class="{
+                                         'bg-indigo-50 border border-dashed border-indigo-300 border-l-4 border-l-indigo-400': job.status === 'draft',
+                                         'bg-white border-slate-200 border-l-4 border-l-slate-400': job.status === 'Baru' || job.status === 'Requested',
+                                         'bg-blue-50 border-blue-200 border-l-4 border-l-blue-500': job.status === 'Berjalan',
+                                         'bg-emerald-50 border-emerald-200 border-l-4 border-l-emerald-500': job.status === 'Selesai',
+                                         'bg-amber-50 border-amber-200 border-l-4 border-l-amber-500': job.color === 'orange' && job.status !== 'Selesai',
+                                         'bg-red-50 border-red-200 border-l-4 border-l-red-400 opacity-60': job.is_cancelled,
+                                         'ring-1 ring-orange-300': job.is_rescheduled
+                                     }">
+
+                                    <!-- Time + duration -->
+                                    <div class="flex items-center justify-between mb-0.5">
+                                        <span class="text-[10px] text-slate-400 font-medium"
+                                              x-text="(job.time_start || '08:00') + ' · ' + Math.max(1, Math.round((job.estimated_duration||60)/60)) + 'h'"></span>
+                                        <!-- Alert icons -->
+                                        <div class="flex gap-0.5">
+                                            <span x-show="job.color === 'orange'" class="text-[10px] text-amber-500" title="Missing checkout">⚠</span>
+                                            <span x-show="job.is_rescheduled" class="text-[10px] text-orange-500" title="Dijadwalkan ulang">↺</span>
+                                            <span x-show="job.is_cancelled" class="text-[10px] text-red-400" title="Dibatalkan">✕</span>
+                                        </div>
                                     </div>
 
-                                    <p class="font-bold text-xs truncate pr-4" 
-                                       :class="job.is_cancelled ? 'line-through text-slate-500' : 'text-slate-800'"
+                                    <!-- Client name -->
+                                    <p class="text-xs font-bold truncate leading-tight"
+                                       :class="job.is_cancelled ? 'line-through text-slate-400' : 'text-slate-800'"
                                        x-text="job.customer_name"></p>
-                                    
-                                    <div class="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
-                                        <span x-text="job.time_start"></span>
-                                        <!-- Duration Badge -->
-                                        <span class="px-1 rounded bg-slate-100 text-slate-600" 
-                                              x-text="Math.round(job.estimated_duration/60) + 'h'"></span>
+
+                                    <!-- Address -->
+                                    <div x-show="job.customer_address" class="flex items-center gap-0.5 mt-0.5">
+                                        <svg class="w-2.5 h-2.5 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                        <span class="text-[10px] text-slate-400 truncate" x-text="job.customer_address"></span>
                                     </div>
-                                </a>
+
+                                    <!-- Notes / Keterangan -->
+                                    <div x-show="job.notes" class="mt-0.5">
+                                        <span class="text-[10px] text-slate-400 italic" x-text="'Keterangan: ' + job.notes"></span>
+                                    </div>
+                                </div>
                             </template>
                         </div>
                     </template>
                 </div>
             </template>
 
-            <!-- Empty State -->
-            <div x-show="technicians.length === 0" class="p-12 text-center">
-                <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <!-- Empty state -->
+            <div x-show="!loading && filteredTechs.length === 0" class="py-16 text-center">
+                <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                 </div>
-                <h3 class="text-lg font-medium text-slate-900">No Scheduled Jobs</h3>
-                <p class="text-slate-500 mb-6">There are no visits scheduled for this period.</p>
-                <button class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium">
-                    Schedule a Visit
+                <p class="text-sm font-medium text-slate-600">Tidak ada jadwal ditemukan</p>
+                <p class="text-xs text-slate-400 mt-1">Coba ubah filter atau periode.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         FOOTER BAR
+    ══════════════════════════════════════════ -->
+    <div class="bg-white rounded-xl border border-[#E5E7EB] px-5 py-3 flex items-center justify-between flex-wrap gap-3">
+        <!-- Left: live + legend -->
+        <div class="flex items-center gap-4 flex-wrap text-xs text-slate-500">
+            <!-- Live -->
+            <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="font-medium text-slate-600">Live</span>
+            </div>
+            <div x-show="conflicts.has_issues" class="flex items-center gap-1.5 text-red-600">
+                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                <span class="font-semibold" x-text="(conflicts.overlap_conflicts?.length||0) + ' Risk Alert'"></span>
+            </div>
+            <div class="h-4 w-px bg-slate-200"></div>
+            <!-- Legend dots -->
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span><span>Overload (&gt;100%)</span></div>
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span><span>Tinggi (80–100%)</span></div>
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>Optimal (50–80%)</span></div>
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-300"></span><span>Rendah (&lt;50%)</span></div>
+        </div>
+
+        <!-- Right: action metrics -->
+        <div class="flex items-center gap-6 text-xs flex-wrap">
+            <div>
+                <p class="text-slate-400">Konflik</p>
+                <p class="font-bold text-lg"
+                   :class="conflicts.has_issues ? 'text-red-600' : 'text-slate-800'"
+                   x-text="(conflicts.overlap_conflicts?.length||0) + (conflicts.overloaded_technicians?.length||0)">0</p>
+            </div>
+            <div>
+                <p class="text-slate-400">Menunggu Konfirmasi</p>
+                <p class="font-bold text-lg text-amber-600" x-text="pendingCount">0</p>
+            </div>
+            <div>
+                <p class="text-slate-400">Saran Optimasi</p>
+                <p class="font-bold text-lg text-blue-600" x-text="overloadCount">0</p>
+            </div>
+            <div class="text-[11px] bg-orange-50 border border-orange-200 rounded-lg px-3 py-2" x-show="overloadCount > 0">
+                <p class="font-semibold text-orange-700">Tips</p>
+                <p class="text-orange-500" x-text="overloadCount + ' teknisi overload. Pertimbangkan redistribusi job.'"></p>
+                <button @click="showConflicts = !showConflicts" class="mt-1 text-orange-600 font-semibold underline">Lihat Saran →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         JOB DETAIL POPUP
+    ══════════════════════════════════════════ -->
+    <div x-show="selectedJob" x-cloak
+         class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+         @click.self="selectedJob = null">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" @click.stop>
+            <!-- Header strip -->
+            <div class="px-5 pt-5 pb-3 border-b border-slate-100">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-base leading-tight" x-text="selectedJob?.customer_name"></h3>
+                        <p class="text-xs text-slate-500 mt-0.5"
+                           x-text="(selectedJob?.date || '') + ' · ' + (selectedJob?.time_start || '08:00')"></p>
+                    </div>
+                    <button @click="selectedJob = null" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <!-- Status pill -->
+                <div class="mt-2 flex items-center gap-2 flex-wrap">
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
+                          :class="{
+                              'bg-emerald-100 text-emerald-700': selectedJob?.status === 'Selesai',
+                              'bg-blue-100 text-blue-700': selectedJob?.status === 'Berjalan',
+                              'bg-slate-100 text-slate-600': selectedJob?.status === 'Baru' || selectedJob?.status === 'Requested',
+                              'bg-amber-100 text-amber-700': selectedJob?.color === 'orange'
+                          }"
+                          x-text="selectedJob?.status"></span>
+                    <span x-show="selectedJob?.job_type"
+                          class="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600"
+                          x-text="selectedJob?.job_type"></span>
+                    <span x-show="selectedJob?.is_rescheduled"
+                          class="px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-600">↺ Dijadwalkan ulang</span>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="px-5 py-4 space-y-2.5 text-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-slate-400 text-xs w-24 shrink-0">Teknisi</span>
+                    <span class="font-medium text-slate-700 text-sm" x-text="selectedTech?.name"></span>
+                </div>
+                <div x-show="selectedJob?.customer_address" class="flex items-start gap-3">
+                    <span class="text-slate-400 text-xs w-24 shrink-0 pt-0.5">Lokasi</span>
+                    <span class="font-medium text-slate-700 text-sm" x-text="selectedJob?.customer_address"></span>
+                </div>
+                <div x-show="selectedJob?.check_in" class="flex items-center gap-3">
+                    <span class="text-slate-400 text-xs w-24 shrink-0">Check-in</span>
+                    <span class="font-semibold text-emerald-600 text-sm"
+                          x-text="selectedJob?.check_in ? new Date(selectedJob.check_in).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'}) : '—'"></span>
+                </div>
+                <div x-show="selectedJob?.check_out" class="flex items-center gap-3">
+                    <span class="text-slate-400 text-xs w-24 shrink-0">Check-out</span>
+                    <span class="font-medium text-slate-700 text-sm"
+                          x-text="selectedJob?.check_out ? new Date(selectedJob.check_out).toLocaleTimeString('id',{hour:'2-digit',minute:'2-digit'}) : '—'"></span>
+                </div>
+                <div x-show="selectedJob?.actual_duration_min" class="flex items-center gap-3">
+                    <span class="text-slate-400 text-xs w-24 shrink-0">Durasi aktual</span>
+                    <span class="font-medium text-slate-700 text-sm" x-text="selectedJob?.actual_duration_min + ' menit'"></span>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="px-5 pb-5 flex gap-2">
+                <template x-if="!selectedJob?.is_rescheduled && selectedJob?.status !== 'Selesai' && !selectedJob?.is_cancelled">
+                    <div class="flex gap-2 w-full">
+                        <button @click="openReschedule()"
+                                class="flex-1 py-2 px-4 bg-[#F36A1D] text-white text-sm font-semibold rounded-xl hover:bg-[#C2410C] transition-colors">
+                            ↺ Reschedule
+                        </button>
+                        <button @click="cancelJob()" :disabled="cancelling"
+                                class="py-2 px-4 border border-red-200 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50">
+                            <span x-show="!cancelling">Batalkan</span>
+                            <span x-show="cancelling">...</span>
+                        </button>
+                    </div>
+                </template>
+                <template x-if="selectedJob?.is_rescheduled || selectedJob?.status === 'Selesai' || selectedJob?.is_cancelled">
+                    <a :href="'/enterprise/customers/' + selectedJob?.customer_id"
+                       class="block w-full text-center py-2 px-4 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors">
+                        Lihat Profil Customer →
+                    </a>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         AUTO-DRAFT PANEL
+    ══════════════════════════════════════════ -->
+    <div x-show="draftPanelOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
+         @click.self="draftPanelOpen = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 mb-4 sm:mb-0 overflow-hidden" @click.stop>
+
+            <!-- Header -->
+            <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-base">Auto-Draft Jadwal</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Generate jadwal bulan depan dari pola bulan ini</p>
+                    </div>
+                    <button @click="draftPanelOpen = false" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="px-6 py-5 space-y-4">
+
+                <!-- Step indicator -->
+                <div class="flex items-center gap-2 text-xs">
+                    <div class="flex items-center gap-1.5"
+                         :class="draftStep >= 1 ? 'text-indigo-600 font-semibold' : 'text-slate-400'">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                              :class="draftStep >= 1 ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'">1</span>
+                        Deteksi Pola
+                    </div>
+                    <div class="flex-1 h-px bg-slate-200"></div>
+                    <div class="flex items-center gap-1.5"
+                         :class="draftStep >= 2 ? 'text-indigo-600 font-semibold' : 'text-slate-400'">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                              :class="draftStep >= 2 ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'">2</span>
+                        Generate Draft
+                    </div>
+                    <div class="flex-1 h-px bg-slate-200"></div>
+                    <div class="flex items-center gap-1.5"
+                         :class="draftStep >= 3 ? 'text-emerald-600 font-semibold' : 'text-slate-400'">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                              :class="draftStep >= 3 ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'">3</span>
+                        Review & Approve
+                    </div>
+                </div>
+
+                <!-- Config -->
+                <div x-show="draftStep === 0" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Bulan Sumber (pola diambil dari)</label>
+                        <input type="month" x-model="draftSourceMonth"
+                               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Bulan Target (yang akan digenerate)</label>
+                        <input type="month" x-model="draftTargetMonth"
+                               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Step 1 result: patterns -->
+                <div x-show="draftStep >= 1 && draftPatterns" class="bg-slate-50 rounded-xl p-4 space-y-2">
+                    <p class="text-xs font-semibold text-slate-600">Pola Terdeteksi dari <span x-text="draftSourceMonth"></span></p>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-white rounded-lg p-2 border border-slate-200">
+                            <p class="text-lg font-bold text-indigo-600" x-text="draftPatterns?.summary?.weekly || 0"></p>
+                            <p class="text-[10px] text-slate-500">Mingguan</p>
+                        </div>
+                        <div class="bg-white rounded-lg p-2 border border-slate-200">
+                            <p class="text-lg font-bold text-amber-600" x-text="draftPatterns?.summary?.biweekly || 0"></p>
+                            <p class="text-[10px] text-slate-500">2-Mingguan</p>
+                        </div>
+                        <div class="bg-white rounded-lg p-2 border border-slate-200">
+                            <p class="text-lg font-bold text-slate-600" x-text="draftPatterns?.summary?.monthly || 0"></p>
+                            <p class="text-[10px] text-slate-500">Bulanan</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2 result: generated -->
+                <div x-show="draftStep >= 2 && draftResult" class="bg-indigo-50 rounded-xl p-4 border border-indigo-200">
+                    <p class="text-xs font-semibold text-indigo-700 mb-1" x-text="draftResult?.message"></p>
+                    <p class="text-[10px] text-indigo-500" x-text="draftResult?.events_skipped + ' kunjungan ad-hoc dilewati (confidence rendah)'"></p>
+                </div>
+
+                <!-- Error -->
+                <p x-show="draftError" class="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2" x-text="draftError"></p>
+            </div>
+
+            <!-- Actions -->
+            <div class="px-6 pb-6 flex gap-2">
+                <!-- Step 0: Detect -->
+                <template x-if="draftStep === 0">
+                    <button @click="runDetectPatterns()" :disabled="draftLoading"
+                            class="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                        <span x-show="!draftLoading">Deteksi Pola →</span>
+                        <span x-show="draftLoading">Menganalisis...</span>
+                    </button>
+                </template>
+
+                <!-- Step 1: Generate -->
+                <template x-if="draftStep === 1">
+                    <div class="flex gap-2 w-full">
+                        <button @click="draftStep = 0" class="py-2.5 px-4 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50">← Ubah</button>
+                        <button @click="runGenerateDraft()" :disabled="draftLoading"
+                                class="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                            <span x-show="!draftLoading">Generate Draft <span x-text="draftTargetMonth"></span> →</span>
+                            <span x-show="draftLoading">Membuat draft...</span>
+                        </button>
+                    </div>
+                </template>
+
+                <!-- Step 2: Review -->
+                <template x-if="draftStep === 2">
+                    <div class="flex gap-2 w-full">
+                        <button @click="runApproveDraft()" :disabled="draftLoading"
+                                class="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                            <span x-show="!draftLoading">✓ Approve Semua & Jadwalkan</span>
+                            <span x-show="draftLoading">Menyimpan...</span>
+                        </button>
+                        <button @click="viewDraft()" :disabled="draftLoading"
+                                class="py-2.5 px-4 border border-indigo-300 text-indigo-600 text-sm font-semibold rounded-xl hover:bg-indigo-50 transition-colors">
+                            Review di Kalender
+                        </button>
+                    </div>
+                </template>
+
+                <!-- Step 3: Done -->
+                <template x-if="draftStep === 3">
+                    <button @click="draftPanelOpen = false; loadSchedule()"
+                            class="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
+                        ✓ Selesai — Lihat Jadwal
+                    </button>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         RESCHEDULE MODAL
+    ══════════════════════════════════════════ -->
+    <div x-show="rescheduleOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+         @click.self="rescheduleOpen = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4" @click.stop>
+            <div class="px-5 pt-5 pb-3 border-b border-slate-100">
+                <h3 class="font-bold text-slate-800">Reschedule Kunjungan</h3>
+                <p class="text-xs text-slate-500 mt-0.5" x-text="selectedJob?.customer_name"></p>
+            </div>
+            <div class="px-5 py-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Tanggal Baru</label>
+                    <input type="date" x-model="rescheduleForm.new_date"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Teknisi Baru <span class="font-normal text-slate-400">(opsional)</span></label>
+                    <select x-model="rescheduleForm.new_technician_id"
+                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                        <option value="">— Teknisi sama —</option>
+                        <template x-for="t in allTechnicians" :key="t.id">
+                            <option :value="t.id" x-text="t.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Alasan</label>
+                    <input type="text" x-model="rescheduleForm.reason" placeholder="mis. Teknisi sakit"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none">
+                </div>
+                <p x-show="rescheduleError" class="text-xs text-red-600" x-text="rescheduleError"></p>
+            </div>
+            <div class="px-5 pb-5 flex gap-2">
+                <button @click="submitReschedule()" :disabled="rescheduling"
+                        class="flex-1 py-2 bg-[#F36A1D] text-white text-sm font-semibold rounded-xl hover:bg-[#C2410C] disabled:opacity-50 transition-colors">
+                    <span x-show="!rescheduling">Simpan Reschedule</span>
+                    <span x-show="rescheduling">Menyimpan...</span>
+                </button>
+                <button @click="rescheduleOpen = false"
+                        class="py-2 px-4 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors">
+                    Batal
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Operational Legend -->
-    <div class="flex items-center flex-wrap gap-6 mt-4 text-xs font-medium text-slate-600 border-t border-slate-100 pt-4">
-        <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-slate-200 border-l-2 border-slate-400"></div>
-            <span>Pending</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-blue-100 border-l-2 border-blue-500"></div>
-            <span>Running</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-amber-100 border-l-2 border-amber-500"></div>
-            <span class="text-amber-700">Missing Checkout (Alert)</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-white border border-l-4 border-l-emerald-500"></div>
-            <span>Completed</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-red-50 border-l-2 border-red-500"></div>
-            <span class="text-red-700">Cancelled/Problem</span>
-        </div>
-        <div class="h-4 w-px bg-slate-300 mx-2"></div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>Optimal Load</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-            <span>High Load</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
-            <span class="text-red-700 font-bold">OVERLOAD</span>
-        </div>
-    </div>
-
-    <!-- Summary Stats -->
-    <div class="grid grid-cols-4 gap-4 mt-6">
-        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
-            <p class="text-sm text-[#6B7280]">Technicians Active</p>
-            <p class="text-2xl font-bold text-[#0F172A]" x-text="summary.total_technicians"></p>
-        </div>
-        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
-            <p class="text-sm text-[#6B7280]">Total Jobs</p>
-            <p class="text-2xl font-bold text-[#0F172A]" x-text="summary.total_jobs"></p>
-        </div>
-        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
-            <p class="text-sm text-[#6B7280]">Conflicts</p>
-            <p class="text-2xl font-bold" :class="conflicts.has_issues ? 'text-[#DC2626]' : 'text-[#16A34A]'"
-               x-text="(conflicts.overlap_conflicts?.length || 0) + (conflicts.overloaded_technicians?.length || 0)"></p>
-        </div>
-        <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
-            <p class="text-sm text-[#6B7280]">Week Completion</p>
-            <p class="text-2xl font-bold text-[#2563EB]" x-text="weekCompletion + '%'"></p>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
@@ -235,70 +635,278 @@ function calendarDispatch() {
         startDate: new Date().toISOString().split('T')[0],
         dates: [],
         technicians: [],
+        allTechnicians: [],
         summary: { total_technicians: 0, total_jobs: 0 },
         conflicts: { has_issues: false, overlap_conflicts: [], overloaded_technicians: [] },
-        
+        loading: false,
+        showConflicts: false,
+
+        filterTech: '',
+        filterStatus: '',
+
+        // Draft mode
+        draftPanelOpen: false,
+        draftMode: false,
+        draftMonth: '',
+        draftStep: 0,
+        draftLoading: false,
+        draftError: '',
+        draftPatterns: null,
+        draftResult: null,
+        draftSourceMonth: new Date().toISOString().slice(0,7),
+        draftTargetMonth: (() => { const d = new Date(); d.setMonth(d.getMonth()+1); return d.toISOString().slice(0,7); })(),
+
+        selectedJob: null,
+        selectedTech: null,
+        cancelling: false,
+
+        rescheduleOpen: false,
+        rescheduling: false,
+        rescheduleError: '',
+        rescheduleForm: { new_date: '', new_technician_id: '', reason: '' },
+
+        _refreshTimer: null,
+
+        // ─── computed ───────────────────────────────────
         get weekLabel() {
             if (!this.dates.length) return '';
-            const start = this.dates[0];
-            const end = this.dates[this.dates.length - 1];
-            return `${start.date.split('-')[2]} - ${end.date.split('-')[2]} ${new Date(end.date).toLocaleString('default', { month: 'short', year: 'numeric' })}`;
+            const s = this.dates[0].date;
+            const e = this.dates[this.dates.length - 1].date;
+            const mo = new Date(e + 'T12:00:00').toLocaleString('id', { month: 'short', year: 'numeric' });
+            return `${s.split('-')[2]} – ${e.split('-')[2]} ${mo}`;
         },
-        
-        get weekCompletion() {
-            const completed = this.technicians.reduce((sum, t) => 
-                sum + t.jobs.filter(j => j.color === 'green').length, 0);
-            return this.summary.total_jobs > 0 
-                ? Math.round(completed / this.summary.total_jobs * 100) 
-                : 0;
+
+        get filteredTechs() {
+            let list = this.technicians;
+            if (this.filterTech) list = list.filter(t => String(t.id) === String(this.filterTech));
+            return list;
         },
-        
+
+        get overloadCount() {
+            return this.filteredTechs.filter(t => t.workload_status === 'OVERLOAD').length;
+        },
+        get optimalCount() {
+            return this.filteredTechs.filter(t => t.workload_status === 'OPTIMAL').length;
+        },
+        get rendahCount() {
+            return this.filteredTechs.filter(t => t.workload_status === 'LOW').length;
+        },
+        get avgWorkload() {
+            if (!this.filteredTechs.length) return 0;
+            const sum = this.filteredTechs.reduce((s, t) => s + (t.workload_pct || 0), 0);
+            return Math.round(sum / this.filteredTechs.length);
+        },
+        get pendingCount() {
+            return this.filteredTechs.reduce((s, t) =>
+                s + t.jobs.filter(j => j.status === 'Baru' || j.status === 'Requested').length, 0);
+        },
+
+        // ─── helpers ────────────────────────────────────
+        getFilteredJobs(jobs, date) {
+            let list = jobs.filter(j => j.date === date);
+            if (this.filterStatus) list = list.filter(j => j.status === this.filterStatus);
+            return list;
+        },
+
+        workloadPct(tech) {
+            // ~8 jobs/week = 100% capacity baseline
+            return Math.min(130, Math.round(tech.jobs.length / (this.dates.length * 1.4) * 100));
+        },
+
+        // ─── data loading ────────────────────────────────
+        init() {
+            // Start on current week Monday
+            const d = new Date();
+            const day = d.getDay();
+            const diff = d.getDate() - (day === 0 ? 6 : day - 1);
+            d.setDate(diff);
+            this.startDate = d.toISOString().split('T')[0];
+            this.loadSchedule();
+            this._refreshTimer = setInterval(() => this.loadSchedule(), 30000);
+        },
+
         async loadSchedule() {
             const endDate = new Date(this.startDate);
             endDate.setDate(endDate.getDate() + 6);
-
             const params = new URLSearchParams({
                 start_date: this.startDate,
                 end_date: endDate.toISOString().split('T')[0]
             });
-
+            this.loading = true;
             const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const [schedRes, conflictRes] = await Promise.all([
+                    _fetch(`/api/v1/enterprise/calendar/schedule?${params}`),
+                    _fetch(`/api/v1/enterprise/calendar/conflicts?date=${this.startDate}`),
+                ]);
+                const [schedData, conflictData] = await Promise.all([
+                    schedRes.json(), conflictRes.json(),
+                ]);
+                this.dates = schedData.dates || [];
+                this.summary = schedData.summary || {};
+                this.conflicts = conflictData;
 
-            const [schedRes, conflictRes] = await Promise.all([
-                _fetch(`/api/v1/enterprise/calendar/schedule?${params}`),
-                _fetch(`/api/v1/enterprise/calendar/conflicts?date=${this.startDate}`),
-            ]);
-            const [schedData, conflictData] = await Promise.all([
-                schedRes.json(), conflictRes.json(),
-            ]);
+                // Enrich technicians with workload_pct
+                this.technicians = (schedData.technicians || []).map(t => ({
+                    ...t,
+                    workload_pct: Math.min(130, Math.round(
+                        t.jobs.length / Math.max(1, this.dates.length * 1.4) * 100
+                    ))
+                }));
 
-            this.dates = schedData.dates || [];
-            this.technicians = schedData.technicians || [];
-            this.summary = schedData.summary || {};
-            this.conflicts = conflictData;
+                this.allTechnicians = this.technicians.map(t => ({ id: t.id, name: t.name }));
+            } catch(e) {
+                console.error('Calendar load error:', e);
+            } finally {
+                this.loading = false;
+            }
         },
-        
-        getJobsForDate(jobs, date) {
-            return jobs.filter(j => j.date === date);
+
+        // ─── job actions ─────────────────────────────────
+        openJob(job, tech) {
+            this.selectedJob = job;
+            this.selectedTech = tech;
+            this.cancelling = false;
         },
-        
+
+        openReschedule() {
+            this.rescheduleForm = { new_date: this.selectedJob?.date || '', new_technician_id: '', reason: '' };
+            this.rescheduleError = '';
+            this.rescheduleOpen = true;
+        },
+
+        async cancelJob() {
+            if (!this.selectedJob) return;
+            const jobId = typeof this.selectedJob.id === 'string' && this.selectedJob.id.startsWith('snc-')
+                ? null : this.selectedJob.id;
+            if (!jobId) { alert('Jadwal ini tidak bisa dibatalkan dari sini.'); return; }
+            if (!confirm('Batalkan kunjungan ini?')) return;
+            this.cancelling = true;
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/calendar/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ road_plan_id: jobId, reason: 'Dibatalkan dari dashboard' }),
+                });
+                if (res.ok) { this.selectedJob = null; await this.loadSchedule(); }
+                else { const d = await res.json(); alert(d.error || 'Gagal membatalkan'); }
+            } finally { this.cancelling = false; }
+        },
+
+        async submitReschedule() {
+            if (!this.selectedJob) return;
+            const jobId = typeof this.selectedJob.id === 'string' && this.selectedJob.id.startsWith('snc-')
+                ? null : this.selectedJob.id;
+            if (!jobId) { this.rescheduleError = 'Jadwal ini tidak bisa di-reschedule.'; return; }
+            if (!this.rescheduleForm.new_date && !this.rescheduleForm.new_technician_id) {
+                this.rescheduleError = 'Pilih tanggal baru atau teknisi baru.'; return;
+            }
+            this.rescheduling = true;
+            this.rescheduleError = '';
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const body = { road_plan_id: jobId, reason: this.rescheduleForm.reason };
+                if (this.rescheduleForm.new_date) body.new_date = this.rescheduleForm.new_date;
+                if (this.rescheduleForm.new_technician_id) body.new_technician_id = parseInt(this.rescheduleForm.new_technician_id);
+                const res = await _fetch('/api/v1/enterprise/calendar/reschedule', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json();
+                if (res.ok) { this.rescheduleOpen = false; this.selectedJob = null; await this.loadSchedule(); }
+                else { this.rescheduleError = data.error || 'Gagal reschedule'; }
+            } catch(e) { this.rescheduleError = 'Network error. Coba lagi.'; }
+            finally { this.rescheduling = false; }
+        },
+
+        // ─── draft actions ───────────────────────────────
+        async runDetectPatterns() {
+            this.draftLoading = true; this.draftError = '';
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/calendar/detect-patterns', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({month: this.draftSourceMonth})
+                });
+                const d = await res.json();
+                if (!res.ok) { this.draftError = d.error || 'Gagal deteksi pola'; return; }
+                this.draftPatterns = d;
+                this.draftStep = 1;
+            } catch(e) { this.draftError = 'Network error'; }
+            finally { this.draftLoading = false; }
+        },
+
+        async runGenerateDraft() {
+            this.draftLoading = true; this.draftError = '';
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/calendar/generate-draft', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({source_month: this.draftSourceMonth, target_month: this.draftTargetMonth})
+                });
+                const d = await res.json();
+                if (!res.ok) { this.draftError = d.error || 'Gagal generate draft'; return; }
+                this.draftResult = d;
+                this.draftStep = 2;
+            } catch(e) { this.draftError = 'Network error'; }
+            finally { this.draftLoading = false; }
+        },
+
+        async runApproveDraft() {
+            this.draftLoading = true; this.draftError = '';
+            const _fetch = window.SanoCareAuth?.authenticatedFetch || fetch;
+            try {
+                const res = await _fetch('/api/v1/enterprise/calendar/approve-draft', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({month: this.draftTargetMonth})
+                });
+                const d = await res.json();
+                if (!res.ok) { this.draftError = d.error || 'Gagal approve'; return; }
+                this.draftStep = 3;
+            } catch(e) { this.draftError = 'Network error'; }
+            finally { this.draftLoading = false; }
+        },
+
+        viewDraft() {
+            // Navigate calendar to target month and show draft events
+            this.draftPanelOpen = false;
+            this.draftMode = true;
+            this.draftMonth = this.draftTargetMonth;
+            const [y, m] = this.draftTargetMonth.split('-');
+            const firstMonday = this._firstMondayOf(parseInt(y), parseInt(m));
+            this.startDate = firstMonday;
+            this.loadSchedule();
+        },
+
+        exitDraft() {
+            this.draftMode = false;
+            this.draftMonth = '';
+            this.loadSchedule();
+        },
+
+        _firstMondayOf(year, month) {
+            const d = new Date(year, month - 1, 1);
+            const dow = d.getDay();
+            const diff = dow === 0 ? 1 : (dow === 1 ? 0 : 8 - dow);
+            d.setDate(d.getDate() + diff);
+            return d.toISOString().split('T')[0];
+        },
+
         prevWeek() {
-            const d = new Date(this.startDate);
-            d.setDate(d.getDate() - 7);
-            this.startDate = d.toISOString().split('T')[0];
-            this.loadSchedule();
+            const d = new Date(this.startDate); d.setDate(d.getDate() - 7);
+            this.startDate = d.toISOString().split('T')[0]; this.loadSchedule();
         },
-        
         nextWeek() {
-            const d = new Date(this.startDate);
-            d.setDate(d.getDate() + 7);
-            this.startDate = d.toISOString().split('T')[0];
-            this.loadSchedule();
+            const d = new Date(this.startDate); d.setDate(d.getDate() + 7);
+            this.startDate = d.toISOString().split('T')[0]; this.loadSchedule();
         },
-        
         goToday() {
-            this.startDate = new Date().toISOString().split('T')[0];
-            this.loadSchedule();
+            const d = new Date();
+            const day = d.getDay();
+            const diff = d.getDate() - (day === 0 ? 6 : day - 1);
+            d.setDate(diff);
+            this.startDate = d.toISOString().split('T')[0]; this.loadSchedule();
         }
     }
 }

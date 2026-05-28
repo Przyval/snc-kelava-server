@@ -225,6 +225,10 @@ app.register_blueprint(barcode_bp, url_prefix="/api/v1/enterprise/barcode")
 from kil.backend.legacy.api.schedule_generator import schedule_gen_bp
 app.register_blueprint(schedule_gen_bp, url_prefix="/api/v1/enterprise/schedule-gen")
 
+# Auto-Draft Schedule Generator
+from kil.backend.legacy.api.schedule_draft import draft_bp
+app.register_blueprint(draft_bp)
+
 # Chemical Usage Tracking
 from kil.backend.legacy.api.chemical_tracking import chemical_bp
 app.register_blueprint(chemical_bp, url_prefix="/api/v1/enterprise/chemicals")

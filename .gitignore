@@ -75,3 +75,11 @@ htmlcov/
 # --- Staff photos (binary assets) ---
 "Foto Karyawan/"
 kil/backend/legacy/web/enterprise/static/img/staff/
+.gstack/
+
+# --- Local operational Excel data (not source) ---
+*JADWAL TEKNISI*.xlsx
+Data_Karyawan_SNC_*.xlsx
+KPI Station*.xlsx
+KPI Teknisi*.xlsx
+*REKAP ABSENSI*.xlsx
