@@ -1,0 +1,254 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Tax Compliance Dashboard{% endblock %}
+{% block content %}
+<div x-data="taxDashboard()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Tax Compliance</h1>
+      <p class="text-sm text-gray-500 mt-1">PPN Faktur Pajak • PPh23 Bukti Potong • Kalender Pajak</p>
+    </div>
+    <div class="flex gap-2 items-center">
+      <select x-model="year" @change="init()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Alert: Overdue obligations -->
+  <div x-show="overdueCount > 0" class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+    <div class="text-red-600 text-xl">⚠</div>
+    <div>
+      <div class="font-semibold text-red-800" x-text="overdueCount + ' kewajiban pajak OVERDUE!'"></div>
+      <div class="text-sm text-red-600">Segera tindaklanjuti untuk menghindari denda.</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Tax Calendar -->
+    <div class="bg-white rounded-xl border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h2 class="font-semibold text-gray-800">Kalender Kewajiban Pajak <span x-text="year"></span></h2>
+      </div>
+      <div x-show="loading" class="p-6 text-center text-gray-400 text-sm">Memuat kalender...</div>
+      <div x-show="!loading" class="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+        <template x-for="item in calendar" :key="item.id">
+          <div class="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
+            <div class="flex-1">
+              <div class="text-sm font-medium text-gray-800" x-text="item.obligation"></div>
+              <div class="text-xs text-gray-500 mt-0.5">
+                Deadline: <span x-text="item.deadline"></span>
+                <span x-show="item.status !== 'DONE'" class="ml-2"
+                  :class="item.urgency === 'OVERDUE' ? 'text-red-600 font-semibold' : item.urgency === 'DUE_SOON' ? 'text-orange-600' : 'text-gray-400'"
+                  x-text="item.urgency === 'OVERDUE' ? 'OVERDUE' : item.urgency === 'DUE_SOON' ? 'Dalam 7 hari' : (item.days_until + ' hari lagi')">
+                </span>
+              </div>
+            </div>
+            <div class="ml-3">
+              <span x-show="item.status === 'DONE'" class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">✓ Selesai</span>
+              <button x-show="item.status !== 'DONE'" @click="markDone(item.id)"
+                class="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">Tandai Selesai</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- PPN Summary -->
+    <div class="bg-white rounded-xl border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="font-semibold text-gray-800">PPN Bulanan <span x-text="year"></span></h2>
+        <div class="flex gap-2">
+          <a :href="'/api/v1/finance/tax/ppn/export-csv?year=' + year" class="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700">Export CSV</a>
+          <button @click="openFaktur()" class="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">+ Faktur</button>
+        </div>
+      </div>
+      <div x-show="loading" class="p-6 text-center text-gray-400 text-sm">Memuat...</div>
+      <div x-show="!loading" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th class="px-4 py-2 text-left">Bulan</th>
+              <th class="px-4 py-2 text-right">PPN Keluaran</th>
+              <th class="px-4 py-2 text-right">PPN Masukan</th>
+              <th class="px-4 py-2 text-right">Kurang Bayar</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <template x-for="row in ppnMonthly" :key="row.period_month">
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-2 text-gray-700" x-text="monthName(row.period_month)"></td>
+                <td class="px-4 py-2 text-right text-green-700" x-text="fmt(row.ppn_keluaran)"></td>
+                <td class="px-4 py-2 text-right text-orange-600" x-text="fmt(row.ppn_masukan)"></td>
+                <td class="px-4 py-2 text-right font-semibold" :class="row.ppn_kurang_bayar > 0 ? 'text-red-600' : 'text-green-700'" x-text="fmt(row.ppn_kurang_bayar)"></td>
+              </tr>
+            </template>
+            <tr x-show="ppnMonthly.length === 0">
+              <td colspan="4" class="px-4 py-6 text-center text-gray-400 text-xs">Belum ada data PPN</td>
+            </tr>
+          </tbody>
+          <tfoot x-show="ppnMonthly.length > 0" class="bg-gray-50 font-semibold text-sm border-t-2 border-gray-300">
+            <tr>
+              <td class="px-4 py-2">YTD Total</td>
+              <td class="px-4 py-2 text-right text-green-700" x-text="fmt(ppnYtd.keluaran)"></td>
+              <td class="px-4 py-2 text-right text-orange-600" x-text="fmt(ppnYtd.masukan)"></td>
+              <td class="px-4 py-2 text-right" :class="ppnYtd.kurang_bayar > 0 ? 'text-red-600' : 'text-green-700'" x-text="fmt(ppnYtd.kurang_bayar)"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PPh23 Summary -->
+  <div class="bg-white rounded-xl border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="font-semibold text-gray-800">PPh 23 — Rekap Pemotongan <span x-text="year"></span></h2>
+      <a :href="'/api/v1/finance/tax/pph23/export-csv?year=' + year" class="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700">Export CSV SPT</a>
+    </div>
+    <div x-show="!loading" class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+          <tr>
+            <th class="px-4 py-2 text-left">Bulan</th>
+            <th class="px-4 py-2 text-right">Jml Bukti Potong</th>
+            <th class="px-4 py-2 text-right">Total Bruto</th>
+            <th class="px-4 py-2 text-right">Total PPh23</th>
+            <th class="px-4 py-2 text-center">Terkirim</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <template x-for="row in pph23Monthly" :key="row.period_month">
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2 text-gray-700" x-text="monthName(row.period_month)"></td>
+              <td class="px-4 py-2 text-right text-gray-800" x-text="row.total_certificates"></td>
+              <td class="px-4 py-2 text-right text-gray-800" x-text="fmt(row.total_gross)"></td>
+              <td class="px-4 py-2 text-right font-semibold text-red-700" x-text="fmt(row.total_pph23)"></td>
+              <td class="px-4 py-2 text-center text-xs text-gray-500" x-text="row.sent_count + '/' + row.total_certificates"></td>
+            </tr>
+          </template>
+          <tr x-show="pph23Monthly.length === 0">
+            <td colspan="5" class="px-4 py-6 text-center text-gray-400 text-xs">Belum ada PPh23 dicatat</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Create Faktur Modal -->
+  <div x-show="showFaktur" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <div class="p-6 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Tambah Faktur Pajak PPN</h2>
+        <button @click="showFaktur=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tipe Faktur *</label>
+            <select x-model="fakturForm.faktur_type" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="KELUARAN">Faktur Keluaran (Penjualan)</option>
+              <option value="MASUKAN">Faktur Masukan (Pembelian)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tanggal Faktur *</label>
+            <input type="date" x-model="fakturForm.faktur_date" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">NPWP Pembeli/Penjual</label>
+            <input x-model="fakturForm.buyer_npwp" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="XX.XXX.XXX.X-XXX.XXX">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Nama Pembeli/Penjual</label>
+            <input x-model="fakturForm.buyer_name" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">DPP (Dasar Pengenaan) *</label>
+            <input type="number" x-model.number="fakturForm.dpp" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tarif PPN (%)</label>
+            <input type="number" x-model.number="fakturForm.ppn_rate" step="0.01" class="w-full border rounded-lg px-3 py-2 text-sm">
+            <div class="text-xs text-gray-500 mt-1">PPN: <span class="font-semibold text-blue-700" x-text="fmt(fakturForm.dpp * fakturForm.ppn_rate / 100)"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="p-6 border-t flex gap-3 justify-end">
+        <button @click="showFaktur=false" class="px-4 py-2 border rounded-lg text-sm">Batal</button>
+        <button @click="submitFaktur()" :disabled="submitting" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          <span x-show="!submitting">Simpan Faktur</span>
+          <span x-show="submitting">Menyimpan...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="toast.show" x-transition class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+    :class="toast.type==='ok' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'" x-text="toast.msg"></div>
+
+</div>
+<script>
+function taxDashboard() {
+  return {
+    year: new Date().getFullYear(),
+    loading: true, submitting: false,
+    calendar: [], ppnMonthly: [], pph23Monthly: [],
+    overdueCount: 0, showFaktur: false,
+    fakturForm: { faktur_type: 'KELUARAN', faktur_date: '', buyer_npwp: '', buyer_name: '', dpp: 0, ppn_rate: 11 },
+    toast: { show: false, msg: '', type: 'ok' },
+    months: ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'],
+
+    get ppnYtd() {
+      return {
+        keluaran:    this.ppnMonthly.reduce((s,r) => s + parseFloat(r.ppn_keluaran||0), 0),
+        masukan:     this.ppnMonthly.reduce((s,r) => s + parseFloat(r.ppn_masukan||0), 0),
+        kurang_bayar: this.ppnMonthly.reduce((s,r) => s + parseFloat(r.ppn_kurang_bayar||0), 0),
+      };
+    },
+
+    async init() {
+      this.loading = true;
+      const [dash, cal] = await Promise.all([
+        authenticatedFetch(`/api/v1/finance/tax/dashboard?year=${this.year}`).then(r=>r.json()),
+        authenticatedFetch(`/api/v1/finance/tax/calendar?year=${this.year}`).then(r=>r.json()),
+      ]);
+      this.ppnMonthly   = dash.data?.ppn_monthly || [];
+      this.pph23Monthly = dash.data?.pph23_monthly || [];
+      this.overdueCount = dash.data?.overdue_count || 0;
+      this.calendar     = cal.data?.items || [];
+      this.loading = false;
+    },
+
+    async markDone(id) {
+      await authenticatedFetch(`/api/v1/finance/tax/calendar/${id}/complete`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+      this.init();
+    },
+
+    openFaktur() {
+      this.fakturForm = { faktur_type: 'KELUARAN', faktur_date: new Date().toISOString().slice(0,10), buyer_npwp: '', buyer_name: '', dpp: 0, ppn_rate: 11 };
+      this.showFaktur = true;
+    },
+
+    async submitFaktur() {
+      if (!this.fakturForm.faktur_date || !this.fakturForm.dpp) return this.notify('Lengkapi tanggal dan DPP', 'err');
+      this.submitting = true;
+      const res = await authenticatedFetch('/api/v1/finance/tax/ppn/faktur', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(this.fakturForm) });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showFaktur = false; this.notify('Faktur ' + j.data.faktur_no + ' dibuat', 'ok'); this.init(); }
+      else this.notify(j.message || 'Gagal', 'err');
+    },
+
+    monthName(m) { return this.months[(parseInt(m)||1)-1]; },
+    notify(msg, type='ok') { this.toast = { show: true, msg, type }; setTimeout(() => this.toast.show = false, 3500); },
+    fmt(v) {
+      if (!v && v !== 0) return '-'; v = parseFloat(v); const neg = v < 0; v = Math.abs(v);
+      let s = v >= 1e9 ? (v/1e9).toFixed(1)+'M' : v >= 1e6 ? (v/1e6).toFixed(1)+'jt' : v.toLocaleString('id-ID');
+      return (neg?'(':'')+'Rp '+s+(neg?')':'');
+    },
+  };
+}
+</script>
+{% endblock %}

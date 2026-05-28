@@ -1,0 +1,260 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Controlling — Cost & Profit Center P&L{% endblock %}
+{% block content %}
+<div x-data="coDashboard()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Controlling (CO)</h1>
+      <p class="text-sm text-gray-500 mt-1">Cost Center P&L • Profit Center • Budget vs Actual</p>
+    </div>
+    <div class="flex gap-2">
+      <select x-model="year" @change="init()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+      </select>
+      <a href="/enterprise/finance/controlling/budget" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Kelola Budget</a>
+    </div>
+  </div>
+
+  <!-- Budget Utilisation Banner -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5" x-show="!loading">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-gray-800">Budget Utilisation YTD <span x-text="year"></span></h2>
+      <div class="text-sm text-gray-500">
+        Budget: <span class="font-semibold text-gray-900" x-text="fmt(util.total_budget)"></span>
+        &nbsp;|&nbsp;
+        Aktual: <span class="font-semibold" :class="util.total_actual > util.total_budget ? 'text-red-600' : 'text-green-700'" x-text="fmt(util.total_actual)"></span>
+        &nbsp;|&nbsp;
+        Varians: <span class="font-semibold" :class="util.total_variance > 0 ? 'text-red-600' : 'text-green-700'" x-text="fmt(util.total_variance)"></span>
+      </div>
+    </div>
+    <div class="w-full bg-gray-100 rounded-full h-3">
+      <div class="h-3 rounded-full transition-all duration-700"
+        :class="utilPct > 100 ? 'bg-red-500' : utilPct > 80 ? 'bg-yellow-500' : 'bg-green-500'"
+        :style="'width: ' + Math.min(utilPct, 100) + '%'"></div>
+    </div>
+    <div class="flex justify-between text-xs text-gray-400 mt-1">
+      <span>0%</span>
+      <span :class="utilPct > 100 ? 'text-red-600 font-medium' : 'text-gray-600'" x-text="utilPct.toFixed(1) + '% terpakai'"></span>
+      <span>100%</span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Cost Centers -->
+    <div class="bg-white rounded-xl border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h2 class="font-semibold text-gray-800">Cost Center — Realisasi vs Budget YTD</h2>
+      </div>
+      <div x-show="loading" class="p-8 text-center text-gray-400 text-sm">Memuat...</div>
+      <div x-show="!loading" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th class="px-4 py-2 text-left">Cost Center</th>
+              <th class="px-4 py-2 text-right">Budget</th>
+              <th class="px-4 py-2 text-right">Aktual</th>
+              <th class="px-4 py-2 text-right">Varians</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <template x-for="cc in costCenters" :key="cc.cost_center_id">
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-800" x-text="cc.cost_center"></td>
+                <td class="px-4 py-3 text-right text-gray-600" x-text="fmt(cc.budget_ytd)"></td>
+                <td class="px-4 py-3 text-right font-semibold" :class="cc.actual_ytd > cc.budget_ytd ? 'text-red-600' : 'text-gray-900'" x-text="fmt(cc.actual_ytd)"></td>
+                <td class="px-4 py-3 text-right">
+                  <span class="text-xs px-2 py-1 rounded-full"
+                    :class="cc.variance_ytd > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'"
+                    x-text="(cc.variance_ytd > 0 ? '+' : '') + fmt(cc.variance_ytd)"></span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Profit Centers -->
+    <div class="bg-white rounded-xl border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h2 class="font-semibold text-gray-800">Profit Center P&L YTD</h2>
+      </div>
+      <div x-show="loading" class="p-8 text-center text-gray-400 text-sm">Memuat...</div>
+      <div x-show="!loading" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th class="px-4 py-2 text-left">Profit Center</th>
+              <th class="px-4 py-2 text-right">Revenue</th>
+              <th class="px-4 py-2 text-right">Net Profit</th>
+              <th class="px-4 py-2 text-right">Margin</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <template x-for="pc in profitCenters" :key="pc.profit_center_id">
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">
+                  <div class="font-medium text-gray-800" x-text="pc.profit_center"></div>
+                  <div class="text-xs text-gray-400" x-text="pc.service_type"></div>
+                </td>
+                <td class="px-4 py-3 text-right text-gray-800" x-text="fmt(pc.revenue)"></td>
+                <td class="px-4 py-3 text-right font-semibold" :class="pc.net_profit >= 0 ? 'text-green-700' : 'text-red-700'" x-text="fmt(pc.net_profit)"></td>
+                <td class="px-4 py-3 text-right">
+                  <span class="text-xs font-semibold px-2 py-1 rounded-full"
+                    :class="pc.margin_pct >= 10 ? 'bg-green-100 text-green-700' : pc.margin_pct >= 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'"
+                    x-text="(pc.margin_pct || 0).toFixed(1) + '%'"></span>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="profitCenters.length === 0 && !loading">
+              <td colspan="4" class="px-4 py-8 text-center text-gray-400">Belum ada data GL per profit center</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Internal Orders -->
+  <div class="bg-white rounded-xl border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="font-semibold text-gray-800">Internal Orders (Project Tracking)</h2>
+      <button @click="openOrder()" class="text-sm px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Order Baru</button>
+    </div>
+    <div x-show="!loading" class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+          <tr>
+            <th class="px-4 py-2 text-left">Order No</th>
+            <th class="px-4 py-2 text-left">Deskripsi</th>
+            <th class="px-4 py-2 text-right">Budget</th>
+            <th class="px-4 py-2 text-right">Aktual</th>
+            <th class="px-4 py-2 text-right">Sisa</th>
+            <th class="px-4 py-2 text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <template x-for="io in internalOrders" :key="io.id">
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2 font-mono text-xs text-blue-700" x-text="io.order_no"></td>
+              <td class="px-4 py-2 text-gray-800" x-text="io.description"></td>
+              <td class="px-4 py-2 text-right text-gray-600" x-text="fmt(io.budget_amount)"></td>
+              <td class="px-4 py-2 text-right font-semibold" :class="io.actual_spend > io.budget_amount ? 'text-red-600' : 'text-gray-900'" x-text="fmt(io.actual_spend)"></td>
+              <td class="px-4 py-2 text-right" :class="io.remaining < 0 ? 'text-red-600 font-semibold' : 'text-green-700'" x-text="fmt(io.remaining)"></td>
+              <td class="px-4 py-2 text-center">
+                <span class="px-2 py-1 rounded-full text-xs"
+                  :class="{'bg-green-100 text-green-700': io.status==='OPEN', 'bg-gray-100 text-gray-500': io.status==='CLOSED'}"
+                  x-text="io.status"></span>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="internalOrders.length === 0">
+            <td colspan="6" class="px-4 py-6 text-center text-gray-400 text-xs">Belum ada internal order</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Create Internal Order Modal -->
+  <div x-show="showOrder" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+      <div class="p-6 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Internal Order Baru</h2>
+        <button @click="showOrder=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Deskripsi *</label>
+          <input x-model="orderForm.description" class="w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Budget (Rp)</label>
+            <input type="number" x-model.number="orderForm.budget_amount" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">PIC</label>
+            <input x-model="orderForm.responsible_user" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Mulai</label>
+            <input type="date" x-model="orderForm.start_date" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Selesai</label>
+            <input type="date" x-model="orderForm.end_date" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+      </div>
+      <div class="p-6 border-t flex gap-3 justify-end">
+        <button @click="showOrder=false" class="px-4 py-2 border rounded-lg text-sm">Batal</button>
+        <button @click="submitOrder()" :disabled="submitting" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="toast.show" x-transition class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+    :class="toast.type==='ok' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'" x-text="toast.msg"></div>
+
+</div>
+<script>
+function coDashboard() {
+  return {
+    year: new Date().getFullYear(),
+    loading: true, submitting: false,
+    costCenters: [], profitCenters: [], internalOrders: [],
+    util: { total_budget: 0, total_actual: 0, total_variance: 0 },
+    showOrder: false,
+    orderForm: { description: '', budget_amount: 0, responsible_user: '', start_date: '', end_date: '' },
+    toast: { show: false, msg: '', type: 'ok' },
+
+    get utilPct() {
+      if (!this.util.total_budget) return 0;
+      return parseFloat(this.util.total_actual) / parseFloat(this.util.total_budget) * 100;
+    },
+
+    async init() {
+      this.loading = true;
+      const [dash, orders] = await Promise.all([
+        authenticatedFetch(`/api/v1/finance/co/dashboard?year=${this.year}`).then(r=>r.json()),
+        authenticatedFetch('/api/v1/finance/co/internal-orders').then(r=>r.json()),
+      ]);
+      this.costCenters   = dash.data?.cost_centers || [];
+      this.profitCenters = dash.data?.profit_centers || [];
+      this.util          = dash.data?.budget_utilisation || {};
+      this.internalOrders = orders.data || [];
+      this.loading = false;
+    },
+
+    openOrder() {
+      this.orderForm = { description: '', budget_amount: 0, responsible_user: '', start_date: '', end_date: '' };
+      this.showOrder = true;
+    },
+
+    async submitOrder() {
+      if (!this.orderForm.description) return this.notify('Deskripsi wajib diisi', 'err');
+      this.submitting = true;
+      const res = await authenticatedFetch('/api/v1/finance/co/internal-orders', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(this.orderForm)
+      });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showOrder = false; this.notify('Internal order dibuat', 'ok'); this.init(); }
+      else this.notify(j.message || 'Gagal', 'err');
+    },
+
+    notify(msg, type='ok') { this.toast = { show: true, msg, type }; setTimeout(() => this.toast.show = false, 3500); },
+    fmt(v) {
+      if (!v && v !== 0) return '-';
+      v = parseFloat(v);
+      const neg = v < 0; v = Math.abs(v);
+      let s = v >= 1e9 ? (v/1e9).toFixed(1)+'M' : v >= 1e6 ? (v/1e6).toFixed(1)+'jt' : v.toLocaleString('id-ID');
+      return (neg?'(':'')+'Rp '+s+(neg?')':'');
+    },
+  };
+}
+</script>
+{% endblock %}

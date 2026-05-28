@@ -1,0 +1,162 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Neraca (Balance Sheet){% endblock %}
+{% block content %}
+<div x-data="balanceSheet()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Neraca (Balance Sheet)</h1>
+      <p class="text-sm text-gray-500 mt-1">Posisi keuangan per tanggal tertentu</p>
+    </div>
+    <a href="/enterprise/finance" class="text-sm text-blue-600 hover:underline">← Dashboard Keuangan</a>
+  </div>
+
+  <!-- Controls -->
+  <div class="bg-white rounded-xl border border-gray-200 p-4 flex gap-3 items-end">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Tahun</label>
+      <select x-model="params.year" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Bulan</label>
+      <select x-model="params.month" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <template x-for="m in months" :key="m.v"><option :value="m.v" x-text="m.l"></option></template>
+      </select>
+    </div>
+    <button @click="load()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Tampilkan</button>
+  </div>
+
+  <div x-show="loading" class="text-center py-16 text-gray-400">Memuat neraca...</div>
+
+  <div x-show="!loading && report" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Assets -->
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-5 py-4 bg-blue-600 text-white">
+        <div class="font-bold">ASET</div>
+        <div class="text-xl font-bold mt-1" x-text="fmtAmt(report?.total_assets)"></div>
+      </div>
+
+      <!-- Current Assets -->
+      <div class="px-5 py-3 bg-blue-50 border-b border-blue-100">
+        <div class="text-xs font-semibold text-blue-700 uppercase tracking-wide">Aset Lancar</div>
+      </div>
+      <template x-for="line in report?.current_assets" :key="line.account_code">
+        <div class="px-5 py-2 flex items-center justify-between hover:bg-gray-50 border-b border-gray-50">
+          <span class="text-sm text-gray-700 pl-2" x-text="line.description"></span>
+          <span class="text-sm" :class="line.is_subtotal ? 'font-semibold text-gray-900' : 'text-gray-600'" x-text="fmtAmt(line.amount)"></span>
+        </div>
+      </template>
+      <div class="px-5 py-3 flex items-center justify-between bg-blue-50 border-y border-blue-100">
+        <span class="text-sm font-bold text-blue-800">Total Aset Lancar</span>
+        <span class="text-sm font-bold text-blue-800" x-text="fmtAmt(report?.total_current_assets)"></span>
+      </div>
+
+      <!-- Fixed Assets -->
+      <div class="px-5 py-3 bg-gray-50 border-b border-gray-100">
+        <div class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Aset Tetap</div>
+      </div>
+      <template x-for="line in report?.fixed_assets" :key="line.account_code">
+        <div class="px-5 py-2 flex items-center justify-between hover:bg-gray-50 border-b border-gray-50">
+          <span class="text-sm text-gray-700 pl-2" x-text="line.description"></span>
+          <span class="text-sm text-gray-600" x-text="fmtAmt(line.amount)"></span>
+        </div>
+      </template>
+      <div class="px-5 py-3 flex items-center justify-between bg-gray-100 border-y border-gray-200">
+        <span class="text-sm font-bold text-gray-800">Total Aset Tetap</span>
+        <span class="text-sm font-bold text-gray-800" x-text="fmtAmt(report?.total_fixed_assets)"></span>
+      </div>
+    </div>
+
+    <!-- Liabilities + Equity -->
+    <div class="space-y-6">
+      <!-- Liabilities -->
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="px-5 py-4 bg-red-600 text-white">
+          <div class="font-bold">LIABILITAS</div>
+          <div class="text-xl font-bold mt-1" x-text="fmtAmt(report?.total_liabilities)"></div>
+        </div>
+        <template x-for="line in report?.liabilities" :key="line.account_code">
+          <div class="px-5 py-2 flex items-center justify-between hover:bg-gray-50 border-b border-gray-50">
+            <span class="text-sm text-gray-700 pl-2" x-text="line.description"></span>
+            <span class="text-sm" :class="line.is_subtotal ? 'font-semibold text-gray-900' : 'text-gray-600'" x-text="fmtAmt(line.amount)"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Equity -->
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="px-5 py-4 bg-green-600 text-white">
+          <div class="font-bold">EKUITAS</div>
+          <div class="text-xl font-bold mt-1" x-text="fmtAmt(report?.total_equity)"></div>
+        </div>
+        <template x-for="line in report?.equity" :key="line.account_code">
+          <div class="px-5 py-2 flex items-center justify-between hover:bg-gray-50 border-b border-gray-50">
+            <span class="text-sm text-gray-700 pl-2" x-text="line.description"></span>
+            <span class="text-sm text-gray-600" x-text="fmtAmt(line.amount)"></span>
+          </div>
+        </template>
+        <div class="px-5 py-2 flex items-center justify-between hover:bg-gray-50 border-b border-gray-50">
+          <span class="text-sm text-gray-700 pl-2">Laba (Rugi) Berjalan</span>
+          <span class="text-sm font-semibold" :class="report?.current_year_profit >= 0 ? 'text-green-700' : 'text-red-700'" x-text="fmtAmt(report?.current_year_profit)"></span>
+        </div>
+        <div class="px-5 py-3 flex items-center justify-between bg-green-50 border-t border-green-100">
+          <span class="text-sm font-bold text-green-800">Total Ekuitas</span>
+          <span class="text-sm font-bold text-green-800" x-text="fmtAmt(report?.total_equity)"></span>
+        </div>
+      </div>
+
+      <!-- Balance Check -->
+      <div class="bg-gray-50 rounded-xl border border-gray-200 p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs text-gray-500">Total Liabilitas + Ekuitas</div>
+            <div class="text-lg font-bold text-gray-900" x-text="fmtAmt((report?.total_liabilities||0) + (report?.total_equity||0))"></div>
+          </div>
+          <div x-show="Math.abs((report?.total_assets||0) - ((report?.total_liabilities||0)+(report?.total_equity||0))) < 1" class="text-green-600 font-bold text-sm">✓ Balance</div>
+          <div x-show="Math.abs((report?.total_assets||0) - ((report?.total_liabilities||0)+(report?.total_equity||0))) >= 1" class="text-red-600 font-bold text-sm">⚠ Tidak Balance</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="!loading && !report" class="text-center py-16 text-gray-400">Tidak ada data untuk periode ini</div>
+
+</div>
+
+<script>
+function balanceSheet() {
+  return {
+    report: null,
+    loading: false,
+    params: { year: new Date().getFullYear(), month: new Date().getMonth() + 1 },
+    months: [{v:1,l:'Januari'},{v:2,l:'Februari'},{v:3,l:'Maret'},{v:4,l:'April'},{v:5,l:'Mei'},{v:6,l:'Juni'},{v:7,l:'Juli'},{v:8,l:'Agustus'},{v:9,l:'September'},{v:10,l:'Oktober'},{v:11,l:'November'},{v:12,l:'Desember'}],
+
+    async init() { await this.load(); },
+
+    async load() {
+      this.loading = true;
+      this.report = null;
+      const res = await authenticatedFetch(`/api/v1/finance/reports/balance-sheet?year=${this.params.year}&month=${this.params.month}`);
+      const j = await res.json();
+      this.report = j.data || null;
+      this.loading = false;
+    },
+
+    fmtAmt(v) {
+      if (v == null) return '–';
+      v = parseFloat(v);
+      const neg = v < 0;
+      const abs = Math.abs(v);
+      let s;
+      if (abs >= 1e9) s = (abs/1e9).toFixed(2) + 'M';
+      else if (abs >= 1e6) s = (abs/1e6).toFixed(1) + 'jt';
+      else s = abs.toLocaleString('id-ID');
+      return (neg ? '(' : '') + 'Rp ' + s + (neg ? ')' : '');
+    },
+  };
+}
+</script>
+{% endblock %}

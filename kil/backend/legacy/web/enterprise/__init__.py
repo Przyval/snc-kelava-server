@@ -295,3 +295,71 @@ def swagger_ui():
 def api_explorer():
     """API Explorer — browse and call live API endpoints interactively."""
     return render_template("enterprise/api_explorer.html")
+
+
+# ── Finance Module Routes ─────────────────────────────────────
+
+@enterprise_bp.route("/finance")
+@enterprise_bp.route("/finance/dashboard")
+def finance_dashboard():
+    return render_template("enterprise/finance/dashboard.html")
+
+
+@enterprise_bp.route("/finance/ar")
+def finance_ar():
+    return render_template("enterprise/finance/ar/invoices.html")
+
+
+@enterprise_bp.route("/finance/ar/aging")
+def finance_ar_aging():
+    return render_template("enterprise/finance/ar/aging.html")
+
+
+@enterprise_bp.route("/finance/ap")
+def finance_ap():
+    return render_template("enterprise/finance/ap/invoices.html")
+
+
+@enterprise_bp.route("/finance/gl")
+def finance_gl():
+    return render_template("enterprise/finance/gl/journal_entries.html")
+
+
+@enterprise_bp.route("/finance/cash")
+def finance_cash():
+    return render_template("enterprise/finance/cash/position.html")
+
+
+@enterprise_bp.route("/finance/reports/pl")
+def finance_pl():
+    return render_template("enterprise/finance/reports/pl.html")
+
+
+@enterprise_bp.route("/finance/reports/balance-sheet")
+def finance_balance_sheet():
+    return render_template("enterprise/finance/reports/balance_sheet.html")
+
+
+@enterprise_bp.route("/finance/controlling")
+def finance_controlling():
+    return render_template("enterprise/finance/controlling/dashboard.html")
+
+
+@enterprise_bp.route("/finance/controlling/budget")
+def finance_budget():
+    return render_template("enterprise/finance/controlling/budget.html")
+
+
+@enterprise_bp.route("/finance/assets")
+def finance_assets():
+    return render_template("enterprise/finance/assets/register.html")
+
+
+@enterprise_bp.route("/finance/tax")
+def finance_tax():
+    return render_template("enterprise/finance/tax/dashboard.html")
+
+
+@enterprise_bp.route("/finance/audit")
+def finance_audit():
+    return render_template("enterprise/finance/audit/compliance.html")

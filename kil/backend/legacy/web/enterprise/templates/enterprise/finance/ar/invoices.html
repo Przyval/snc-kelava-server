@@ -1,0 +1,354 @@
+{% extends "enterprise/base.html" %}
+{% block title %}AR — Piutang Usaha{% endblock %}
+{% block content %}
+<div x-data="arInvoices()" x-init="init()" class="p-6 space-y-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Piutang Usaha (AR)</h1>
+      <p class="text-sm text-gray-500 mt-1">Daftar Invoice Penjualan</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="/enterprise/finance/ar/aging" class="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Aging Report</a>
+      <button @click="openCreate()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">+ Invoice Baru</button>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
+    <input x-model="filters.q" @input.debounce.400ms="load()" placeholder="Cari customer..." class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-48">
+    <select x-model="filters.status" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua Status</option>
+      <option value="DRAFT">Draft</option>
+      <option value="POSTED">Posted</option>
+      <option value="PARTIAL">Partial</option>
+      <option value="PAID">Lunas</option>
+      <option value="OVERDUE">Overdue</option>
+      <option value="CANCELLED">Cancelled</option>
+    </select>
+    <select x-model="filters.year" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua Tahun</option>
+      <template x-for="y in years" :key="y"><option :value="y" x-text="y"></option></template>
+    </select>
+    <div class="ml-auto text-sm text-gray-500" x-text="total_records + ' invoice'"></div>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div x-show="loading" class="p-8 text-center text-gray-400 text-sm">Memuat data...</div>
+    <table x-show="!loading" class="w-full text-sm">
+      <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+        <tr>
+          <th class="px-4 py-3 text-left">No. Invoice</th>
+          <th class="px-4 py-3 text-left">Customer</th>
+          <th class="px-4 py-3 text-left">Tanggal</th>
+          <th class="px-4 py-3 text-left">Jatuh Tempo</th>
+          <th class="px-4 py-3 text-right">Total</th>
+          <th class="px-4 py-3 text-right">Outstanding</th>
+          <th class="px-4 py-3 text-center">Status</th>
+          <th class="px-4 py-3 text-center">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        <template x-for="inv in invoices" :key="inv.id">
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-mono text-xs text-blue-700" x-text="inv.invoice_no"></td>
+            <td class="px-4 py-3 text-gray-800" x-text="inv.customer_name"></td>
+            <td class="px-4 py-3 text-gray-600" x-text="inv.invoice_date"></td>
+            <td class="px-4 py-3" :class="inv.days_overdue > 0 ? 'text-red-600 font-medium' : 'text-gray-600'" x-text="inv.due_date"></td>
+            <td class="px-4 py-3 text-right text-gray-800" x-text="fmt(inv.total_net)"></td>
+            <td class="px-4 py-3 text-right font-semibold" :class="inv.outstanding > 0 ? 'text-orange-600' : 'text-green-600'" x-text="fmt(inv.outstanding)"></td>
+            <td class="px-4 py-3 text-center">
+              <span class="px-2 py-1 rounded-full text-xs font-medium"
+                :class="{
+                  'bg-gray-100 text-gray-600': inv.status==='DRAFT',
+                  'bg-blue-100 text-blue-700': inv.status==='POSTED',
+                  'bg-yellow-100 text-yellow-700': inv.status==='PARTIAL',
+                  'bg-green-100 text-green-700': inv.status==='PAID',
+                  'bg-red-100 text-red-700': inv.status==='OVERDUE',
+                  'bg-gray-100 text-gray-400': inv.status==='CANCELLED'
+                }" x-text="inv.status"></span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <button x-show="inv.outstanding > 0" @click="openPayment(inv)" class="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700">Bayar</button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="invoices.length === 0 && !loading">
+          <td colspan="8" class="px-4 py-8 text-center text-gray-400">Tidak ada invoice ditemukan</td>
+        </tr>
+      </tbody>
+    </table>
+    <!-- Pagination -->
+    <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+      <button @click="prevPage()" :disabled="page===1" class="text-sm px-3 py-1 border rounded disabled:opacity-40">‹ Prev</button>
+      <span class="text-sm text-gray-500">Hal. <span x-text="page"></span></span>
+      <button @click="nextPage()" :disabled="invoices.length < 50" class="text-sm px-3 py-1 border rounded disabled:opacity-40">Next ›</button>
+    </div>
+  </div>
+
+  <!-- Create Invoice Modal -->
+  <div x-show="showCreate" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Invoice Penjualan Baru</h2>
+        <button @click="showCreate=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Customer *</label>
+            <select x-model="form.customer_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <option value="">-- Pilih Customer --</option>
+              <template x-for="c in customers" :key="c.id">
+                <option :value="c.id" x-text="c.name"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tanggal Invoice *</label>
+            <input type="date" x-model="form.invoice_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Due Date</label>
+            <input type="date" x-model="form.due_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">No. PO Customer</label>
+            <input type="text" x-model="form.po_number" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+        <!-- Lines -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs text-gray-500 font-medium uppercase">Item / Layanan</label>
+            <button @click="addLine()" class="text-xs text-blue-600 hover:underline">+ Tambah Baris</button>
+          </div>
+          <div class="space-y-2">
+            <template x-for="(line, i) in form.lines" :key="i">
+              <div class="grid grid-cols-12 gap-2 items-end">
+                <div class="col-span-5">
+                  <input x-model="line.description" placeholder="Deskripsi" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                </div>
+                <div class="col-span-2">
+                  <input x-model.number="line.quantity" type="number" placeholder="Qty" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                </div>
+                <div class="col-span-3">
+                  <input x-model.number="line.unit_price" type="number" placeholder="Harga" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                </div>
+                <div class="col-span-1 text-right text-xs text-gray-600" x-text="fmt(line.quantity * line.unit_price)"></div>
+                <div class="col-span-1">
+                  <button @click="form.lines.splice(i,1)" class="text-red-400 hover:text-red-600 text-sm">✕</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">PPN (Rp)</label>
+            <input type="number" x-model.number="form.ppn_amount" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div class="flex items-end justify-end">
+            <div class="text-right">
+              <div class="text-xs text-gray-500">Total Invoice</div>
+              <div class="text-xl font-bold text-blue-700" x-text="fmt(lineTotal + (form.ppn_amount||0))"></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Keterangan</label>
+          <textarea x-model="form.description" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"></textarea>
+        </div>
+      </div>
+      <div class="p-6 border-t border-gray-100 flex gap-3 justify-end">
+        <button @click="showCreate=false" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">Batal</button>
+        <button @click="submitInvoice()" :disabled="submitting" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          <span x-show="!submitting">Simpan & Post</span>
+          <span x-show="submitting">Menyimpan...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment Modal -->
+  <div x-show="showPayment" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+      <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Terima Pembayaran</h2>
+        <button @click="showPayment=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4" x-show="selectedInv">
+        <div class="bg-blue-50 rounded-lg p-3 text-sm">
+          <div class="font-medium" x-text="selectedInv?.customer_name"></div>
+          <div class="text-gray-600" x-text="selectedInv?.invoice_no"></div>
+          <div class="text-orange-600 font-semibold mt-1">Outstanding: <span x-text="fmt(selectedInv?.outstanding)"></span></div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Tanggal Bayar *</label>
+          <input type="date" x-model="payForm.payment_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Jumlah Diterima *</label>
+          <input type="number" x-model.number="payForm.amount" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Rekening Bank *</label>
+          <select x-model="payForm.bank_account_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="">-- Pilih --</option>
+            <template x-for="b in bankAccounts" :key="b.id">
+              <option :value="b.id" x-text="b.account_name + ' - ' + b.bank_name"></option>
+            </template>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Referensi</label>
+          <input type="text" x-model="payForm.reference" placeholder="No. bukti / transfer" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+      </div>
+      <div class="p-6 border-t border-gray-100 flex gap-3 justify-end">
+        <button @click="showPayment=false" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">Batal</button>
+        <button @click="submitPayment()" :disabled="submitting" class="px-6 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50">
+          <span x-show="!submitting">Konfirmasi Bayar</span>
+          <span x-show="submitting">Memproses...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div x-show="toast.show" x-transition class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+    :class="toast.type==='ok' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'" x-text="toast.msg"></div>
+
+</div>
+
+<script>
+function arInvoices() {
+  return {
+    invoices: [], customers: [], bankAccounts: [],
+    loading: false, submitting: false,
+    showCreate: false, showPayment: false,
+    selectedInv: null,
+    page: 1,
+    total_records: 0,
+    years: [2024, 2025, 2026],
+    filters: { q: '', status: '', year: '' },
+    form: { customer_id: '', invoice_date: '', due_date: '', po_number: '', ppn_amount: 0, description: '', lines: [] },
+    payForm: { payment_date: '', amount: 0, bank_account_id: '', reference: '' },
+    toast: { show: false, msg: '', type: 'ok' },
+
+    get lineTotal() {
+      return this.form.lines.reduce((s, l) => s + ((l.quantity||1) * (l.unit_price||0)), 0);
+    },
+
+    async init() {
+      await this.load();
+      await this.loadMaster();
+    },
+
+    async load() {
+      this.loading = true;
+      const p = new URLSearchParams({ page: this.page });
+      if (this.filters.q) p.set('customer', this.filters.q);
+      if (this.filters.status) p.set('status', this.filters.status);
+      if (this.filters.year) p.set('year', this.filters.year);
+      const res = await authenticatedFetch(`/api/v1/finance/ar/invoices?${p}`);
+      const j = await res.json();
+      this.invoices = j.data || [];
+      this.total_records = this.invoices.length;
+      this.loading = false;
+    },
+
+    async loadMaster() {
+      const [cr, br] = await Promise.all([
+        authenticatedFetch('/api/v1/finance/ar/customers').then(r=>r.json()),
+        authenticatedFetch('/api/v1/finance/cash/accounts').then(r=>r.json()),
+      ]);
+      this.customers = cr.data || [];
+      this.bankAccounts = br.data || [];
+    },
+
+    openCreate() {
+      this.form = { customer_id: '', invoice_date: new Date().toISOString().slice(0,10), due_date: '', po_number: '', ppn_amount: 0, description: '', lines: [] };
+      this.addLine();
+      this.showCreate = true;
+    },
+
+    addLine() {
+      this.form.lines.push({ description: '', quantity: 1, unit_price: 0, expense_account: '4001' });
+    },
+
+    openPayment(inv) {
+      this.selectedInv = inv;
+      this.payForm = { payment_date: new Date().toISOString().slice(0,10), amount: inv.outstanding, bank_account_id: '', reference: '' };
+      this.showPayment = true;
+    },
+
+    async submitInvoice() {
+      if (!this.form.customer_id || !this.form.invoice_date || !this.form.lines.length) {
+        return this.notify('Lengkapi data customer, tanggal, dan minimal 1 item', 'err');
+      }
+      this.submitting = true;
+      const lines = this.form.lines.map(l => ({
+        description: l.description, quantity: l.quantity||1,
+        unit_price: l.unit_price, total_price: (l.quantity||1)*(l.unit_price||0),
+        revenue_account: '4001'
+      }));
+      const payload = { ...this.form, lines };
+      const res = await authenticatedFetch('/api/v1/finance/ar/invoices', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') {
+        this.showCreate = false;
+        this.notify('Invoice ' + j.data.invoice_no + ' berhasil dibuat', 'ok');
+        this.load();
+      } else {
+        this.notify(j.message || 'Gagal menyimpan invoice', 'err');
+      }
+    },
+
+    async submitPayment() {
+      if (!this.payForm.payment_date || !this.payForm.amount || !this.payForm.bank_account_id) {
+        return this.notify('Lengkapi tanggal, jumlah, dan rekening bank', 'err');
+      }
+      this.submitting = true;
+      const payload = {
+        customer_id: this.selectedInv.customer_id,
+        payment_date: this.payForm.payment_date,
+        amount: this.payForm.amount,
+        bank_account_id: this.payForm.bank_account_id,
+        reference: this.payForm.reference,
+        invoice_ids: [this.selectedInv.id],
+      };
+      const res = await authenticatedFetch('/api/v1/finance/ar/payments', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') {
+        this.showPayment = false;
+        this.notify('Pembayaran ' + j.data.payment_no + ' berhasil dicatat', 'ok');
+        this.load();
+      } else {
+        this.notify(j.message || 'Gagal mencatat pembayaran', 'err');
+      }
+    },
+
+    prevPage() { if (this.page > 1) { this.page--; this.load(); } },
+    nextPage() { if (this.invoices.length === 50) { this.page++; this.load(); } },
+
+    notify(msg, type='ok') {
+      this.toast = { show: true, msg, type };
+      setTimeout(() => this.toast.show = false, 3500);
+    },
+
+    fmt(v) {
+      if (!v && v !== 0) return '-';
+      v = parseFloat(v);
+      if (v >= 1e9) return 'Rp ' + (v/1e9).toFixed(1) + 'M';
+      if (v >= 1e6) return 'Rp ' + (v/1e6).toFixed(1) + 'jt';
+      return 'Rp ' + v.toLocaleString('id-ID');
+    },
+  };
+}
+</script>
+{% endblock %}

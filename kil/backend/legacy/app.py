@@ -269,6 +269,27 @@ app.register_blueprint(scheduling_write_bp, url_prefix="/api/v1/enterprise")
 from kil.backend.legacy.api.customers_write import customers_write_bp
 app.register_blueprint(customers_write_bp, url_prefix="/api/v1/enterprise")
 
+# ── Finance Module (SAP-grade GL/AR/AP/Cash/CO/AM/Tax/Audit) ─
+from kil.backend.legacy.api.finance.gl import gl_bp
+from kil.backend.legacy.api.finance.ar import ar_bp
+from kil.backend.legacy.api.finance.ap import ap_bp
+from kil.backend.legacy.api.finance.cash import cash_bp
+from kil.backend.legacy.api.finance.reports import reports_bp
+from kil.backend.legacy.api.finance.controlling import co_bp
+from kil.backend.legacy.api.finance.assets import am_bp
+from kil.backend.legacy.api.finance.tax import tax_bp
+from kil.backend.legacy.api.finance.audit import audit_fin_bp
+
+app.register_blueprint(gl_bp)
+app.register_blueprint(ar_bp)
+app.register_blueprint(ap_bp)
+app.register_blueprint(cash_bp)
+app.register_blueprint(reports_bp)
+app.register_blueprint(co_bp)
+app.register_blueprint(am_bp)
+app.register_blueprint(tax_bp)
+app.register_blueprint(audit_fin_bp)
+
 # Enterprise Web Dashboard
 app.register_blueprint(enterprise_bp, url_prefix="/enterprise")
 

@@ -1,0 +1,277 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Finance Dashboard{% endblock %}
+
+{% block head %}
+<style>
+  .kpi-card { @apply bg-white rounded-xl border border-gray-100 p-5 shadow-sm; }
+  .section-title { @apply text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4; }
+  .metric-val  { @apply text-2xl font-bold text-gray-900; }
+  .metric-sub  { @apply text-xs text-gray-500 mt-1; }
+  .badge-green { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800; }
+  .badge-red   { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800; }
+  .badge-yellow{ @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="financeDashboard()" x-init="init()" class="p-6 max-w-screen-xl mx-auto">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Finance Dashboard</h1>
+      <p class="text-sm text-gray-500 mt-0.5">PT. Alindra Prima Indonesia — <span x-text="today"></span></p>
+    </div>
+    <div class="flex gap-2">
+      <select x-model="year" @change="loadAll()" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white">
+        <template x-for="y in years" :key="y">
+          <option :value="y" x-text="y"></option>
+        </template>
+      </select>
+      <button @click="loadAll()" class="flex items-center gap-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <template x-if="alerts.length > 0">
+    <div class="mb-5 space-y-2">
+      <template x-for="a in alerts" :key="a.msg">
+        <div :class="a.level === 'danger' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-yellow-50 border-yellow-200 text-yellow-800'"
+             class="flex items-center gap-2 border rounded-lg px-4 py-2.5 text-sm">
+          <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+          </svg>
+          <span x-text="a.msg"></span>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <!-- Loading skeleton -->
+  <template x-if="loading">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <template x-for="i in 8">
+        <div class="kpi-card animate-pulse h-24 bg-gray-50"></div>
+      </template>
+    </div>
+  </template>
+
+  <!-- KPI Row 1: P&L YTD -->
+  <template x-if="!loading && ytd">
+    <div>
+      <p class="section-title">P&L — Year to Date <span x-text="year"></span></p>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div class="kpi-card">
+          <p class="text-xs text-gray-500 mb-1">Revenue</p>
+          <p class="metric-val text-blue-700" x-text="fmt(ytd.revenue)"></p>
+          <p class="metric-sub">YTD</p>
+        </div>
+        <div class="kpi-card">
+          <p class="text-xs text-gray-500 mb-1">Gross Profit</p>
+          <p class="metric-val text-green-700" x-text="fmt(ytd.gross_profit)"></p>
+          <p class="metric-sub" x-text="ytd.gp_margin_pct + '% GP margin'"></p>
+        </div>
+        <div class="kpi-card">
+          <p class="text-xs text-gray-500 mb-1">Net Profit</p>
+          <p :class="ytd.net_profit >= 0 ? 'metric-val text-green-700' : 'metric-val text-red-700'"
+             x-text="fmt(ytd.net_profit)"></p>
+          <p class="metric-sub" x-text="ytd.net_margin_pct + '% net margin'"></p>
+        </div>
+        <div class="kpi-card">
+          <p class="text-xs text-gray-500 mb-1">Cash & Bank</p>
+          <p :class="bs.cash < 100000000 ? 'metric-val text-red-700' : 'metric-val text-gray-900'"
+             x-text="fmt(bs.cash)"></p>
+          <p class="metric-sub">All accounts</p>
+        </div>
+        <div class="kpi-card">
+          <p class="text-xs text-gray-500 mb-1">AR Outstanding</p>
+          <p class="metric-val text-orange-700" x-text="fmt(bs.ar_outstanding)"></p>
+          <p class="metric-sub" x-text="fmt(bs.ar_overdue) + ' overdue'"></p>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Row 2: AR Aging + Cash Position -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+
+    <!-- AR Aging Buckets -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+      <div class="flex items-center justify-between mb-4">
+        <p class="section-title mb-0">AR Aging</p>
+        <a href="/enterprise/finance/ar/aging" class="text-xs text-orange-600 hover:underline">Lihat detail →</a>
+      </div>
+      <template x-if="agingBuckets.length === 0">
+        <p class="text-sm text-gray-400 text-center py-6">No data</p>
+      </template>
+      <template x-if="agingBuckets.length > 0">
+        <div class="space-y-2">
+          <template x-for="b in agingBuckets" :key="b.aging_bucket">
+            <div class="flex items-center gap-3">
+              <span class="text-xs text-gray-500 w-16" x-text="b.aging_bucket"></span>
+              <div class="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                <div :style="'width:' + (b.total / agingMax * 100) + '%'"
+                     :class="b.aging_bucket === '>365' ? 'bg-red-500' : b.aging_bucket === 'CURRENT' ? 'bg-green-500' : 'bg-orange-400'"
+                     class="h-3 rounded-full transition-all"></div>
+              </div>
+              <span class="text-xs font-medium text-gray-700 w-28 text-right" x-text="fmt(b.total)"></span>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    <!-- Cash Flow Forecast (30 days) -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+      <div class="flex items-center justify-between mb-4">
+        <p class="section-title mb-0">Cash Forecast — 4 Weeks</p>
+        <a href="/enterprise/finance/cash/forecast" class="text-xs text-orange-600 hover:underline">Detail →</a>
+      </div>
+      <template x-if="cashForecast.length === 0">
+        <p class="text-sm text-gray-400 text-center py-6">No forecast data</p>
+      </template>
+      <div class="space-y-2">
+        <template x-for="w in cashForecast.slice(0,4)" :key="w.week_start">
+          <div class="flex items-center justify-between text-sm py-1 border-b border-gray-50">
+            <span class="text-gray-500 text-xs" x-text="w.week_start"></span>
+            <div class="flex items-center gap-4">
+              <span class="text-green-600 text-xs" x-text="'+' + fmtShort(w.ar_expected)"></span>
+              <span class="text-red-500 text-xs"   x-text="'-' + fmtShort(w.ap_expected)"></span>
+              <span :class="w.low_cash_alert ? 'font-bold text-red-600' : 'font-semibold text-gray-800'"
+                    class="text-xs w-28 text-right" x-text="fmt(w.running_balance)"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Recent Journal Entries + Quick Links -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+    <!-- Recent JEs -->
+    <div class="md:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+      <div class="flex items-center justify-between mb-4">
+        <p class="section-title mb-0">Recent Journal Entries</p>
+        <a href="/enterprise/finance/gl/journal-entries" class="text-xs text-orange-600 hover:underline">Semua →</a>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-gray-400 border-b border-gray-100">
+            <th class="text-left pb-2 font-medium">No.</th>
+            <th class="text-left pb-2 font-medium">Tanggal</th>
+            <th class="text-left pb-2 font-medium">Deskripsi</th>
+            <th class="text-right pb-2 font-medium">Jumlah</th>
+            <th class="text-center pb-2 font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="je in recentJE" :key="je.id">
+            <tr class="border-b border-gray-50 hover:bg-gray-50 transition">
+              <td class="py-2 text-orange-600 font-mono text-xs" x-text="je.entry_no"></td>
+              <td class="py-2 text-gray-600" x-text="je.entry_date"></td>
+              <td class="py-2 text-gray-700 max-w-xs truncate" x-text="je.description"></td>
+              <td class="py-2 text-right font-medium" x-text="fmt(je.total_debit)"></td>
+              <td class="py-2 text-center">
+                <span :class="je.status === 'POSTED' ? 'badge-green' : 'badge-yellow'" x-text="je.status"></span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+      <p class="section-title">Quick Actions</p>
+      <div class="space-y-2">
+        <a href="/enterprise/finance/ar/invoices/new"
+           class="flex items-center gap-3 p-3 rounded-lg bg-orange-50 hover:bg-orange-100 transition text-sm text-orange-700 font-medium">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Buat Invoice Baru
+        </a>
+        <a href="/enterprise/finance/ar/payments/new"
+           class="flex items-center gap-3 p-3 rounded-lg bg-green-50 hover:bg-green-100 transition text-sm text-green-700 font-medium">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          Catat Penerimaan
+        </a>
+        <a href="/enterprise/finance/ap/invoices/new"
+           class="flex items-center gap-3 p-3 rounded-lg bg-blue-50 hover:bg-blue-100 transition text-sm text-blue-700 font-medium">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          Input Tagihan Vendor
+        </a>
+        <a href="/enterprise/finance/gl/journal-entries/new"
+           class="flex items-center gap-3 p-3 rounded-lg bg-purple-50 hover:bg-purple-100 transition text-sm text-purple-700 font-medium">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          Jurnal Umum
+        </a>
+        <a href="/enterprise/finance/reports/pl"
+           class="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition text-sm text-gray-700 font-medium">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Laporan Laba/Rugi
+        </a>
+        <a href="/enterprise/finance/reports/balance-sheet"
+           class="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition text-sm text-gray-700 font-medium">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          Neraca
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function financeDashboard() {
+  return {
+    loading: true,
+    year: new Date().getFullYear(),
+    years: Array.from({length: 5}, (_, i) => new Date().getFullYear() - i),
+    today: new Date().toLocaleDateString('id-ID', {day:'2-digit',month:'long',year:'numeric'}),
+    ytd: null, bs: {}, alerts: [], agingBuckets: [], agingMax: 1,
+    cashForecast: [], recentJE: [],
+
+    async init() { await this.loadAll(); },
+
+    async loadAll() {
+      this.loading = true;
+      try {
+        const [dash, forecast] = await Promise.all([
+          authenticatedFetch(`/api/v1/finance/reports/dashboard`).then(r => r.json()),
+          authenticatedFetch(`/api/v1/finance/cash/forecast?days=28`).then(r => r.json()),
+        ]);
+        if (dash.success) {
+          this.ytd          = dash.data.ytd;
+          this.bs           = dash.data.balance_sheet;
+          this.alerts       = dash.data.alerts;
+          this.agingBuckets = dash.data.ar_aging_buckets;
+          this.agingMax     = Math.max(...this.agingBuckets.map(b => parseFloat(b.total) || 0), 1);
+          this.recentJE     = dash.data.recent_journal_entries;
+        }
+        if (forecast.success) {
+          this.cashForecast = forecast.data.weekly_forecast || [];
+        }
+      } catch(e) { console.error(e); }
+      this.loading = false;
+    },
+
+    fmt(v) {
+      if (!v && v !== 0) return '-';
+      const n = parseFloat(v);
+      if (Math.abs(n) >= 1e9) return 'Rp ' + (n/1e9).toFixed(1) + 'M';
+      if (Math.abs(n) >= 1e6) return 'Rp ' + (n/1e6).toFixed(0) + 'jt';
+      return 'Rp ' + n.toLocaleString('id-ID');
+    },
+    fmtShort(v) {
+      const n = parseFloat(v) || 0;
+      if (n >= 1e9) return (n/1e9).toFixed(1) + 'M';
+      if (n >= 1e6) return (n/1e6).toFixed(0) + 'jt';
+      return (n/1e3).toFixed(0) + 'K';
+    },
+  };
+}
+</script>
+{% endblock %}

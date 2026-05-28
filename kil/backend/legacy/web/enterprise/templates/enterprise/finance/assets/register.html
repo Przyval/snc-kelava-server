@@ -1,0 +1,360 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Asset Management — Register Aset{% endblock %}
+{% block content %}
+<div x-data="assetRegister()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Register Aset Tetap</h1>
+      <p class="text-sm text-gray-500 mt-1">Inventory, Penyusutan, & Disposal</p>
+    </div>
+    <div class="flex gap-2">
+      <button @click="openDepRun()" class="px-3 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">🔄 Run Depreciation</button>
+      <button @click="openCreate()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">+ Tambah Aset</button>
+    </div>
+  </div>
+
+  <!-- Category Summary -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <template x-for="cat in categories" :key="cat.category">
+      <div class="bg-white rounded-xl border border-gray-200 p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1" x-text="cat.category"></div>
+        <div class="text-lg font-bold text-gray-900" x-text="cat.active_assets + ' aset'"></div>
+        <div class="text-xs text-gray-600 mt-1">NBV: <span class="font-medium" x-text="fmt(cat.total_nbv)"></span></div>
+        <div class="text-xs text-gray-400">Cost: <span x-text="fmt(cat.total_cost)"></span></div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Filter & Search -->
+  <div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
+    <input x-model="filters.q" @input.debounce.400ms="load()" placeholder="Cari aset..." class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-48">
+    <select x-model="filters.category" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua Kategori</option>
+      <option value="KENDARAAN">Kendaraan</option>
+      <option value="PERALATAN">Peralatan</option>
+      <option value="INVENTARIS">Inventaris Kantor</option>
+      <option value="IT">IT Equipment</option>
+    </select>
+    <select x-model="filters.status" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="ACTIVE">Aktif</option>
+      <option value="DISPOSED">Disposed</option>
+      <option value="">Semua</option>
+    </select>
+  </div>
+
+  <!-- Asset Table -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div x-show="loading" class="p-8 text-center text-gray-400 text-sm">Memuat data aset...</div>
+    <div x-show="!loading" class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+          <tr>
+            <th class="px-4 py-3 text-left">Asset No</th>
+            <th class="px-4 py-3 text-left">Deskripsi</th>
+            <th class="px-4 py-3 text-left">Kategori</th>
+            <th class="px-4 py-3 text-left">Lokasi</th>
+            <th class="px-4 py-3 text-right">Harga Beli</th>
+            <th class="px-4 py-3 text-right">Akm. Dep</th>
+            <th class="px-4 py-3 text-right">NBV</th>
+            <th class="px-4 py-3 text-center">Status</th>
+            <th class="px-4 py-3 text-center">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <template x-for="a in assets" :key="a.id">
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 font-mono text-xs text-blue-700" x-text="a.asset_no"></td>
+              <td class="px-4 py-3">
+                <div class="text-gray-800 font-medium text-xs" x-text="a.description"></div>
+                <div class="text-gray-400 text-xs" x-text="(a.brand || '') + (a.model ? ' ' + a.model : '')"></div>
+              </td>
+              <td class="px-4 py-3 text-xs text-gray-600" x-text="a.category"></td>
+              <td class="px-4 py-3 text-xs text-gray-600" x-text="a.location || '–'"></td>
+              <td class="px-4 py-3 text-right text-gray-800" x-text="fmt(a.purchase_cost)"></td>
+              <td class="px-4 py-3 text-right text-orange-600" x-text="fmt(a.accumulated_depreciation)"></td>
+              <td class="px-4 py-3 text-right font-semibold text-gray-900" x-text="fmt(a.net_book_value)"></td>
+              <td class="px-4 py-3 text-center">
+                <span class="px-2 py-1 rounded-full text-xs"
+                  :class="{
+                    'bg-green-100 text-green-700': a.asset_status==='ACTIVE',
+                    'bg-gray-100 text-gray-500':  a.asset_status==='DISPOSED',
+                    'bg-yellow-100 text-yellow-700': a.asset_status==='FULLY_DEPRECIATED'
+                  }"
+                  x-text="a.asset_status"></span>
+              </td>
+              <td class="px-4 py-3 text-center">
+                <button x-show="!a.is_disposed" @click="openDispose(a)" class="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">Dispose</button>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="assets.length === 0 && !loading">
+            <td colspan="9" class="px-4 py-8 text-center text-gray-400">Tidak ada aset ditemukan</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+      <button @click="prevPage()" :disabled="page===1" class="text-sm px-3 py-1 border rounded disabled:opacity-40">‹ Prev</button>
+      <span class="text-sm text-gray-500">Hal. <span x-text="page"></span></span>
+      <button @click="nextPage()" :disabled="assets.length < 50" class="text-sm px-3 py-1 border rounded disabled:opacity-40">Next ›</button>
+    </div>
+  </div>
+
+  <!-- Create Asset Modal -->
+  <div x-show="showCreate" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Tambah Aset Baru</h2>
+        <button @click="showCreate=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="col-span-2">
+            <label class="block text-xs text-gray-500 mb-1">Deskripsi *</label>
+            <input x-model="form.description" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Kategori *</label>
+            <select x-model="form.category" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="KENDARAAN">Kendaraan</option>
+              <option value="PERALATAN">Peralatan</option>
+              <option value="INVENTARIS">Inventaris Kantor</option>
+              <option value="IT">IT Equipment</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tanggal Beli *</label>
+            <input type="date" x-model="form.purchase_date" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Harga Beli (Rp) *</label>
+            <input type="number" x-model.number="form.purchase_cost" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Umur (Bulan) *</label>
+            <input type="number" x-model.number="form.useful_life_months" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Metode Penyusutan</label>
+            <select x-model="form.depreciation_method" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="STRAIGHT_LINE">Garis Lurus (Straight Line)</option>
+              <option value="DECLINING_BALANCE">Saldo Menurun</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Nilai Residu (Rp)</label>
+            <input type="number" x-model.number="form.salvage_value" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Merk</label>
+            <input x-model="form.brand" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Lokasi</label>
+            <input x-model="form.location" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">No. Seri</label>
+            <input x-model="form.serial_no" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+        <!-- Preview monthly dep -->
+        <div class="bg-blue-50 rounded-lg p-3 text-sm" x-show="form.purchase_cost > 0 && form.useful_life_months > 0">
+          Penyusutan per bulan (est.):
+          <span class="font-bold text-blue-700" x-text="fmt((form.purchase_cost - (form.salvage_value||0)) / form.useful_life_months)"></span>
+        </div>
+      </div>
+      <div class="p-6 border-t flex gap-3 justify-end">
+        <button @click="showCreate=false" class="px-4 py-2 border rounded-lg text-sm">Batal</button>
+        <button @click="submitAsset()" :disabled="submitting" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          <span x-show="!submitting">Simpan</span>
+          <span x-show="submitting">Menyimpan...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disposal Modal -->
+  <div x-show="showDispose" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+      <div class="p-6 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Disposal Aset</h2>
+        <button @click="showDispose=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4" x-show="selectedAsset">
+        <div class="bg-orange-50 rounded-lg p-3 text-sm">
+          <div class="font-medium" x-text="selectedAsset?.description"></div>
+          <div class="text-gray-600 text-xs" x-text="selectedAsset?.asset_no"></div>
+          <div class="text-orange-600 font-semibold mt-1">NBV: <span x-text="fmt(selectedAsset?.net_book_value)"></span></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tanggal Disposal *</label>
+            <input type="date" x-model="disposeForm.disposal_date" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tipe *</label>
+            <select x-model="disposeForm.disposal_type" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <option value="SALE">Dijual</option>
+              <option value="WRITE_OFF">Write Off</option>
+              <option value="DONATION">Donasi</option>
+              <option value="LOSS">Hilang/Rusak</option>
+            </select>
+          </div>
+        </div>
+        <div x-show="disposeForm.disposal_type === 'SALE'">
+          <label class="block text-xs text-gray-500 mb-1">Harga Jual (Rp)</label>
+          <input type="number" x-model.number="disposeForm.sale_amount" class="w-full border rounded-lg px-3 py-2 text-sm">
+          <div class="text-xs mt-1" x-show="disposeForm.sale_amount > 0"
+            :class="disposeForm.sale_amount >= selectedAsset?.net_book_value ? 'text-green-600' : 'text-red-600'"
+            x-text="disposeForm.sale_amount >= selectedAsset?.net_book_value ? '✓ Gain: Rp ' + (disposeForm.sale_amount - (selectedAsset?.net_book_value||0)).toLocaleString('id-ID') : '⚠ Loss: Rp ' + Math.abs(disposeForm.sale_amount - (selectedAsset?.net_book_value||0)).toLocaleString('id-ID')">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Keterangan</label>
+          <textarea x-model="disposeForm.notes" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+        </div>
+      </div>
+      <div class="p-6 border-t flex gap-3 justify-end">
+        <button @click="showDispose=false" class="px-4 py-2 border rounded-lg text-sm">Batal</button>
+        <button @click="submitDispose()" :disabled="submitting" class="px-6 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50">
+          <span x-show="!submitting">Konfirmasi Disposal</span>
+          <span x-show="submitting">Memproses...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Depreciation Run Modal -->
+  <div x-show="showDepRun" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+      <div class="p-6 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Run Depreciation</h2>
+        <button @click="showDepRun=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tahun *</label>
+            <input type="number" x-model.number="depRunForm.period_year" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Bulan *</label>
+            <select x-model.number="depRunForm.period_month" class="w-full border rounded-lg px-3 py-2 text-sm">
+              <template x-for="m in months" :key="m.v"><option :value="parseInt(m.v)" x-text="m.l"></option></template>
+            </select>
+          </div>
+        </div>
+        <div class="bg-yellow-50 rounded-lg p-3 text-xs text-yellow-800">
+          Ini akan mem-posting jurnal penyusutan untuk semua aset aktif pada periode ini dan tidak bisa di-undo.
+        </div>
+      </div>
+      <div class="p-6 border-t flex gap-3 justify-end">
+        <button @click="showDepRun=false" class="px-4 py-2 border rounded-lg text-sm">Batal</button>
+        <button @click="runDepreciation()" :disabled="submitting" class="px-6 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
+          <span x-show="!submitting">Jalankan</span>
+          <span x-show="submitting">Memproses...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="toast.show" x-transition class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+    :class="toast.type==='ok' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'" x-text="toast.msg"></div>
+
+</div>
+<script>
+function assetRegister() {
+  return {
+    assets: [], categories: [],
+    loading: false, submitting: false,
+    showCreate: false, showDispose: false, showDepRun: false,
+    selectedAsset: null, page: 1,
+    filters: { q: '', category: '', status: 'ACTIVE' },
+    form: { description: '', category: 'PERALATAN', purchase_date: '', purchase_cost: 0, useful_life_months: 60, depreciation_method: 'STRAIGHT_LINE', salvage_value: 0, brand: '', location: '', serial_no: '' },
+    disposeForm: { disposal_date: '', disposal_type: 'SALE', sale_amount: 0, notes: '' },
+    depRunForm: { period_year: new Date().getFullYear(), period_month: new Date().getMonth()+1 },
+    toast: { show: false, msg: '', type: 'ok' },
+    months: [{v:'1',l:'Jan'},{v:'2',l:'Feb'},{v:'3',l:'Mar'},{v:'4',l:'Apr'},{v:'5',l:'Mei'},{v:'6',l:'Jun'},{v:'7',l:'Jul'},{v:'8',l:'Ags'},{v:'9',l:'Sep'},{v:'10',l:'Okt'},{v:'11',l:'Nov'},{v:'12',l:'Des'}],
+
+    async init() {
+      await Promise.all([this.load(), this.loadCategories()]);
+    },
+
+    async load() {
+      this.loading = true;
+      const p = new URLSearchParams({ page: this.page });
+      if (this.filters.q) p.set('q', this.filters.q);
+      if (this.filters.category) p.set('category', this.filters.category);
+      if (this.filters.status) p.set('status', this.filters.status);
+      const res = await authenticatedFetch(`/api/v1/finance/assets?${p}`);
+      const j = await res.json();
+      this.assets = j.data || [];
+      this.loading = false;
+    },
+
+    async loadCategories() {
+      const res = await authenticatedFetch('/api/v1/finance/assets/categories');
+      const j = await res.json();
+      this.categories = j.data || [];
+    },
+
+    openCreate() {
+      this.form = { description: '', category: 'PERALATAN', purchase_date: new Date().toISOString().slice(0,10), purchase_cost: 0, useful_life_months: 60, depreciation_method: 'STRAIGHT_LINE', salvage_value: 0, brand: '', location: '', serial_no: '' };
+      this.showCreate = true;
+    },
+
+    openDispose(a) {
+      this.selectedAsset = a;
+      this.disposeForm = { disposal_date: new Date().toISOString().slice(0,10), disposal_type: 'SALE', sale_amount: 0, notes: '' };
+      this.showDispose = true;
+    },
+
+    openDepRun() {
+      this.depRunForm = { period_year: new Date().getFullYear(), period_month: new Date().getMonth()+1 };
+      this.showDepRun = true;
+    },
+
+    async submitAsset() {
+      if (!this.form.description || !this.form.purchase_date || !this.form.purchase_cost) return this.notify('Lengkapi field wajib', 'err');
+      this.submitting = true;
+      const res = await authenticatedFetch('/api/v1/finance/assets', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(this.form) });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showCreate = false; this.notify('Aset ' + j.data.asset_no + ' berhasil ditambahkan', 'ok'); this.init(); }
+      else this.notify(j.message || 'Gagal', 'err');
+    },
+
+    async submitDispose() {
+      if (!this.disposeForm.disposal_date || !this.disposeForm.disposal_type) return this.notify('Lengkapi tanggal dan tipe disposal', 'err');
+      this.submitting = true;
+      const res = await authenticatedFetch(`/api/v1/finance/assets/${this.selectedAsset.id}/dispose`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(this.disposeForm) });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showDispose = false; this.notify(j.message || 'Disposal berhasil', 'ok'); this.init(); }
+      else this.notify(j.message || 'Gagal', 'err');
+    },
+
+    async runDepreciation() {
+      this.submitting = true;
+      const res = await authenticatedFetch('/api/v1/finance/assets/depreciation/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(this.depRunForm) });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showDepRun = false; this.notify(j.message || 'Depreciation run berhasil', 'ok'); this.init(); }
+      else this.notify(j.message || 'Gagal', 'err');
+    },
+
+    prevPage() { if (this.page > 1) { this.page--; this.load(); } },
+    nextPage() { if (this.assets.length === 50) { this.page++; this.load(); } },
+
+    notify(msg, type='ok') { this.toast = { show: true, msg, type }; setTimeout(() => this.toast.show = false, 4000); },
+    fmt(v) {
+      if (!v && v !== 0) return '-'; v = parseFloat(v); const neg = v < 0; v = Math.abs(v);
+      let s = v >= 1e9 ? (v/1e9).toFixed(1)+'M' : v >= 1e6 ? (v/1e6).toFixed(1)+'jt' : v.toLocaleString('id-ID');
+      return (neg?'(':'')+'Rp '+s+(neg?')':'');
+    },
+  };
+}
+</script>
+{% endblock %}

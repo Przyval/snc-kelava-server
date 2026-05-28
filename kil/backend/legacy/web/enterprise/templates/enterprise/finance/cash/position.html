@@ -1,0 +1,255 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Cash & Bank Position{% endblock %}
+{% block content %}
+<div x-data="cashPosition()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Cash & Bank Position</h1>
+      <p class="text-sm text-gray-500 mt-1">Posisi kas real-time & proyeksi arus kas</p>
+    </div>
+    <button @click="openTx()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">+ Transaksi</button>
+  </div>
+
+  <!-- Account Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <template x-for="acc in accounts" :key="acc.id">
+      <div class="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="text-xs text-gray-500 uppercase tracking-wide" x-text="acc.bank_name"></div>
+            <div class="font-semibold text-gray-800 mt-1" x-text="acc.account_name"></div>
+            <div class="text-xs text-gray-400 font-mono" x-text="acc.account_number"></div>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm" x-text="acc.currency || 'IDR'"></div>
+        </div>
+        <div class="mt-4">
+          <div class="text-xs text-gray-500">Saldo Buku</div>
+          <div class="text-2xl font-bold text-gray-900" x-text="fmt(acc.book_balance)"></div>
+        </div>
+        <div class="mt-2 flex items-center justify-between text-xs text-gray-400">
+          <span>Pending keluar: <span class="text-orange-600" x-text="fmt(acc.pending_payments||0)"></span></span>
+          <span class="px-2 py-1 rounded-full" :class="acc.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'" x-text="acc.is_active ? 'Aktif' : 'Nonaktif'"></span>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Total Cash -->
+  <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl p-5 text-white">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-blue-200 text-sm">Total Cash & Bank</div>
+        <div class="text-3xl font-bold mt-1" x-text="fmt(totalCash)"></div>
+      </div>
+      <div class="text-right">
+        <div class="text-blue-200 text-xs">Proyeksi 30 hari</div>
+        <div class="text-xl font-semibold mt-1" x-text="fmt(forecast30d)"></div>
+        <div class="text-xs mt-1" :class="forecast30d >= totalCash ? 'text-green-300' : 'text-red-300'"
+          x-text="forecast30d >= totalCash ? '▲ Positif' : '▼ Negatif'"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Weekly Forecast Table -->
+    <div class="bg-white rounded-xl border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h2 class="font-semibold text-gray-800">Proyeksi Arus Kas (12 Minggu)</h2>
+      </div>
+      <div x-show="forecastLoading" class="p-8 text-center text-gray-400 text-sm">Memuat proyeksi...</div>
+      <div x-show="!forecastLoading" class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th class="px-4 py-2 text-left">Periode</th>
+              <th class="px-4 py-2 text-right">Masuk</th>
+              <th class="px-4 py-2 text-right">Keluar</th>
+              <th class="px-4 py-2 text-right">Net</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <template x-for="row in forecast" :key="row.week_start">
+              <tr :class="row.low_cash_alert ? 'bg-red-50' : 'hover:bg-gray-50'">
+                <td class="px-4 py-2 text-gray-700">
+                  <span x-text="row.week_label || row.week_start"></span>
+                  <span x-show="row.low_cash_alert" class="ml-2 text-xs text-red-600 font-medium">⚠ Kas Rendah</span>
+                </td>
+                <td class="px-4 py-2 text-right text-green-700" x-text="fmt(row.expected_inflow)"></td>
+                <td class="px-4 py-2 text-right text-red-600" x-text="fmt(row.expected_outflow)"></td>
+                <td class="px-4 py-2 text-right font-semibold" :class="(row.expected_inflow - row.expected_outflow) >= 0 ? 'text-green-700' : 'text-red-700'" x-text="fmt(row.expected_inflow - row.expected_outflow)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recent Transactions -->
+    <div class="bg-white rounded-xl border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="font-semibold text-gray-800">Transaksi Terbaru</h2>
+        <select x-model="selectedAccount" @change="loadTx()" class="text-xs border border-gray-300 rounded px-2 py-1">
+          <option value="">Semua Rekening</option>
+          <template x-for="a in accounts" :key="a.id">
+            <option :value="a.id" x-text="a.account_name"></option>
+          </template>
+        </select>
+      </div>
+      <div x-show="txLoading" class="p-8 text-center text-gray-400 text-sm">Memuat transaksi...</div>
+      <div x-show="!txLoading" class="overflow-y-auto max-h-80">
+        <table class="w-full text-sm">
+          <tbody class="divide-y divide-gray-100">
+            <template x-for="tx in transactions" :key="tx.id">
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">
+                  <div class="text-gray-800 text-xs font-medium" x-text="tx.description"></div>
+                  <div class="text-gray-400 text-xs" x-text="tx.transaction_date + ' · ' + (tx.reference||'')"></div>
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <span :class="tx.transaction_type==='CREDIT' ? 'text-green-600 font-semibold' : 'text-red-600'" x-text="(tx.transaction_type==='CREDIT' ? '+' : '-') + fmt(tx.amount)"></span>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="transactions.length === 0">
+              <td colspan="2" class="px-4 py-6 text-center text-gray-400 text-xs">Belum ada transaksi</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Transaction Modal -->
+  <div x-show="showTx" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+      <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Tambah Transaksi Bank</h2>
+        <button @click="showTx=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Rekening *</label>
+          <select x-model="txForm.bank_account_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="">-- Pilih --</option>
+            <template x-for="a in accounts" :key="a.id">
+              <option :value="a.id" x-text="a.account_name + ' - ' + a.bank_name"></option>
+            </template>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tanggal *</label>
+            <input type="date" x-model="txForm.transaction_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tipe *</label>
+            <select x-model="txForm.transaction_type" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <option value="CREDIT">Masuk (Kredit)</option>
+              <option value="DEBIT">Keluar (Debit)</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Jumlah *</label>
+          <input type="number" x-model.number="txForm.amount" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Keterangan *</label>
+          <input type="text" x-model="txForm.description" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Referensi</label>
+          <input type="text" x-model="txForm.reference" placeholder="No. bukti / mutasi" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+      </div>
+      <div class="p-6 border-t border-gray-100 flex gap-3 justify-end">
+        <button @click="showTx=false" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">Batal</button>
+        <button @click="submitTx()" :disabled="submitting" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          <span x-show="!submitting">Simpan</span>
+          <span x-show="submitting">Menyimpan...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="toast.show" x-transition class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+    :class="toast.type==='ok' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'" x-text="toast.msg"></div>
+
+</div>
+
+<script>
+function cashPosition() {
+  return {
+    accounts: [], transactions: [], forecast: [],
+    loading: false, txLoading: false, forecastLoading: true, submitting: false,
+    showTx: false, selectedAccount: '',
+    txForm: { bank_account_id: '', transaction_date: '', transaction_type: 'CREDIT', amount: 0, description: '', reference: '' },
+    toast: { show: false, msg: '', type: 'ok' },
+
+    get totalCash() { return this.accounts.reduce((s,a) => s + parseFloat(a.book_balance||0), 0); },
+    get forecast30d() {
+      const net = this.forecast.slice(0,4).reduce((s,r) => s + parseFloat(r.expected_inflow||0) - parseFloat(r.expected_outflow||0), 0);
+      return this.totalCash + net;
+    },
+
+    async init() {
+      await Promise.all([this.loadAccounts(), this.loadForecast()]);
+    },
+
+    async loadAccounts() {
+      const res = await authenticatedFetch('/api/v1/finance/cash/position');
+      const j = await res.json();
+      this.accounts = j.data || [];
+      await this.loadTx();
+    },
+
+    async loadTx() {
+      this.txLoading = true;
+      const p = this.selectedAccount ? `?bank_account_id=${this.selectedAccount}&limit=30` : '?limit=30';
+      const res = await authenticatedFetch('/api/v1/finance/cash/transactions' + p);
+      const j = await res.json();
+      this.transactions = j.data || [];
+      this.txLoading = false;
+    },
+
+    async loadForecast() {
+      this.forecastLoading = true;
+      const res = await authenticatedFetch('/api/v1/finance/cash/forecast');
+      const j = await res.json();
+      this.forecast = j.data?.weekly || [];
+      this.forecastLoading = false;
+    },
+
+    openTx() {
+      this.txForm = { bank_account_id: '', transaction_date: new Date().toISOString().slice(0,10), transaction_type: 'CREDIT', amount: 0, description: '', reference: '' };
+      this.showTx = true;
+    },
+
+    async submitTx() {
+      if (!this.txForm.bank_account_id || !this.txForm.transaction_date || !this.txForm.amount) {
+        return this.notify('Lengkapi rekening, tanggal, dan jumlah', 'err');
+      }
+      this.submitting = true;
+      const res = await authenticatedFetch('/api/v1/finance/cash/transactions', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(this.txForm)
+      });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showTx = false; this.notify('Transaksi berhasil dicatat', 'ok'); this.loadAccounts(); }
+      else this.notify(j.message || 'Gagal menyimpan', 'err');
+    },
+
+    notify(msg, type='ok') { this.toast = { show: true, msg, type }; setTimeout(() => this.toast.show = false, 3500); },
+
+    fmt(v) {
+      if (!v && v !== 0) return '-';
+      v = parseFloat(v);
+      if (v >= 1e9) return 'Rp ' + (v/1e9).toFixed(1) + 'M';
+      if (v >= 1e6) return 'Rp ' + (v/1e6).toFixed(1) + 'jt';
+      return 'Rp ' + v.toLocaleString('id-ID');
+    },
+  };
+}
+</script>
+{% endblock %}

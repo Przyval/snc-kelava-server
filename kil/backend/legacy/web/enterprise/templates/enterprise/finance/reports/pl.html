@@ -1,0 +1,188 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Laporan Laba Rugi{% endblock %}
+{% block content %}
+<div x-data="plReport()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Laporan Laba Rugi</h1>
+      <p class="text-sm text-gray-500 mt-1">Profit & Loss Statement</p>
+    </div>
+    <a href="/enterprise/finance" class="text-sm text-blue-600 hover:underline">← Dashboard Keuangan</a>
+  </div>
+
+  <!-- Controls -->
+  <div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Tahun</label>
+      <select x-model="params.year" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Bulan</label>
+      <select x-model="params.month" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="">YTD (Jan–sekarang)</option>
+        <template x-for="m in months" :key="m.v"><option :value="m.v" x-text="m.l"></option></template>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Bandingkan dengan</label>
+      <select x-model="params.compare_year" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <option value="">–</option>
+        <option value="2024">2024</option><option value="2025">2025</option>
+      </select>
+    </div>
+    <button @click="load()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Tampilkan</button>
+  </div>
+
+  <!-- Loading -->
+  <div x-show="loading" class="text-center py-16 text-gray-400">Memuat laporan...</div>
+
+  <!-- Report -->
+  <div x-show="!loading && report" class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <!-- Header -->
+    <div class="px-6 py-5 border-b border-gray-100 bg-gray-50">
+      <div class="text-center">
+        <div class="font-bold text-gray-900">PT. ALINDRA PRIMA INDONESIA</div>
+        <div class="text-sm text-gray-600 mt-1">LAPORAN LABA RUGI</div>
+        <div class="text-xs text-gray-500 mt-1" x-text="reportPeriodLabel"></div>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs text-gray-500">
+          <tr>
+            <th class="px-6 py-3 text-left">Keterangan</th>
+            <th class="px-6 py-3 text-right" x-text="'Rp (' + params.year + ')'"></th>
+            <th x-show="params.compare_year" class="px-6 py-3 text-right" x-text="'Rp (' + params.compare_year + ')'"></th>
+            <th x-show="params.compare_year" class="px-6 py-3 text-right">Var %</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Revenue -->
+          <template x-for="sec in report?.sections" :key="sec.title">
+            <template x-if="true">
+              <tbody>
+                <tr class="bg-blue-50">
+                  <td class="px-6 py-3 font-bold text-gray-800 uppercase text-xs tracking-wide" x-text="sec.title"></td>
+                  <td></td>
+                  <td x-show="params.compare_year"></td>
+                  <td x-show="params.compare_year"></td>
+                </tr>
+                <template x-for="line in sec.lines" :key="line.account_code">
+                  <tr class="hover:bg-gray-50" :class="line.is_subtotal ? 'font-semibold border-t border-gray-200' : ''">
+                    <td class="px-6 py-2 text-gray-700" :class="line.is_subtotal ? 'pl-6' : 'pl-10'" x-text="line.description"></td>
+                    <td class="px-6 py-2 text-right" :class="line.amount < 0 ? 'text-red-600' : 'text-gray-800'" x-text="fmtAmt(line.amount)"></td>
+                    <td x-show="params.compare_year" class="px-6 py-2 text-right text-gray-500" x-text="fmtAmt(line.compare_amount)"></td>
+                    <td x-show="params.compare_year" class="px-6 py-2 text-right text-xs" :class="line.variance_pct > 0 ? 'text-green-600' : 'text-red-600'" x-text="line.variance_pct != null ? (line.variance_pct > 0 ? '+' : '') + line.variance_pct?.toFixed(1) + '%' : ''"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </template>
+          </template>
+
+          <!-- Gross Profit -->
+          <tr class="border-t-2 border-gray-300 bg-green-50">
+            <td class="px-6 py-3 font-bold text-gray-800">LABA KOTOR</td>
+            <td class="px-6 py-3 text-right font-bold text-green-700" x-text="fmtAmt(report?.gross_profit)"></td>
+            <td x-show="params.compare_year" class="px-6 py-3 text-right font-bold text-green-600" x-text="fmtAmt(report?.compare_gross_profit)"></td>
+            <td x-show="params.compare_year" class="px-6 py-3 text-right text-xs" :class="varPct(report?.gross_profit, report?.compare_gross_profit) > 0 ? 'text-green-600' : 'text-red-600'" x-text="fmtVar(varPct(report?.gross_profit, report?.compare_gross_profit))"></td>
+          </tr>
+          <tr class="bg-green-50">
+            <td class="px-6 py-2 text-gray-500 text-xs pl-10">Margin Kotor</td>
+            <td class="px-6 py-2 text-right text-xs text-gray-500" x-text="pct(report?.gross_profit, report?.revenue)"></td>
+            <td x-show="params.compare_year" class="px-6 py-2 text-right text-xs text-gray-400" x-text="pct(report?.compare_gross_profit, report?.compare_revenue)"></td>
+            <td x-show="params.compare_year"></td>
+          </tr>
+
+          <!-- Net Profit -->
+          <tr class="border-t-2 border-gray-400 bg-blue-50">
+            <td class="px-6 py-3 font-bold text-gray-900 text-base">LABA BERSIH</td>
+            <td class="px-6 py-3 text-right font-bold text-base" :class="report?.net_profit >= 0 ? 'text-blue-700' : 'text-red-700'" x-text="fmtAmt(report?.net_profit)"></td>
+            <td x-show="params.compare_year" class="px-6 py-3 text-right font-bold" :class="report?.compare_net_profit >= 0 ? 'text-blue-600' : 'text-red-600'" x-text="fmtAmt(report?.compare_net_profit)"></td>
+            <td x-show="params.compare_year" class="px-6 py-3 text-right text-sm font-semibold" :class="varPct(report?.net_profit, report?.compare_net_profit) > 0 ? 'text-green-600' : 'text-red-600'" x-text="fmtVar(varPct(report?.net_profit, report?.compare_net_profit))"></td>
+          </tr>
+          <tr class="bg-blue-50">
+            <td class="px-6 py-2 text-gray-500 text-xs pl-10">Net Profit Margin</td>
+            <td class="px-6 py-2 text-right text-xs text-gray-500" x-text="pct(report?.net_profit, report?.revenue)"></td>
+            <td x-show="params.compare_year" class="px-6 py-2 text-right text-xs text-gray-400" x-text="pct(report?.compare_net_profit, report?.compare_revenue)"></td>
+            <td x-show="params.compare_year"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="px-6 py-3 border-t border-gray-100 text-xs text-gray-400">
+      Dicetak: <span x-text="new Date().toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'})"></span>
+    </div>
+  </div>
+
+  <div x-show="!loading && !report" class="text-center py-16 text-gray-400">Tidak ada data untuk periode ini</div>
+
+</div>
+
+<script>
+function plReport() {
+  return {
+    report: null,
+    loading: false,
+    params: { year: new Date().getFullYear(), month: '', compare_year: '' },
+    months: [{v:'1',l:'Januari'},{v:'2',l:'Februari'},{v:'3',l:'Maret'},{v:'4',l:'April'},{v:'5',l:'Mei'},{v:'6',l:'Juni'},{v:'7',l:'Juli'},{v:'8',l:'Agustus'},{v:'9',l:'September'},{v:'10',l:'Oktober'},{v:'11',l:'November'},{v:'12',l:'Desember'}],
+
+    get reportPeriodLabel() {
+      const y = this.params.year;
+      if (!this.params.month) return `Januari – ${this.currentMonthName} ${y}`;
+      const m = this.months.find(m => m.v == this.params.month);
+      return `${m?.l || ''} ${y}`;
+    },
+
+    get currentMonthName() {
+      return this.months[new Date().getMonth()]?.l || '';
+    },
+
+    async init() { await this.load(); },
+
+    async load() {
+      this.loading = true;
+      this.report = null;
+      const p = new URLSearchParams({ year: this.params.year });
+      if (this.params.month) p.set('month', this.params.month);
+      if (this.params.compare_year) p.set('compare_year', this.params.compare_year);
+      const res = await authenticatedFetch(`/api/v1/finance/reports/pl?${p}`);
+      const j = await res.json();
+      this.report = j.data || null;
+      this.loading = false;
+    },
+
+    fmtAmt(v) {
+      if (v == null) return '–';
+      v = parseFloat(v);
+      const neg = v < 0;
+      const abs = Math.abs(v);
+      let s;
+      if (abs >= 1e9) s = (abs/1e9).toFixed(2) + 'M';
+      else if (abs >= 1e6) s = (abs/1e6).toFixed(1) + 'jt';
+      else s = abs.toLocaleString('id-ID');
+      return (neg ? '(' : '') + 'Rp ' + s + (neg ? ')' : '');
+    },
+
+    pct(num, denom) {
+      if (!num || !denom || denom === 0) return '–';
+      return (parseFloat(num)/parseFloat(denom)*100).toFixed(1) + '%';
+    },
+
+    varPct(curr, prev) {
+      if (!prev || parseFloat(prev) === 0) return null;
+      return (parseFloat(curr||0) - parseFloat(prev)) / Math.abs(parseFloat(prev)) * 100;
+    },
+
+    fmtVar(v) {
+      if (v == null) return '–';
+      return (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+    },
+  };
+}
+</script>
+{% endblock %}

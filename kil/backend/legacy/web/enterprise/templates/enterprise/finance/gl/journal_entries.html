@@ -1,0 +1,278 @@
+{% extends "enterprise/base.html" %}
+{% block title %}GL — Jurnal Umum{% endblock %}
+{% block content %}
+<div x-data="glJournal()" x-init="init()" class="p-6 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Jurnal Umum (GL)</h1>
+      <p class="text-sm text-gray-500 mt-1">General Ledger — Semua Transaksi Keuangan</p>
+    </div>
+    <button @click="openCreate()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">+ Jurnal Baru</button>
+  </div>
+
+  <!-- Filter -->
+  <div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3 items-center">
+    <select x-model="filters.status" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua Status</option>
+      <option value="DRAFT">Draft</option>
+      <option value="POSTED">Posted</option>
+      <option value="REVERSED">Reversed</option>
+    </select>
+    <select x-model="filters.year" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua Tahun</option>
+      <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+    </select>
+    <select x-model="filters.month" @change="load()" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua Bulan</option>
+      <template x-for="m in months" :key="m.v"><option :value="m.v" x-text="m.l"></option></template>
+    </select>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div x-show="loading" class="p-8 text-center text-gray-400 text-sm">Memuat jurnal...</div>
+    <table x-show="!loading" class="w-full text-sm">
+      <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+        <tr>
+          <th class="px-4 py-3 text-left">No. Jurnal</th>
+          <th class="px-4 py-3 text-left">Tanggal</th>
+          <th class="px-4 py-3 text-left">Keterangan</th>
+          <th class="px-4 py-3 text-left">Tipe</th>
+          <th class="px-4 py-3 text-right">Total Debet</th>
+          <th class="px-4 py-3 text-center">Status</th>
+          <th class="px-4 py-3 text-center">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        <template x-for="je in entries" :key="je.id">
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-mono text-xs text-blue-700" x-text="je.entry_no"></td>
+            <td class="px-4 py-3 text-gray-600" x-text="je.entry_date"></td>
+            <td class="px-4 py-3 text-gray-800" x-text="je.description"></td>
+            <td class="px-4 py-3 text-xs text-gray-500" x-text="je.entry_type"></td>
+            <td class="px-4 py-3 text-right font-medium text-gray-900" x-text="fmt(je.total_debit)"></td>
+            <td class="px-4 py-3 text-center">
+              <span class="px-2 py-1 rounded-full text-xs font-medium"
+                :class="{'bg-gray-100 text-gray-600': je.status==='DRAFT', 'bg-green-100 text-green-700': je.status==='POSTED', 'bg-yellow-100 text-yellow-700': je.status==='REVERSED'}"
+                x-text="je.status"></span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <button @click="viewLines(je)" class="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">Detail</button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="entries.length === 0 && !loading">
+          <td colspan="7" class="px-4 py-8 text-center text-gray-400">Tidak ada jurnal ditemukan</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+      <button @click="prevPage()" :disabled="page===1" class="text-sm px-3 py-1 border rounded disabled:opacity-40">‹ Prev</button>
+      <span class="text-sm text-gray-500">Hal. <span x-text="page"></span></span>
+      <button @click="nextPage()" :disabled="entries.length < 50" class="text-sm px-3 py-1 border rounded disabled:opacity-40">Next ›</button>
+    </div>
+  </div>
+
+  <!-- Create Journal Modal -->
+  <div x-show="showCreate" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Jurnal Entry Baru</h2>
+        <button @click="showCreate=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Tanggal *</label>
+            <input type="date" x-model="form.entry_date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Keterangan *</label>
+            <input type="text" x-model="form.description" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+        <!-- Lines -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <label class="text-xs text-gray-500 font-medium uppercase">Baris Jurnal</label>
+            <button @click="addJeLine()" class="text-xs text-blue-600 hover:underline">+ Baris</button>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="grid grid-cols-12 gap-2 text-xs text-gray-500 uppercase mb-2 px-1">
+              <div class="col-span-3">Akun</div>
+              <div class="col-span-4">Keterangan</div>
+              <div class="col-span-2 text-right">Debet</div>
+              <div class="col-span-2 text-right">Kredit</div>
+              <div class="col-span-1"></div>
+            </div>
+            <template x-for="(line, i) in form.lines" :key="i">
+              <div class="grid grid-cols-12 gap-2 items-center mb-2">
+                <div class="col-span-3">
+                  <select x-model="line.account" class="w-full border border-gray-300 rounded px-2 py-1 text-xs">
+                    <option value="">-- Akun --</option>
+                    <template x-for="a in accounts" :key="a.code">
+                      <option :value="a.code" x-text="a.code + ' ' + a.name"></option>
+                    </template>
+                  </select>
+                </div>
+                <div class="col-span-4">
+                  <input x-model="line.description" placeholder="Keterangan" class="w-full border border-gray-300 rounded px-2 py-1 text-xs">
+                </div>
+                <div class="col-span-2">
+                  <input x-model.number="line.debit" type="number" placeholder="0" class="w-full border border-gray-300 rounded px-2 py-1 text-xs text-right">
+                </div>
+                <div class="col-span-2">
+                  <input x-model.number="line.credit" type="number" placeholder="0" class="w-full border border-gray-300 rounded px-2 py-1 text-xs text-right">
+                </div>
+                <div class="col-span-1">
+                  <button @click="form.lines.splice(i,1)" class="text-red-400 hover:text-red-600 text-sm">✕</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <!-- Balance Check -->
+          <div class="mt-3 flex items-center justify-end gap-6 text-sm">
+            <div>Total Debet: <span class="font-bold" x-text="fmt(totalDebit)"></span></div>
+            <div>Total Kredit: <span class="font-bold" x-text="fmt(totalCredit)"></span></div>
+            <div x-show="totalDebit !== totalCredit" class="text-red-600 text-xs font-medium">⚠ Tidak balance! Selisih: <span x-text="fmt(Math.abs(totalDebit - totalCredit))"></span></div>
+            <div x-show="totalDebit === totalCredit && form.lines.length > 0" class="text-green-600 text-xs font-medium">✓ Balance</div>
+          </div>
+        </div>
+      </div>
+      <div class="p-6 border-t border-gray-100 flex gap-3 justify-end">
+        <button @click="showCreate=false" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">Batal</button>
+        <button @click="submitJe()" :disabled="submitting || totalDebit !== totalCredit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          <span x-show="!submitting">Post Jurnal</span>
+          <span x-show="submitting">Memposting...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lines Detail Modal -->
+  <div x-show="showLines" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+      <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold" x-text="selectedJe?.entry_no"></h2>
+          <p class="text-sm text-gray-500" x-text="selectedJe?.description"></p>
+        </div>
+        <button @click="showLines=false" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      <div class="p-4" x-show="linesLoading" class="text-center text-gray-400 py-8">Memuat...</div>
+      <table x-show="!linesLoading" class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+          <tr>
+            <th class="px-4 py-2 text-left">Akun</th>
+            <th class="px-4 py-2 text-left">Keterangan</th>
+            <th class="px-4 py-2 text-right">Debet</th>
+            <th class="px-4 py-2 text-right">Kredit</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <template x-for="line in jeLines" :key="line.id">
+            <tr>
+              <td class="px-4 py-2 font-mono text-xs" x-text="line.account_code + ' ' + (line.account_name||'')"></td>
+              <td class="px-4 py-2 text-gray-600" x-text="line.description"></td>
+              <td class="px-4 py-2 text-right" x-text="line.debit > 0 ? fmt(line.debit) : ''"></td>
+              <td class="px-4 py-2 text-right" x-text="line.credit > 0 ? fmt(line.credit) : ''"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div x-show="toast.show" x-transition class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+    :class="toast.type==='ok' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'" x-text="toast.msg"></div>
+
+</div>
+
+<script>
+function glJournal() {
+  return {
+    entries: [], accounts: [], jeLines: [],
+    loading: false, submitting: false, linesLoading: false,
+    showCreate: false, showLines: false,
+    selectedJe: null, page: 1,
+    filters: { status: '', year: new Date().getFullYear(), month: '' },
+    form: { entry_date: '', description: '', lines: [] },
+    toast: { show: false, msg: '', type: 'ok' },
+    months: [{v:'1',l:'Jan'},{v:'2',l:'Feb'},{v:'3',l:'Mar'},{v:'4',l:'Apr'},{v:'5',l:'Mei'},{v:'6',l:'Jun'},{v:'7',l:'Jul'},{v:'8',l:'Ags'},{v:'9',l:'Sep'},{v:'10',l:'Okt'},{v:'11',l:'Nov'},{v:'12',l:'Des'}],
+
+    get totalDebit() { return this.form.lines.reduce((s,l) => s + (parseFloat(l.debit)||0), 0); },
+    get totalCredit() { return this.form.lines.reduce((s,l) => s + (parseFloat(l.credit)||0), 0); },
+
+    async init() {
+      await Promise.all([this.load(), this.loadAccounts()]);
+    },
+
+    async load() {
+      this.loading = true;
+      const p = new URLSearchParams({ page: this.page });
+      if (this.filters.status) p.set('status', this.filters.status);
+      if (this.filters.year) p.set('year', this.filters.year);
+      if (this.filters.month) p.set('month', this.filters.month);
+      const res = await authenticatedFetch(`/api/v1/finance/gl/entries?${p}`);
+      const j = await res.json();
+      this.entries = j.data || [];
+      this.loading = false;
+    },
+
+    async loadAccounts() {
+      const res = await authenticatedFetch('/api/v1/finance/gl/accounts');
+      const j = await res.json();
+      this.accounts = (j.data || []).filter(a => a.allow_posting);
+    },
+
+    openCreate() {
+      this.form = { entry_date: new Date().toISOString().slice(0,10), description: '', lines: [] };
+      this.addJeLine(); this.addJeLine();
+      this.showCreate = true;
+    },
+
+    addJeLine() { this.form.lines.push({ account: '', description: '', debit: 0, credit: 0 }); },
+
+    async viewLines(je) {
+      this.selectedJe = je;
+      this.jeLines = [];
+      this.linesLoading = true;
+      this.showLines = true;
+      const res = await authenticatedFetch(`/api/v1/finance/gl/entries/${je.id}/lines`);
+      const j = await res.json();
+      this.jeLines = j.data || [];
+      this.linesLoading = false;
+    },
+
+    async submitJe() {
+      if (!this.form.entry_date || !this.form.description) return this.notify('Lengkapi tanggal dan keterangan', 'err');
+      if (this.totalDebit !== this.totalCredit) return this.notify('Jurnal tidak balance', 'err');
+      this.submitting = true;
+      const res = await authenticatedFetch('/api/v1/finance/gl/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.form)
+      });
+      const j = await res.json();
+      this.submitting = false;
+      if (j.status === 'ok') { this.showCreate = false; this.notify('Jurnal ' + j.data.entry_no + ' berhasil diposting', 'ok'); this.load(); }
+      else this.notify(j.message || 'Gagal memposting jurnal', 'err');
+    },
+
+    prevPage() { if (this.page > 1) { this.page--; this.load(); } },
+    nextPage() { if (this.entries.length === 50) { this.page++; this.load(); } },
+
+    notify(msg, type='ok') { this.toast = { show: true, msg, type }; setTimeout(() => this.toast.show = false, 3500); },
+
+    fmt(v) {
+      if (!v && v !== 0) return '-';
+      v = parseFloat(v);
+      if (v >= 1e9) return 'Rp ' + (v/1e9).toFixed(1) + 'M';
+      if (v >= 1e6) return 'Rp ' + (v/1e6).toFixed(1) + 'jt';
+      return 'Rp ' + v.toLocaleString('id-ID');
+    },
+  };
+}
+</script>
+{% endblock %}
