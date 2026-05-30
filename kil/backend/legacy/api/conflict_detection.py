@@ -106,8 +106,12 @@ def detect_conflicts(cur, batch_id: int) -> dict:
 
     Returns stats: {detected, by_type, by_severity}
     """
-    # Clear existing conflicts untuk batch ini (re-scan)
-    cur.execute("DELETE FROM snc_schedule_conflicts WHERE draft_batch_id = %s", (batch_id,))
+    # BUG FIX: preserve resolved/ignored conflicts (audit history).
+    # Only delete OPEN conflicts before re-scan.
+    cur.execute("""
+        DELETE FROM snc_schedule_conflicts
+        WHERE draft_batch_id = %s AND status = 'open'
+    """, (batch_id,))
 
     # Load all events untuk batch
     cur.execute("""
