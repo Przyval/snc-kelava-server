@@ -444,22 +444,22 @@ function masterRulesEditor() {
     async loadTechnicians() {
       const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
       try {
-        const r = await auth(`/api/v1/enterprise/technicians`);
+        const r = await auth(`/api/v1/enterprise/recurring-rules/technicians`);
         const d = await r.json();
-        this.technicians = (d.technicians || d || []).filter(t => t.is_active !== false);
+        this.technicians = d.technicians || [];
       } catch(e) { this.technicians = []; }
     },
 
     async loadCustomers() {
       const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
       try {
-        // Use customers/lokasi endpoint if available
-        const r = await auth(`/api/v1/enterprise/customers?limit=1000`);
+        const r = await auth(`/api/v1/enterprise/recurring-rules/clients`);
         const d = await r.json();
-        this.allCustomers = (d.customers || d || []).map(c => ({id: c.id, name: c.name}));
-        // For now, customers with pattern = all customers; ideally a separate endpoint
-        this.customersWithPattern = this.allCustomers;
-      } catch(e) { this.allCustomers = []; }
+        this.allCustomers = d.clients || [];
+        const r2 = await auth(`/api/v1/enterprise/recurring-rules/clients?has_pattern=true`);
+        const d2 = await r2.json();
+        this.customersWithPattern = d2.clients || [];
+      } catch(e) { this.allCustomers = []; this.customersWithPattern = []; }
     },
 
     async loadAuditLog() {

@@ -557,6 +557,60 @@ def get_stats():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /recurring-rules/technicians — list snc_technicians (for UI dropdowns)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@recurring_rules_bp.route("/technicians", methods=["GET"])
+@require_auth
+def list_technicians_for_rules():
+    with _get_local_pool().connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT id, name, kelava_p_user_id, is_active
+                FROM snc_technicians
+                WHERE is_active = true OR is_active IS NULL
+                ORDER BY name
+            """)
+            rows = cur.fetchall()
+    return jsonify({"technicians": rows})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /recurring-rules/clients — list snc_clients (for UI dropdowns)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@recurring_rules_bp.route("/clients", methods=["GET"])
+@require_auth
+def list_clients_for_rules():
+    search = request.args.get("search", "").strip()
+    has_pattern = request.args.get("has_pattern", "").lower() == "true"
+    where = ["1=1"]
+    params = []
+    if search:
+        where.append("c.name ILIKE %s")
+        params.append(f"%{search}%")
+    if has_pattern:
+        # Only customers detected in any draft pattern run
+        where.append("""EXISTS (
+            SELECT 1 FROM snc_schedule_patterns dp
+            WHERE dp.client_id = c.id
+        )""")
+
+    sql = f"""
+        SELECT c.id, c.name, c.address
+        FROM snc_clients c
+        WHERE {' AND '.join(where)}
+        ORDER BY c.name
+        LIMIT 1000
+    """
+    with _get_local_pool().connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+    return jsonify({"clients": rows})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /recurring-rules/bulk-import — create many at once
 # ─────────────────────────────────────────────────────────────────────────────
 
