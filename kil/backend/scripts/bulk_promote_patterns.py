@@ -49,12 +49,13 @@ def _hhmm(t):
         return None
     if hasattr(t, "strftime"):
         return t.strftime("%H:%M")
-    # Normalize overnight times (e.g. "25:00" → "01:00") from string source
+    # Normalize overnight strings: "25:00" → "01:00", "24:00" → "00:00"
     if isinstance(t, str) and ":" in t:
         try:
             h, m = t.split(":")[:2]
             h, m = int(h), int(m)
             h = h % 24
+            m = max(0, min(59, m))
             return f"{h:02d}:{m:02d}"
         except (ValueError, IndexError):
             pass
