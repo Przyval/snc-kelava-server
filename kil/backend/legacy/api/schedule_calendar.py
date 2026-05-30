@@ -53,7 +53,21 @@ def _audit_log(cur, batch_id: int, action: str, **kwargs):
 
 def _user_id():
     user = getattr(g, "current_user", None) or getattr(request, "_jwt_user", {})
-    return user.get('id') if isinstance(user, dict) else getattr(user, 'id', 0)
+    return user.get('id') if isinstance(user, dict) else getattr(user, 'user_id', 0)
+
+
+def _require_koordinator_or_admin():
+    """Returns (user_id, error_response_or_None). Field supervisor read-only."""
+    user = getattr(g, "current_user", None) or getattr(request, "_jwt_user", {})
+    role = user.get('role') if isinstance(user, dict) else getattr(user, 'role', None)
+    uid = user.get('id') if isinstance(user, dict) else getattr(user, 'user_id', 0)
+    if role not in ('admin', 'koordinator'):
+        return None, (jsonify({
+            "error": "Forbidden",
+            "detail": "Koordinator atau Admin only. Field supervisor read-only.",
+            "your_role": role,
+        }), 403)
+    return uid, None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -409,6 +423,9 @@ def day_schedule(batch_id):
 @calendar_bp.route("/<int:batch_id>/detect-conflicts", methods=["POST"])
 @require_auth
 def detect_conflicts_endpoint(batch_id):
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     with _get_local_pool().connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             stats = detect_conflicts(cur, batch_id)
@@ -537,6 +554,10 @@ def conflict_detail(batch_id, conflict_id):
 @calendar_bp.route("/<int:batch_id>/conflicts/<int:conflict_id>/apply-fix", methods=["POST"])
 @require_auth
 def apply_fix(batch_id, conflict_id):
+    
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     data = request.get_json() or {}
     fix_type = data.get("fix_type")
     payload = data.get("payload", {})
@@ -613,6 +634,15 @@ def apply_fix(batch_id, conflict_id):
             # Re-scan conflicts untuk batch (cheap karena bersift incremental)
             stats = detect_conflicts(cur, batch_id)
 
+            # PRD §24.4 distinct action per fix_type
+            if fix_type == 'mark_exception':
+                _audit_log(cur, batch_id, "manual_exception_created",
+                           conflict_id=conflict_id, user_id=user_id, reason=reason,
+                           new_value={"fix_type": fix_type, "payload": payload})
+            elif fix_type in ('reassign_backup', 'move_time'):
+                _audit_log(cur, batch_id, "event_edited",
+                           conflict_id=conflict_id, user_id=user_id, reason=reason,
+                           new_value={"fix_type": fix_type, "payload": payload})
             _audit_log(cur, batch_id, "conflict_resolved",
                        conflict_id=conflict_id, user_id=user_id, reason=reason,
                        new_value={"fix_type": fix_type, "payload": payload})
@@ -634,6 +664,10 @@ def apply_fix(batch_id, conflict_id):
 @calendar_bp.route("/<int:batch_id>/approve-day", methods=["POST"])
 @require_auth
 def approve_day(batch_id):
+    
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     data = request.get_json() or {}
     target_date = data.get("date")
     mode = data.get("mode", "clean_only")
@@ -684,6 +718,10 @@ def approve_day(batch_id):
 @calendar_bp.route("/<int:batch_id>/approve-clean-days", methods=["POST"])
 @require_auth
 def approve_clean_days(batch_id):
+    
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     user_id = _user_id()
 
     with _get_local_pool().connection() as conn:
@@ -744,6 +782,10 @@ def approve_clean_days(batch_id):
 @calendar_bp.route("/<int:batch_id>/publish", methods=["POST"])
 @require_auth
 def publish_schedule(batch_id):
+    
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     data = request.get_json() or {}
     if not data.get("confirm"):
         return jsonify({"error": "confirm required"}), 400

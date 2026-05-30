@@ -29,6 +29,19 @@ from core.security import require_auth
 from kil.db.kelava_db import _get_local_pool
 from psycopg.rows import dict_row
 
+def _require_koordinator_or_admin():
+    """Returns (user_id, error_response_or_None). Field supervisor read-only."""
+    user = getattr(g, "current_user", None) or getattr(request, "_jwt_user", {})
+    role = user.get('role') if isinstance(user, dict) else getattr(user, 'role', None)
+    uid = user.get('id') if isinstance(user, dict) else getattr(user, 'user_id', 0)
+    if role not in ('admin', 'koordinator'):
+        return None, (jsonify({
+            "error": "Forbidden",
+            "detail": "Koordinator atau Admin only. Field supervisor read-only.",
+        }), 403)
+    return uid, None
+
+
 draft_bp = Blueprint("schedule_draft", __name__, url_prefix="/api/v1/enterprise/calendar")
 
 
@@ -319,6 +332,9 @@ def detect_patterns():
     Analisa snc_schedule_events untuk satu bulan (atau multi-bulan lookback).
     POST body: { "month": "2026-05", "lookback_months": 3 }
     """
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     data = request.get_json() or {}
     source_month = data.get("month") or request.args.get("month", "")
     if not source_month:
@@ -542,6 +558,9 @@ def generate_draft():
         "min_confidence": 0.5          (optional, default 0.5)
     }
     """
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     data = request.get_json() or {}
     source_month = data.get("source_month", "")
     target_month = data.get("target_month", "")
@@ -942,9 +961,25 @@ def generate_draft():
     conflict_stats = {"detected": 0}
     try:
         from kil.backend.legacy.api.conflict_detection import detect_conflicts
+        import json as _json
         with _get_local_pool().connection() as conn2:
             with conn2.cursor(row_factory=dict_row) as cur2:
                 conflict_stats = detect_conflicts(cur2, batch_id)
+                # AUDIT log: draft_generated + conflict_detected
+                cur2.execute("""
+                    INSERT INTO snc_schedule_audit_log
+                        (draft_batch_id, action, new_value, reason, changed_by)
+                    VALUES (%s, 'draft_generated', %s::jsonb, %s, %s)
+                """, (batch_id, _json.dumps({
+                    'events_created': events_created,
+                    'rules_applied': len(rules),
+                    'patterns_consolidated': consolidated_count,
+                }), f"Auto from {source_month}", user_id))
+                cur2.execute("""
+                    INSERT INTO snc_schedule_audit_log
+                        (draft_batch_id, action, new_value, reason, changed_by)
+                    VALUES (%s, 'conflict_detected', %s::jsonb, %s, %s)
+                """, (batch_id, _json.dumps(conflict_stats), "Auto-scan after generate", user_id))
             conn2.commit()
     except Exception as _e:
         pass  # non-fatal
@@ -1063,6 +1098,9 @@ def get_draft():
 @require_auth
 def approve_draft():
     """POST body: { "month": "2026-06", "notes": "..." }"""
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     data    = request.get_json() or {}
     month   = data.get("month", "")
     notes   = data.get("notes", "")
@@ -1111,6 +1149,10 @@ def approve_draft():
 @draft_bp.route("/draft-event/<int:event_id>", methods=["DELETE"])
 @require_auth
 def delete_draft_event(event_id):
+    """Remove a single draft event (supervisor review: reject this slot)."""
+    user_id_perm, forbidden = _require_koordinator_or_admin()
+    if forbidden:
+        return forbidden
     with _get_local_pool().connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("""

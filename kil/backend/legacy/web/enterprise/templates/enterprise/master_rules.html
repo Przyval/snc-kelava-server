@@ -1,0 +1,613 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Master Rules Editor{% endblock %}
+
+{% block content %}
+<div x-data="masterRulesEditor()" x-init="init()" class="space-y-6">
+
+  {# Header #}
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Master Recurring Rules</h1>
+      <p class="text-sm text-gray-500 mt-1">
+        Source of truth untuk recurring schedule. Rules override pattern detection
+        bila <span class="font-medium">is_mandatory</span> = true.
+      </p>
+    </div>
+    <button @click="openCreateModal()"
+            class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 flex items-center gap-2 shadow-sm">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+      New Rule
+    </button>
+  </div>
+
+  {# Coverage Stats #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-white border border-gray-200 rounded-xl p-5">
+      <div class="text-xs text-gray-500 uppercase font-medium">Active Rules</div>
+      <div class="text-3xl font-bold text-gray-900 mt-1" x-text="stats.active_rules || 0">—</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl p-5">
+      <div class="text-xs text-gray-500 uppercase font-medium">Coverage</div>
+      <div class="text-3xl font-bold text-gray-900 mt-1">
+        <span x-text="stats.coverage_pct || 0"></span>%
+      </div>
+      <div class="text-xs text-gray-500 mt-1">
+        <span x-text="stats.customers_covered || 0"></span>/<span x-text="stats.total_customers || 0"></span> customers
+      </div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl p-5">
+      <div class="text-xs text-gray-500 uppercase font-medium">By Frequency</div>
+      <div class="space-y-1 mt-1">
+        <template x-for="f in (stats.by_frequency || [])" :key="f.frequency">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-gray-700" x-text="f.frequency"></span>
+            <span class="font-semibold text-gray-900" x-text="f.n"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl p-5">
+      <div class="text-xs text-gray-500 uppercase font-medium">Top Tech (Primary)</div>
+      <div class="space-y-1 mt-1">
+        <template x-for="t in (stats.by_tech || []).slice(0,4)" :key="t.tech">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-gray-700 truncate" x-text="t.tech"></span>
+            <span class="font-semibold text-gray-900" x-text="t.n"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# Toolbar #}
+  <div class="bg-white border border-gray-200 rounded-xl p-4">
+    <div class="flex flex-wrap items-center gap-3">
+      <input x-model="filterSearch" @input.debounce.300ms="reload()"
+             type="text" placeholder="Search customer..."
+             class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-64">
+      <select x-model="filterFrequency" @change="reload()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">All Frequency</option>
+        <option value="weekly">Weekly</option>
+        <option value="biweekly">Biweekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="custom">Custom</option>
+      </select>
+      <select x-model="filterTech" @change="reload()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">All Technicians</option>
+        <template x-for="t in technicians" :key="t.id">
+          <option :value="t.id" x-text="t.name"></option>
+        </template>
+      </select>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" x-model="activeOnly" @change="reload()" class="rounded">
+        <span class="text-gray-700">Active only</span>
+      </label>
+      <div class="flex-1"></div>
+      <span class="text-sm text-gray-500">
+        Showing <span x-text="rules.length"></span> of <span x-text="totalRules"></span>
+      </span>
+    </div>
+  </div>
+
+  {# Rules Table #}
+  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="text-left px-4 py-3 font-medium">Customer</th>
+          <th class="text-left px-4 py-3 font-medium">Frequency</th>
+          <th class="text-left px-4 py-3 font-medium">Day / Week</th>
+          <th class="text-left px-4 py-3 font-medium">Time</th>
+          <th class="text-left px-4 py-3 font-medium">Primary Tech</th>
+          <th class="text-left px-4 py-3 font-medium">Co-Visit</th>
+          <th class="text-center px-4 py-3 font-medium">Mandatory</th>
+          <th class="text-center px-4 py-3 font-medium">Effective</th>
+          <th class="text-right px-4 py-3 font-medium">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="rule in rules" :key="rule.id">
+          <tr class="border-b border-gray-100 hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium text-gray-900" x-text="rule.client_name"></td>
+            <td class="px-4 py-3">
+              <span :class="{
+                'bg-orange-100 text-orange-700': rule.frequency === 'weekly',
+                'bg-blue-100 text-blue-700':     rule.frequency === 'biweekly',
+                'bg-purple-100 text-purple-700': rule.frequency === 'monthly',
+                'bg-gray-100 text-gray-700':     rule.frequency === 'custom',
+              }" class="text-xs font-semibold px-2 py-1 rounded" x-text="rule.frequency.toUpperCase()"></span>
+            </td>
+            <td class="px-4 py-3 text-gray-700">
+              <div x-text="rule.weekdays_display"></div>
+              <div class="text-xs text-gray-500" x-show="rule.week_pattern" x-text="'week ' + rule.week_pattern"></div>
+            </td>
+            <td class="px-4 py-3 text-gray-700">
+              <span x-text="rule.time_start"></span>
+              <span class="text-gray-400" x-show="rule.time_end"> – <span x-text="rule.time_end"></span></span>
+            </td>
+            <td class="px-4 py-3 text-gray-700" x-text="rule.primary_tech_name"></td>
+            <td class="px-4 py-3 text-gray-600 text-xs">
+              <span x-show="rule.backup_tech_1_name" class="block" x-text="'+' + (rule.backup_tech_1_name || '')"></span>
+              <span x-show="rule.backup_tech_2_name" class="block" x-text="'+' + (rule.backup_tech_2_name || '')"></span>
+              <span x-show="!rule.backup_tech_1_name && !rule.backup_tech_2_name" class="text-gray-400">—</span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <span x-show="rule.is_mandatory" class="text-orange-600 font-bold">✓</span>
+              <span x-show="!rule.is_mandatory" class="text-gray-400">○</span>
+            </td>
+            <td class="px-4 py-3 text-center text-xs text-gray-600">
+              <div x-text="rule.effective_start"></div>
+              <div x-show="rule.effective_end" class="text-red-500" x-text="'→ ' + rule.effective_end"></div>
+            </td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <button @click="openEditModal(rule)" class="text-xs font-medium text-orange-600 hover:underline">Edit</button>
+              <button @click="confirmDeactivate(rule)" class="text-xs font-medium text-red-600 hover:underline ml-2">Deactivate</button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="rules.length === 0">
+          <td colspan="9" class="px-4 py-12 text-center text-gray-400 text-sm">
+            No rules found. Create one or derive from pattern.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Suggestion Panel (collapsible) — Phase 1.5 #}
+  <div class="bg-white border border-gray-200 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900">Derive Rule from Pattern</h3>
+        <p class="text-xs text-gray-500 mt-0.5">Pick a customer untuk auto-suggest rule berdasarkan pattern Mei 2026.</p>
+      </div>
+      <button @click="showSuggest = !showSuggest" class="text-sm text-orange-600 hover:text-orange-700 font-medium">
+        <span x-text="showSuggest ? 'Hide' : 'Show'"></span> →
+      </button>
+    </div>
+    <div x-show="showSuggest" x-cloak class="space-y-3">
+      <div class="flex gap-2">
+        <select x-model="suggestClientId" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="">Pick a customer...</option>
+          <template x-for="c in customersWithPattern" :key="c.id">
+            <option :value="c.id" x-text="c.name"></option>
+          </template>
+        </select>
+        <button @click="loadSuggestion()" :disabled="!suggestClientId || busy"
+                class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 disabled:opacity-50">
+          Suggest
+        </button>
+      </div>
+      <div x-show="suggestion" class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+        <div class="text-xs font-medium text-orange-700 mb-2">SUGGESTED RULE</div>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div><span class="text-gray-500">Frequency:</span> <strong x-text="suggestion?.frequency"></strong></div>
+          <div><span class="text-gray-500">Day:</span> <strong x-text="suggestion?.weekdays_display"></strong></div>
+          <div><span class="text-gray-500">Time:</span> <strong x-text="suggestion?.time_start"></strong></div>
+          <div><span class="text-gray-500">Primary:</span> <strong x-text="suggestion?.primary_tech_name"></strong></div>
+          <div x-show="suggestion?.backup_tech_1_name"><span class="text-gray-500">Backup 1:</span> <strong x-text="suggestion?.backup_tech_1_name"></strong></div>
+          <div x-show="suggestion?.backup_tech_2_name"><span class="text-gray-500">Backup 2:</span> <strong x-text="suggestion?.backup_tech_2_name"></strong></div>
+        </div>
+        <div class="text-xs text-gray-600 mt-3" x-show="suggestionMeta">
+          From <span x-text="suggestionMeta?.occurrence_count"></span> historical visits, confidence <span x-text="suggestionMeta?.confidence"></span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button @click="acceptSuggestion(false)" class="px-3 py-1.5 bg-white border border-orange-500 text-orange-600 rounded text-sm font-medium hover:bg-orange-50">
+            Accept as Soft Rule
+          </button>
+          <button @click="acceptSuggestion(true)" class="px-3 py-1.5 bg-orange-500 text-white rounded text-sm font-medium hover:bg-orange-600">
+            Accept as Mandatory
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Audit Log Quick View #}
+  <div class="bg-white border border-gray-200 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-gray-900">Recent Activity</h3>
+      <button @click="loadAuditLog()" class="text-sm text-orange-600 hover:text-orange-700 font-medium">Refresh →</button>
+    </div>
+    <div class="space-y-2 text-sm">
+      <template x-for="row in auditLog.slice(0, 10)" :key="row.id">
+        <div class="flex items-center gap-3 py-1.5 border-b border-gray-50">
+          <span class="text-xs text-gray-500 w-32" x-text="new Date(row.changed_at).toLocaleString()"></span>
+          <span class="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded" x-text="row.action.replace('_', ' ')"></span>
+          <span class="text-gray-600 text-xs flex-1 truncate" x-text="row.reason || '—'"></span>
+          <span class="text-gray-500 text-xs">user #<span x-text="row.changed_by"></span></span>
+        </div>
+      </template>
+      <div x-show="auditLog.length === 0" class="text-center text-gray-400 text-sm py-6">No activity yet</div>
+    </div>
+  </div>
+
+  {# Create/Edit Modal #}
+  <div x-show="editModal.open" x-transition.opacity x-cloak
+       @click="editModal.open = false"
+       class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-gray-900" x-text="editModal.id ? 'Edit Rule' : 'Create New Rule'"></h3>
+        <button @click="editModal.open = false" class="text-gray-400 hover:text-gray-700">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Customer *</label>
+            <select x-model="editModal.client_id" :disabled="editModal.id" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-gray-50">
+              <option value="">Pick customer...</option>
+              <template x-for="c in allCustomers" :key="c.id">
+                <option :value="c.id" x-text="c.name"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Frequency *</label>
+            <select x-model="editModal.frequency" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs font-medium text-gray-700 block mb-1">Weekdays *</label>
+          <div class="flex gap-2">
+            <template x-for="(day, idx) in ['Sen','Sel','Rab','Kam','Jum','Sab','Min']" :key="idx">
+              <button @click="toggleWeekday(idx)" type="button"
+                      :class="editModal.weekdays.includes(idx) ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                      class="px-3 py-1.5 rounded-lg text-xs font-semibold transition" x-text="day"></button>
+            </template>
+          </div>
+        </div>
+
+        <div x-show="editModal.frequency === 'biweekly' || editModal.frequency === 'monthly'">
+          <label class="text-xs font-medium text-gray-700 block mb-1">Week Pattern</label>
+          <select x-model="editModal.week_pattern" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="">— (all weeks)</option>
+            <option value="1,3">Week 1 & 3</option>
+            <option value="2,4">Week 2 & 4</option>
+            <option value="1">Week 1 only</option>
+            <option value="2">Week 2 only</option>
+            <option value="3">Week 3 only</option>
+            <option value="4">Week 4 only</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Time Start *</label>
+            <input type="time" x-model="editModal.time_start" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Time End</label>
+            <input type="time" x-model="editModal.time_end" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Primary Tech *</label>
+            <select x-model="editModal.primary_tech_id" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">Pick tech...</option>
+              <template x-for="t in technicians" :key="t.id">
+                <option :value="t.id" x-text="t.name"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Co-Visit 1</label>
+            <select x-model="editModal.backup_tech_1_id" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">—</option>
+              <template x-for="t in technicians" :key="t.id">
+                <option :value="t.id" x-text="t.name"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Co-Visit 2</label>
+            <select x-model="editModal.backup_tech_2_id" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">—</option>
+              <template x-for="t in technicians" :key="t.id">
+                <option :value="t.id" x-text="t.name"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Effective Start</label>
+            <input type="date" x-model="editModal.effective_start" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 block mb-1">Effective End</label>
+            <input type="date" x-model="editModal.effective_end" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs font-medium text-gray-700 block mb-1">Notes</label>
+          <textarea x-model="editModal.notes" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"></textarea>
+        </div>
+
+        <div class="flex items-center gap-6 pt-2 border-t border-gray-100">
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" x-model="editModal.is_mandatory" class="rounded">
+            <span class="text-gray-700">Mandatory (override pattern detection)</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" x-model="editModal.suppress_holiday" class="rounded">
+            <span class="text-gray-700">Suppress on holidays</span>
+          </label>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+        <button @click="editModal.open = false"
+                class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+          Cancel
+        </button>
+        <button @click="saveRule()" :disabled="busy || !canSave"
+                class="px-4 py-2 text-sm font-medium text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-50">
+          Save Rule
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Toast #}
+  <div x-show="toast" x-transition.opacity x-cloak
+       class="fixed bottom-6 right-6 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm max-w-md z-50">
+    <div x-text="toast"></div>
+  </div>
+</div>
+
+<script>
+function masterRulesEditor() {
+  return {
+    busy: false,
+    toast: '',
+    rules: [],
+    totalRules: 0,
+    stats: {},
+    technicians: [],
+    allCustomers: [],
+    customersWithPattern: [],
+    auditLog: [],
+
+    // Filters
+    filterSearch: '',
+    filterFrequency: '',
+    filterTech: '',
+    activeOnly: true,
+
+    // Suggest panel
+    showSuggest: false,
+    suggestClientId: '',
+    suggestion: null,
+    suggestionMeta: null,
+
+    // Edit/Create modal
+    editModal: {
+      open: false, id: null,
+      client_id: '', frequency: 'weekly',
+      weekdays: [0], week_pattern: '',
+      time_start: '08:00', time_end: '',
+      primary_tech_id: '', backup_tech_1_id: '', backup_tech_2_id: '',
+      visit_type: 'PRC',
+      is_mandatory: false, suppress_holiday: true,
+      effective_start: '', effective_end: '',
+      notes: '',
+    },
+
+    async init() {
+      this.editModal.effective_start = new Date().toISOString().slice(0,10);
+      await Promise.all([
+        this.reload(),
+        this.loadStats(),
+        this.loadTechnicians(),
+        this.loadCustomers(),
+        this.loadAuditLog(),
+      ]);
+    },
+
+    async reload() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const params = new URLSearchParams({
+        active_only: this.activeOnly,
+        limit: 100,
+      });
+      if (this.filterSearch) params.set('search', this.filterSearch);
+      if (this.filterFrequency) params.set('frequency', this.filterFrequency);
+      if (this.filterTech) params.set('tech_id', this.filterTech);
+      try {
+        const r = await auth(`/api/v1/enterprise/recurring-rules?${params}`);
+        const d = await r.json();
+        this.rules = d.rules || [];
+        this.totalRules = d.total || 0;
+      } catch(e) { console.error(e); }
+    },
+
+    async loadStats() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      try {
+        const r = await auth(`/api/v1/enterprise/recurring-rules/stats`);
+        this.stats = await r.json();
+      } catch(e) {}
+    },
+
+    async loadTechnicians() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      try {
+        const r = await auth(`/api/v1/enterprise/technicians`);
+        const d = await r.json();
+        this.technicians = (d.technicians || d || []).filter(t => t.is_active !== false);
+      } catch(e) { this.technicians = []; }
+    },
+
+    async loadCustomers() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      try {
+        // Use customers/lokasi endpoint if available
+        const r = await auth(`/api/v1/enterprise/customers?limit=1000`);
+        const d = await r.json();
+        this.allCustomers = (d.customers || d || []).map(c => ({id: c.id, name: c.name}));
+        // For now, customers with pattern = all customers; ideally a separate endpoint
+        this.customersWithPattern = this.allCustomers;
+      } catch(e) { this.allCustomers = []; }
+    },
+
+    async loadAuditLog() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      try {
+        const r = await auth(`/api/v1/enterprise/recurring-rules/log?limit=30`);
+        const d = await r.json();
+        this.auditLog = d.log || [];
+      } catch(e) {}
+    },
+
+    async loadSuggestion() {
+      if (!this.suggestClientId) return;
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/recurring-rules/derive/${this.suggestClientId}`);
+        const d = await r.json();
+        this.suggestion = d.suggestion;
+        this.suggestionMeta = d.pattern_meta;
+        if (!this.suggestion) this.showToast('No pattern found for this customer');
+      } finally { this.busy = false; }
+    },
+
+    async acceptSuggestion(mandatory) {
+      if (!this.suggestion) return;
+      this.openCreateModal();
+      this.editModal = {
+        ...this.editModal,
+        client_id:        this.suggestion.client_id,
+        frequency:        this.suggestion.frequency,
+        weekdays:         this.suggestion.weekdays,
+        week_pattern:     this.suggestion.week_pattern || '',
+        time_start:       this.suggestion.time_start || '08:00',
+        time_end:         this.suggestion.time_end || '',
+        primary_tech_id:  this.suggestion.primary_tech_id,
+        backup_tech_1_id: this.suggestion.backup_tech_1_id || '',
+        backup_tech_2_id: this.suggestion.backup_tech_2_id || '',
+        visit_type:       this.suggestion.visit_type || 'PRC',
+        is_mandatory:     mandatory,
+        suppress_holiday: this.suggestion.suppress_holiday,
+        notes:            'Derived from pattern',
+      };
+    },
+
+    toggleWeekday(idx) {
+      const i = this.editModal.weekdays.indexOf(idx);
+      if (i >= 0) this.editModal.weekdays.splice(i, 1);
+      else this.editModal.weekdays.push(idx);
+      this.editModal.weekdays.sort((a,b) => a-b);
+    },
+
+    openCreateModal() {
+      this.editModal = {
+        open: true, id: null,
+        client_id: '', frequency: 'weekly',
+        weekdays: [0], week_pattern: '',
+        time_start: '08:00', time_end: '',
+        primary_tech_id: '', backup_tech_1_id: '', backup_tech_2_id: '',
+        visit_type: 'PRC',
+        is_mandatory: false, suppress_holiday: true,
+        effective_start: new Date().toISOString().slice(0,10),
+        effective_end: '',
+        notes: '',
+      };
+    },
+
+    openEditModal(rule) {
+      this.editModal = {
+        open: true, id: rule.id,
+        client_id: rule.client_id,
+        frequency: rule.frequency,
+        weekdays: [...(rule.weekdays || [])],
+        week_pattern: rule.week_pattern || '',
+        time_start: rule.time_start || '08:00',
+        time_end: rule.time_end || '',
+        primary_tech_id: rule.primary_tech_id,
+        backup_tech_1_id: rule.backup_tech_1_id || '',
+        backup_tech_2_id: rule.backup_tech_2_id || '',
+        visit_type: rule.visit_type || 'PRC',
+        is_mandatory: rule.is_mandatory,
+        suppress_holiday: rule.suppress_holiday,
+        effective_start: rule.effective_start,
+        effective_end: rule.effective_end || '',
+        notes: rule.notes || '',
+      };
+    },
+
+    get canSave() {
+      return this.editModal.client_id && this.editModal.primary_tech_id
+          && this.editModal.weekdays.length > 0 && this.editModal.time_start;
+    },
+
+    async saveRule() {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const body = {...this.editModal};
+        // Convert empty strings to null for optional fields
+        ['backup_tech_1_id','backup_tech_2_id','time_end','effective_end'].forEach(k => {
+          if (body[k] === '') body[k] = null;
+        });
+        delete body.open;
+        const method = this.editModal.id ? 'PUT' : 'POST';
+        const url = this.editModal.id
+          ? `/api/v1/enterprise/recurring-rules/${this.editModal.id}`
+          : `/api/v1/enterprise/recurring-rules`;
+        const r = await auth(url, {
+          method,
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (r.ok) {
+          this.showToast(d.message || 'Saved');
+          this.editModal.open = false;
+          await Promise.all([this.reload(), this.loadStats(), this.loadAuditLog()]);
+        } else {
+          this.showToast('Error: ' + (d.error || d.detail || r.statusText));
+        }
+      } finally { this.busy = false; }
+    },
+
+    confirmDeactivate(rule) {
+      if (!confirm(`Deactivate rule for ${rule.client_name}?`)) return;
+      this.deactivateRule(rule.id);
+    },
+
+    async deactivateRule(id) {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/recurring-rules/${id}`, {
+          method: 'DELETE',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({reason: 'Deactivated via UI'}),
+        });
+        const d = await r.json();
+        this.showToast(d.message || 'Deactivated');
+        await Promise.all([this.reload(), this.loadStats(), this.loadAuditLog()]);
+      } finally { this.busy = false; }
+    },
+
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => this.toast = '', 4000);
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -75,6 +75,12 @@ def schedule_draft_calendar():
     return render_template("enterprise/schedule_draft_calendar.html")
 
 
+@enterprise_bp.route("/master-rules")
+def master_rules():
+    """Master Recurring Rules Editor — source of truth for recurring schedules."""
+    return render_template("enterprise/master_rules.html")
+
+
 @enterprise_bp.route("/contracts")
 def contracts():
     """Contract Management page."""
