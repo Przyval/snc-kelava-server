@@ -424,6 +424,25 @@ def derive_from_pattern(client_id):
     backup_2 = same_dow[1] if len(same_dow) > 1 else None
 
     days_short = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
+
+    # Normalize time to HH:MM strings and cap unrealistic spans.
+    # Typical pest-control visit is 1-2 hr; if observed range > 3 hr,
+    # the time_end likely reflects an outlier visit. Default to start+2hr.
+    def _hhmm(t):
+        return t.strftime("%H:%M") if t and hasattr(t, "strftime") else (t or None)
+
+    t_start = _hhmm(best["time_start"])
+    t_end_raw = _hhmm(best["time_end"])
+    t_end = t_end_raw
+    if t_start and t_end_raw:
+        sh, sm = map(int, t_start.split(":"))
+        eh, em = map(int, t_end_raw.split(":"))
+        span_min = (eh * 60 + em) - (sh * 60 + sm)
+        if span_min > 180 or span_min < 0:
+            # Cap to start + 2hr
+            cap_min = (sh * 60 + sm) + 120
+            t_end = f"{cap_min // 60:02d}:{cap_min % 60:02d}"
+
     return jsonify({
         "client": {"id": client["id"], "name": client["name"]},
         "suggestion": {
@@ -438,8 +457,9 @@ def derive_from_pattern(client_id):
             "weekdays":         weekdays,
             "weekdays_display": "+".join(days_short[d] for d in weekdays),
             "week_pattern":     best["week_pattern"] if best["frequency"] != "weekly" else None,
-            "time_start":       best["time_start"],
-            "time_end":         best["time_end"],
+            "time_start":       t_start,
+            "time_end":         t_end,
+            "time_end_raw":     t_end_raw,  # original for transparency in UI
             "visit_type":       best["visit_type"],
             "is_mandatory":     False,  # default to soft, supervisor must explicitly set
             "suppress_holiday": True,
