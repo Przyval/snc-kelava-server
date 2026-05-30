@@ -39,13 +39,71 @@ def _normalize(name: str) -> str:
         return ''
     s = name.upper().strip()
     # Hapus prefix legal
-    for p in ['PT.', 'PT ', 'CV.', 'CV ', 'UD.', 'UD ', 'TOKO ', 'YAYASAN ']:
+    for p in ['PT.', 'PT ', 'CV.', 'CV ', 'UD.', 'UD ', 'TOKO ', 'YAYASAN ',
+              'BU.', 'BU ', 'PAK.', 'PAK ', 'IBU ', 'BPK ', 'BAPAK ']:
         if s.startswith(p):
             s = s[len(p):].strip()
-    # Hapus karakter non-alphanumeric
     s = re.sub(r'[^A-Z0-9\s]', '', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
+
+
+def _extract_acronyms(name: str) -> set:
+    """
+    Extract bracketed acronyms from Accurate name.
+    'PT. PAKUWON JATI TBK (TP)' → {'TP'}
+    'PT KEDUNGSARI INDAH DELAPAN (HOTEL 88 KD)' → {'HOTEL 88 KD', '88 KD', 'KD'}
+    """
+    import re as _re
+    acros = set()
+    for m in _re.finditer(r'\(([^)]+)\)', name):
+        bracket = m.group(1).strip().upper()
+        if 2 <= len(bracket) <= 30:
+            acros.add(bracket)
+            # Also extract last word as shorthand (88 KD → KD)
+            parts = bracket.split()
+            if len(parts) >= 2:
+                acros.add(parts[-1])
+                acros.add(' '.join(parts[-2:]))
+    return acros
+
+
+def _fuzzy_match(client_name: str, accurate_data: dict) -> dict | None:
+    """
+    Smart fuzzy match: try exact, then prefix/contained, then acronym.
+    Returns matched entry from accurate_data or None.
+    """
+    norm = _normalize(client_name)
+    if not norm:
+        return None
+
+    # Tier 1: exact match
+    if norm in accurate_data:
+        return accurate_data[norm]
+
+    # Tier 2: client name contained in accurate, atau sebaliknya (min 5 char)
+    if len(norm) >= 5:
+        for acc_norm, val in accurate_data.items():
+            if norm in acc_norm or (len(acc_norm) >= 5 and acc_norm in norm):
+                return val
+
+    # Tier 3: acronym match — client name match bracket acronym di Accurate
+    # Build acronym index once (cached on accurate_data)
+    if '__acro_index__' not in accurate_data:
+        idx = {}
+        for acc_val in accurate_data.values():
+            if isinstance(acc_val, dict) and 'accurate_name' in acc_val:
+                for acro in _extract_acronyms(acc_val['accurate_name']):
+                    idx.setdefault(acro, []).append(acc_val)
+        accurate_data['__acro_index__'] = idx
+
+    idx = accurate_data['__acro_index__']
+    if norm in idx:
+        candidates = idx[norm]
+        # Prefer most recent (latest last_invoice_date)
+        return max(candidates, key=lambda x: x.get('last_invoice_date') or '1900-01-01')
+
+    return None
 
 
 def _invoice_frequency(avg_interval: float) -> str:
@@ -197,17 +255,7 @@ def main():
     for client in clients:
         client_id = client['id']
         client_name = client['name']
-        norm = _normalize(client_name)
-
-        # Try to find match in Accurate
-        match = accurate.get(norm)
-
-        # Fallback: partial match (client name contained in accurate name or vice versa)
-        if not match:
-            for acc_key, acc_val in accurate.items():
-                if len(norm) >= 4 and (norm in acc_key or acc_key in norm):
-                    match = acc_val
-                    break
+        match = _fuzzy_match(client_name, accurate)
 
         if match:
             master_matched += 1

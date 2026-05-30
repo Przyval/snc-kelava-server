@@ -134,49 +134,131 @@ def _load_schedulable_technicians(cur, target_date: date) -> set:
 
 def _consolidate_patterns_per_client(patterns: list, schedulable_techs: set) -> list:
     """
-    BUG FIX #9: Dedup multi-pattern per (client, day_of_week).
-    Pertahankan multi-DOW pattern (client bisa visit beberapa hari/minggu).
-    Per (client, dow), pilih winner: score = conf × recency × schedulable_bonus.
-    Schedulable tech dapat bonus 2x supaya tidak dipotong oleh tech inactive.
+    BUG FIX #9 + #10 + #12: Dedup multi-pattern per (client, day_of_week) +
+    pattern conflict resolution + MULTI-TECH support.
+
+    Step 1: Per (client, dow), keep TOP 2 patterns kalau:
+            - Both have confidence >= 0.7
+            - Both techs are schedulable
+            - Both techs are different (multi-tech customer split duty)
+            Otherwise pick winner only.
+    Step 2: Per client, drop weak monthly patterns di DOW lain saat ada
+            strong weekly/biweekly pattern.
     """
+    # Step 1: per (client, dow) top patterns
     by_key = {}
     for p in patterns:
         key = (p['client_id'], p['day_of_week'])
         sched_bonus = 2.0 if p['technician_id'] in schedulable_techs else 1.0
         score = float(p.get('confidence', 0)) * float(p.get('recency_score', 0)) * sched_bonus
-        if key not in by_key or score > by_key[key][0]:
-            by_key[key] = (score, p)
-    return [p for _, p in by_key.values()]
+        by_key.setdefault(key, []).append((score, p))
+
+    selected = []
+    for key, candidates in by_key.items():
+        candidates.sort(reverse=True, key=lambda x: x[0])
+        winner_score, winner = candidates[0]
+        selected.append(winner)
+        # BUG FIX #19: CO-VISIT pattern detection
+        # Keep semua tech yang punya conf >= 0.7 + schedulable + beda tech
+        # Customer dengan 3+ tech rutin co-visit (EL GRANDE, GRAHA PADEL, etc)
+        kept_techs = {winner['technician_id']}
+        for r_score, runner in candidates[1:]:
+            if len(kept_techs) >= 3:  # cap di 3 tech max
+                break
+            if (float(runner.get('confidence', 0)) >= 0.7
+                and runner['technician_id'] in schedulable_techs
+                and runner['technician_id'] not in kept_techs
+                and r_score >= winner_score * 0.55):  # 55% threshold (was 60%)
+                selected.append(runner)
+                kept_techs.add(runner['technician_id'])
+
+    # Step 2: identify strong-DOW per client
+    # Strong = weekly/biweekly dengan occurrence_count >= 6 atau confidence >= 0.85
+    strong_dow_per_client = {}  # client_id → set of strong DOWs
+    for p in selected:
+        cid = p['client_id']
+        is_strong = (
+            p['frequency'] in ('weekly', 'biweekly') and
+            (p.get('occurrence_count', 0) >= 6 or float(p.get('confidence', 0)) >= 0.85)
+        )
+        if is_strong:
+            strong_dow_per_client.setdefault(cid, set()).add(p['day_of_week'])
+
+    # Step 3: drop weak patterns di DOW lain
+    result = []
+    dropped_conflict = 0
+    for p in selected:
+        cid = p['client_id']
+        strong_dows = strong_dow_per_client.get(cid, set())
+        if strong_dows and p['day_of_week'] not in strong_dows:
+            # Customer punya strong pattern di DOW lain
+            # Drop this if it's monthly/adhoc (likely noise from occasional visits)
+            if p['frequency'] in ('monthly', 'adhoc'):
+                dropped_conflict += 1
+                continue
+        result.append(p)
+
+    return result
 
 
 def _load_active_clients_smart(cur, source_year: int, source_month: int) -> set:
     """
-    BUG FIX #10: Active client filter dengan override.
-    Customer "cancelled" di Accurate tetap di-include jika ada visit dalam
-    source_month (artinya benar-benar masih aktif meski belum ada invoice).
-    Returns None kalau master kosong (no filter).
+    BUG FIX #10 + #21: Active client filter dengan override + churn signal.
+    - Customer "active" di Accurate → include
+    - Customer "cancelled" + visit di source_month → include (false negative)
+    - Customer "paused" → EXCLUDE (deliberate pause signal)
+    - Customer dengan last_invoice_date > 60 hari sebelum source month end
+      AND tier C → EXCLUDE (churn risk signal)
     """
-    cur.execute("""
-        SELECT snc_client_id FROM snc_customer_master
-        WHERE customer_status IN ('active') AND snc_client_id IS NOT NULL
-    """)
-    active_set = {r['snc_client_id'] for r in cur.fetchall()}
-    if not active_set:
-        return None
-
-    # Override: customer cancelled/paused yang ada visit di source_month
     import calendar as cal_mod
     _, n = cal_mod.monthrange(source_year, source_month)
+    src_end = date(source_year, source_month, n)
+    cutoff_60d = date(source_year, source_month, 1)
+    if source_month >= 3:
+        cutoff_60d = date(source_year, source_month - 2, 1)
+    else:
+        cutoff_60d = date(source_year - 1, 12 + source_month - 2, 1)
+
+    cur.execute("""
+        SELECT snc_client_id, customer_status, last_invoice_date, revenue_tier,
+               invoice_count_12m, accurate_name
+        FROM snc_customer_master
+        WHERE snc_client_id IS NOT NULL
+    """)
+    rows = cur.fetchall()
+
+    active_set = set()
+    for r in rows:
+        cid = r['snc_client_id']
+        status = r['customer_status']
+        tier = r['revenue_tier'] or 'C'
+        last_inv = r['last_invoice_date']
+        matched_accurate = r['accurate_name'] is not None
+
+        # Drop: paused (deliberate decision by supervisor / Accurate)
+        if status == 'paused':
+            continue
+
+        # Default: include active + cancelled (we'll override cancelled below)
+        if status in ('active', 'cancelled'):
+            active_set.add(cid)
+
+    # Override: cancelled customer with recent visit (false cancel in Accurate)
     cur.execute("""
         SELECT DISTINCT se.client_id
         FROM snc_schedule_events se
         JOIN snc_customer_master cm ON cm.snc_client_id = se.client_id
-        WHERE cm.customer_status IN ('cancelled', 'paused')
+        WHERE cm.customer_status = 'cancelled'
+          AND cm.last_invoice_date >= %s
           AND se.schedule_status IN ('scheduled', 'completed')
           AND se.start_date BETWEEN %s AND %s
-    """, (date(source_year, source_month, 1), date(source_year, source_month, n)))
-    override = {r['client_id'] for r in cur.fetchall()}
-    return active_set | override
+    """, (cutoff_60d, date(source_year, source_month, 1), src_end))
+    for r in cur.fetchall():
+        active_set.add(r['client_id'])
+
+    if not active_set:
+        return None
+    return active_set
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -228,13 +310,29 @@ def detect_patterns():
                     se.visit_type,
                     TO_CHAR(se.start_datetime, 'HH24:MI') AS time_start,
                     TO_CHAR(se.end_datetime,   'HH24:MI') AS time_end,
-                    se.start_date
+                    se.start_date,
+                    se.schedule_status
                 FROM snc_schedule_events se
                 WHERE se.start_date BETWEEN %s AND %s
                   AND se.schedule_status IN ('scheduled','completed')
                 ORDER BY se.technician_id, se.client_id, se.start_date
             """, (start_date, end_date))
             rows = cur.fetchall()
+
+            # BUG FIX #3: Normalize time — Kelava 'completed' check_in has noisy
+            # minute-level times (e.g., 21:54, 06:55). Excel 'scheduled' is
+            # clean hourly (08:00, 14:00). Snap completed times to nearest
+            # half-hour to reduce noise.
+            for r in rows:
+                if r['schedule_status'] == 'completed' and r['time_start']:
+                    try:
+                        h, m = int(r['time_start'][:2]), int(r['time_start'][3:5])
+                        # Snap to nearest 30 minutes
+                        m_snap = 0 if m < 15 else (30 if m < 45 else 0)
+                        if m >= 45: h = (h + 1) % 24
+                        r['time_start'] = f"{h:02d}:{m_snap:02d}"
+                    except Exception:
+                        pass
 
         # ── BUG FIX #8: Group by (tech, client, DOW) — MULTI-DOW SUPPORT ──
         # Customer bisa punya multi-day pattern (Senin+Kamis+Jumat tiap minggu).
@@ -270,46 +368,75 @@ def detect_patterns():
                 count = len(visit_infos)
                 weighted_count = sum(v['weight'] for v in visit_infos)
 
-                # Hanya hitung visits dalam source_month
+                # Hitung visits dalam source_month
                 src_visits = [v for v in visit_infos
                               if v['date'].year == year and v['date'].month == month]
                 src_count  = len(src_visits)
                 src_woms   = sorted({v['wom'] for v in src_visits})
 
+                # BUG FIX #4: Long-history weekly detection
+                # Customer dengan visit >=12x dalam lookback DAN >=1 di source month
+                # = weekly walaupun src_count hanya 1-2 (mungkin libur/cuti bulan ini)
+                long_history_weekly = (
+                    count >= 12 and src_count >= 1 and
+                    count / max((end_date - start_date).days / 7, 1) >= 0.6
+                )
+
+                # BUG FIX #14: Last visit in source month untuk cadence projection
+                last_src_visit = max((v['date'] for v in src_visits), default=None)
+
                 # ── Klasifikasi frekuensi (semua untuk DOW ini saja) ──────────
-                # Karena sudah di-group by DOW, dow_purity selalu 1.0
+                recency_score = 1.0 if src_count > 0 else 0.4
                 if src_count >= 3:
-                    # 3+ visit di DOW yang sama dalam 1 bulan = weekly
                     frequency    = 'weekly'
                     week_pattern = None
                     confidence   = min(1.0, round(weighted_count / (4 * 3.0), 2))
 
+                # BUG FIX #15 + #16: Source month biweekly signal beats long-history weekly,
+                # tapi check interval — 2 visit 7 hari apart ≠ biweekly, itu weekly.
                 elif src_count == 2 and len(src_woms) == 2:
-                    # 2 visit di 2 minggu berbeda = biweekly
-                    frequency    = 'biweekly'
-                    week_pattern = ','.join(str(w) for w in src_woms)
-                    confidence   = round(min(1.0, weighted_count / (2 * 3.0)), 2)
+                    src_dates = sorted(v['date'] for v in src_visits)
+                    interval = (src_dates[1] - src_dates[0]).days
+                    if interval <= 9:  # ≤9 hari = weekly (toleransi 2 hari)
+                        frequency    = 'weekly'
+                        week_pattern = None
+                        confidence   = round(min(0.85, weighted_count / 8.0), 2)
+                    else:  # ≥10 hari = biweekly
+                        frequency    = 'biweekly'
+                        week_pattern = f"cadence:{last_src_visit.isoformat()}" if last_src_visit else ','.join(str(w) for w in src_woms)
+                        confidence   = round(min(1.0, weighted_count / (2 * 3.0)), 2)
+
+                elif long_history_weekly:
+                    frequency    = 'weekly'
+                    week_pattern = None
+                    confidence   = round(min(0.90, weighted_count / 12.0), 2)
 
                 elif src_count == 1:
-                    # 1 visit di source month = monthly (week-of-month specific)
                     frequency    = 'monthly'
                     week_pattern = str(src_woms[0]) if src_woms else None
                     confidence   = round(min(0.80, weighted_count / 3.0), 2)
 
-                elif src_count == 0 and count >= 2:
-                    # Hilang di source, ada di bulan lalu = stale, skip
+                elif src_count == 0 and count >= 6:
+                    # Hilang di source tapi history kuat → mungkin libur sebulan
+                    frequency     = 'monthly'
+                    week_pattern  = None
+                    confidence    = 0.45
+                    recency_score = 0.6   # lolos filter recency >= 0.5
+
+                elif src_count == 0:
                     patterns_skipped += 1
                     continue
 
                 else:
-                    # 2 visit di minggu yang sama → adhoc dengan conf rendah
                     frequency    = 'adhoc'
                     week_pattern = None
                     confidence   = round(min(0.50, weighted_count / 6.0), 2)
 
                 freq_tally[frequency] += 1
 
-                # Time & visit type
+                # BUG FIX #3: Time & visit type — PREFER source month (Excel
+                # scheduled) over lookback (Kelava actual check_in).
+                # Excel scheduled time = ground truth; Kelava check_in is noisy.
                 ref_visits = src_visits if src_visits else visit_infos
                 ts_list = [v['time_start'] for v in ref_visits if v['time_start']]
                 te_list = [v['time_end']   for v in ref_visits if v['time_end']]
@@ -317,8 +444,6 @@ def detect_patterns():
                 modal_ts = max(set(ts_list), key=ts_list.count) if ts_list else None
                 modal_te = max(set(te_list), key=te_list.count) if te_list else None
                 modal_vt = max(set(vt_list), key=vt_list.count) if vt_list else None
-
-                recency_score = 1.0 if src_count > 0 else 0.4
 
                 try:
                     cur.execute("""
@@ -491,21 +616,65 @@ def generate_draft():
 
                 target_dates = []
 
+                # BUG FIX #11 + #20: Soft suppression — high-traffic customer
+                # (occurrence_count >= 10) tetap generate di hari libur SAUF
+                # customer punya pattern selalu skip pada hari libur sebelumnya.
+                # Mulai dari conservative: only EL GRANDE/GRAHA/RJS style 24/7
+                # operations (mall, hotel) — for now require >= 15 visits.
+                occ = p.get('occurrence_count', 0)
+                high_traffic = occ >= 15  # tighten from 10 → 15
+
                 if p['frequency'] == 'weekly':
-                    # Semua Senin (atau hari apapun) dalam bulan, kecuali yang suppressed
-                    target_dates = days_by_dow.get(dow, [])
+                    # Semua Senin (atau hari apapun) dalam bulan
+                    all_dow = days_by_dow.get(dow, [])
+                    if high_traffic:
+                        # Tambah tanggal yang di-suppress kembali
+                        import calendar as _cal
+                        _, _ndays = _cal.monthrange(tgt_year, tgt_month)
+                        for _d in range(1, _ndays + 1):
+                            _date = date(tgt_year, tgt_month, _d)
+                            if _date.weekday() == dow and _date in suppressed and _date not in all_dow:
+                                all_dow.append(_date)
+                    target_dates = sorted(all_dow)
 
                 elif p['frequency'] == 'biweekly':
-                    # Pakai week_pattern yang terdeteksi ('1,3' atau '2,4', dll.)
                     wp = p.get('week_pattern') or ''
-                    if wp:
+                    # BUG FIX #14: Cadence projection
+                    # Format "cadence:YYYY-MM-DD" = last visit in source month
+                    # Project: last + 14, +28, +42 → target month dates
+                    if wp.startswith('cadence:'):
+                        try:
+                            anchor = date.fromisoformat(wp[8:])
+                            target_month_start = date(tgt_year, tgt_month, 1)
+                            import calendar as _cal
+                            _, _ndays = _cal.monthrange(tgt_year, tgt_month)
+                            target_month_end = date(tgt_year, tgt_month, _ndays)
+                            # BUG FIX #18: Keep cadence anchor stable, just skip suppressed
+                            # Customer biweekly tetap di 14-day rhythm walaupun ada libur
+                            d = anchor + timedelta(days=14)
+                            while d <= target_month_end:
+                                if d >= target_month_start and d.weekday() == dow:
+                                    if not (d in suppressed and not high_traffic):
+                                        target_dates.append(d)
+                                d += timedelta(days=14)  # cadence selalu lanjut
+                        except Exception:
+                            # Fallback to default biweekly
+                            for wn in [1, 3]:
+                                d = _nth_weekday(tgt_year, tgt_month, dow, wn)
+                                if d and (d not in suppressed or high_traffic):
+                                    target_dates.append(d)
+                    elif wp:
+                        # Legacy week_pattern format "1,3" or "2,4"
                         weeks = [int(w) for w in wp.split(',') if w.strip().isdigit()]
+                        for wn in weeks:
+                            d = _nth_weekday(tgt_year, tgt_month, dow, wn)
+                            if d and (d not in suppressed or high_traffic):
+                                target_dates.append(d)
                     else:
-                        weeks = [1, 3]   # fallback
-                    for wn in weeks:
-                        d = _nth_weekday(tgt_year, tgt_month, dow, wn)
-                        if d and d not in suppressed:
-                            target_dates.append(d)
+                        for wn in [1, 3]:
+                            d = _nth_weekday(tgt_year, tgt_month, dow, wn)
+                            if d and (d not in suppressed or high_traffic):
+                                target_dates.append(d)
 
                 elif p['frequency'] == 'monthly':
                     # Minggu ke-N dari DOW tertentu — BUG FIX: kalau libur, geser
@@ -536,12 +705,15 @@ def generate_draft():
                     skip_reasons['no_valid_dates'] += 1
                     continue
 
-                # ── Tentukan teknisi (BUG FIX #2: VALIDASI) ───────────────────
-                # Prioritas: primary master → pattern tech → skip
-                # SEMUA harus ada di schedulable_techs
-                candidate = primary_tech.get(client_id, tech_id)
-                if candidate not in schedulable_techs:
-                    candidate = tech_id if tech_id in schedulable_techs else None
+                # ── Tentukan teknisi (BUG FIX #2 + #13: VALIDASI) ─────────────
+                # Pakai pattern.tech_id DULU (untuk preserve multi-tech support).
+                # Primary master cuma fallback kalau pattern.tech tidak schedulable.
+                if tech_id in schedulable_techs:
+                    candidate = tech_id
+                else:
+                    candidate = primary_tech.get(client_id)
+                    if candidate not in schedulable_techs:
+                        candidate = None
                 if candidate is None:
                     events_skipped += 1
                     skip_reasons['no_valid_technician'] += 1
