@@ -68,6 +68,14 @@ def _test_remote(base_url):
         ("health-status", "GET", "/api/v1/enterprise/health/status"),
         ("health-ping", "GET", "/api/v1/enterprise/health/ping"),
         ("gps-positions", "GET", "/api/v1/enterprise/gps-live/positions"),
+        # Scheduling Phase 1
+        ("recurring-rules-list", "GET", "/api/v1/enterprise/recurring-rules"),
+        ("recurring-rules-stats", "GET", "/api/v1/enterprise/recurring-rules/stats"),
+        ("recurring-rules-log", "GET", "/api/v1/enterprise/recurring-rules/log?limit=10"),
+        ("schedule-draft-current", "GET", "/api/v1/enterprise/calendar/draft?month=2026-06"),
+        ("schedule-draft-patterns", "GET", "/api/v1/enterprise/calendar/patterns?month=2026-05"),
+        ("master-rules-page", "GET", "/enterprise/master-rules"),
+        ("schedule-draft-calendar-page", "GET", "/enterprise/schedule-draft-calendar"),
         ("auth-reject", "GET", "/api/v1/enterprise/dashboard-stats"),  # no token → 401
     ]
     for name, method, path in endpoints[:-1]:

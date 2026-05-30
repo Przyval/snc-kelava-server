@@ -47,6 +47,7 @@ ALTER TABLE snc_schedule_audit_log
     ON DELETE CASCADE;
 
 -- ── Unique index untuk prevent future duplicate events ──────────────────
+-- COALESCE expression wrapped in extra parens (required for non-function expressions in PG).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_snc_event_tech_client_dt_batch
     ON snc_schedule_events (technician_id, client_id, start_datetime,
-                            COALESCE(draft_batch_id, -1));
+                            (COALESCE(draft_batch_id, -1)));
