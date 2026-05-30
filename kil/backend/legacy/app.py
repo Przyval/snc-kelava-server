@@ -233,6 +233,10 @@ app.register_blueprint(draft_bp)
 from kil.backend.legacy.api.recurring_rules import recurring_rules_bp
 app.register_blueprint(recurring_rules_bp)
 
+# Schedule Draft Calendar (Phase 1 PRD §25)
+from kil.backend.legacy.api.schedule_calendar import calendar_bp as draft_calendar_bp
+app.register_blueprint(draft_calendar_bp)
+
 # Chemical Usage Tracking
 from kil.backend.legacy.api.chemical_tracking import chemical_bp
 app.register_blueprint(chemical_bp, url_prefix="/api/v1/enterprise/chemicals")

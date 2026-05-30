@@ -69,6 +69,12 @@ def calendar():
     return render_template("enterprise/calendar.html")
 
 
+@enterprise_bp.route("/schedule-draft-calendar")
+def schedule_draft_calendar():
+    """Schedule Draft Calendar — PRD Phase 1 control center."""
+    return render_template("enterprise/schedule_draft_calendar.html")
+
+
 @enterprise_bp.route("/contracts")
 def contracts():
     """Contract Management page."""

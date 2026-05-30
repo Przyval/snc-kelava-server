@@ -1,0 +1,1103 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Schedule Draft Calendar{% endblock %}
+
+{% block content %}
+<div x-data="scheduleDraftCalendar()" x-init="init()" class="space-y-6">
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Page Header — PRD §11                                                #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Schedule Draft Calendar</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Preview, validate, resolve conflicts, and approve recurring visit schedules before publishing.
+    </p>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# KPI Cards — PRD §12                                                  #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+    {# Draft Visits #}
+    <div @click="filterStatus = 'all'; reloadDay()"
+         class="bg-white border border-gray-200 rounded-xl p-5 cursor-pointer hover:shadow-md transition">
+      <div class="flex items-start justify-between">
+        <div class="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        </div>
+      </div>
+      <div class="mt-3 text-sm text-gray-600">Draft Visits</div>
+      <div class="text-3xl font-bold text-gray-900 mt-1" x-text="(kpi.draft_visits?.total || 0).toLocaleString()">—</div>
+      <div class="text-xs text-green-600 mt-1" x-show="kpi.draft_visits?.diff_vs_last >= 0">
+        +<span x-text="kpi.draft_visits?.diff_vs_last"></span>
+        vs last month
+        (<span x-text="(kpi.draft_visits?.last_month_total || 0).toLocaleString()"></span>)
+      </div>
+    </div>
+
+    {# Rule-based #}
+    <div @click="filterSource = 'rule'; reloadDay()"
+         class="bg-white border border-gray-200 rounded-xl p-5 cursor-pointer hover:shadow-md transition">
+      <div class="flex items-start justify-between">
+        <div class="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+        </div>
+      </div>
+      <div class="mt-3 text-sm text-gray-600">
+        Rule-based
+        <span class="text-gray-400 ml-1">(<span x-text="kpi.rule_based?.percentage || 0"></span>%)</span>
+      </div>
+      <div class="text-3xl font-bold text-gray-900 mt-1" x-text="(kpi.rule_based?.count || 0).toLocaleString()">—</div>
+      <div class="text-xs text-gray-500 mt-1">
+        From <span x-text="kpi.rule_based?.active_rules || 0"></span> active rules
+      </div>
+    </div>
+
+    {# Conflicts #}
+    <div @click="filterStatus = 'conflict'; if (selectedDate) reloadDay()"
+         :class="(kpi.conflicts?.total || 0) > 0
+                  ? 'bg-red-50 border-red-200 hover:bg-red-100'
+                  : 'bg-white border-gray-200 hover:shadow-md'"
+         class="border rounded-xl p-5 cursor-pointer transition">
+      <div class="flex items-start justify-between">
+        <div :class="(kpi.conflicts?.total || 0) > 0 ? 'bg-red-200' : 'bg-gray-100'"
+             class="w-10 h-10 rounded-lg flex items-center justify-center">
+          <svg :class="(kpi.conflicts?.total || 0) > 0 ? 'text-red-600' : 'text-gray-500'"
+               class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        </div>
+      </div>
+      <div class="mt-3 text-sm text-gray-600">
+        Conflicts <span class="text-gray-400">(Unresolved)</span>
+      </div>
+      <div :class="(kpi.conflicts?.total || 0) > 0 ? 'text-red-700' : 'text-gray-900'"
+           class="text-3xl font-bold mt-1" x-text="kpi.conflicts?.total || 0">—</div>
+      <div class="text-xs text-gray-600 mt-1 space-x-2">
+        <template x-for="(n, type) in (kpi.conflicts?.breakdown || {})" :key="type">
+          <span><span x-text="n"></span> <span x-text="type.replace('_', ' ')"></span></span>
+        </template>
+      </div>
+    </div>
+
+    {# Publishable Visits #}
+    <div class="bg-white border border-gray-200 rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div class="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+      </div>
+      <div class="mt-3 text-sm text-gray-600">Publishable Visits</div>
+      <div class="text-3xl font-bold text-gray-900 mt-1">
+        <span x-text="(kpi.publishable?.count || 0).toLocaleString()"></span>
+        <span class="text-gray-400 text-xl">/</span>
+        <span x-text="(kpi.publishable?.total || 0).toLocaleString()"></span>
+        <span class="text-base text-gray-500 ml-2">(<span x-text="kpi.publishable?.percentage || 0"></span>%)</span>
+      </div>
+      <div class="text-xs mt-1" :class="kpi.publishable?.blocked ? 'text-red-600' : 'text-green-600'">
+        <span x-text="kpi.publishable?.blocked ? 'Blocked until conflicts are resolved' : 'Ready to publish'"></span>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Toolbar — PRD §13                                                    #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div class="bg-white border border-gray-200 rounded-xl p-4">
+    <div class="flex flex-wrap items-center gap-3">
+
+      {# Month selector #}
+      <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+        <button @click="prevMonth()" class="text-gray-600 hover:text-orange-600">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+        <span class="text-sm font-semibold text-gray-900 w-28 text-center"
+              x-text="formatMonth(targetMonth)">—</span>
+        <button @click="nextMonth()" class="text-gray-600 hover:text-orange-600">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      {# View toggle #}
+      <div class="bg-gray-50 border border-gray-200 rounded-lg flex overflow-hidden">
+        <template x-for="v in ['Month','Week','Day']" :key="v">
+          <button @click="viewMode = v.toLowerCase()"
+                  :class="viewMode === v.toLowerCase() ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
+                  class="px-4 py-2 text-sm font-medium transition" x-text="v"></button>
+        </template>
+      </div>
+
+      {# Filters #}
+      <select x-model="filterTechnician" @change="reloadDay()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">Technician: Semua</option>
+        <template x-for="t in technicians" :key="t.id">
+          <option :value="t.id" x-text="t.name"></option>
+        </template>
+      </select>
+
+      <select x-model="filterCustomer" @change="reloadDay()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">Customer: Semua</option>
+        <template x-for="c in uniqueCustomersInDay" :key="c">
+          <option :value="c" x-text="c"></option>
+        </template>
+      </select>
+
+      <select x-model="filterSource" @change="reloadDay()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">All Sources</option>
+        <option value="rule">Rule</option>
+        <option value="pattern">Pattern</option>
+        <option value="manual">Manual</option>
+      </select>
+
+      <select x-model="filterStatus" @change="reloadDay()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">All Status</option>
+        <option value="draft">Draft</option>
+        <option value="conflict">Conflict</option>
+        <option value="approved">Approved</option>
+        <option value="published">Published</option>
+      </select>
+
+      <div class="flex-1"></div>
+
+      {# Action buttons — PRD §13.2-13.3 #}
+      <button @click="generateDraft()" :disabled="busy"
+              class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2 shadow-sm transition">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Generate Draft
+      </button>
+
+      <button @click="approveDay()"
+              :disabled="!selectedDate || dayEvents.length === 0"
+              class="px-4 py-2 bg-white border-2 border-green-500 text-green-600 rounded-lg text-sm font-semibold hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+        Approve Day
+      </button>
+
+      <button @click="approveCleanDays()"
+              :disabled="!batchId"
+              class="px-4 py-2 bg-white border-2 border-green-500 text-green-600 rounded-lg text-sm font-semibold hover:bg-green-50 disabled:opacity-40 flex items-center gap-2 transition">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Approve All Clean Days
+      </button>
+
+      <div class="relative">
+        <button @click="confirmPublish()"
+                :disabled="(kpi.conflicts?.total || 0) > 0 || !batchId"
+                :title="(kpi.conflicts?.total || 0) > 0 ? `Resolve ${kpi.conflicts.total} conflicts before publishing` : 'Publish schedule'"
+                :class="(kpi.conflicts?.total || 0) > 0
+                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200'
+                         : 'bg-purple-600 text-white hover:bg-purple-700 border-purple-600 shadow-sm'"
+                class="px-4 py-2 border-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
+          <svg x-show="(kpi.conflicts?.total || 0) > 0" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <svg x-show="(kpi.conflicts?.total || 0) === 0" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Publish Schedule
+        </button>
+        <div x-show="(kpi.conflicts?.total || 0) > 0" class="absolute right-0 top-full mt-1 text-xs text-red-600 whitespace-nowrap">
+          Resolve <span x-text="kpi.conflicts?.total"></span> conflicts first
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Main layout — Calendar + Conflict Drawer                            #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div class="flex gap-4">
+
+    {# ── Left: Calendar + Selected Day Panel ── #}
+    <div class="flex-1 space-y-4 min-w-0">
+
+      {# Calendar grid — PRD §14 #}
+      <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div class="grid grid-cols-7 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200">
+          <template x-for="d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']" :key="d">
+            <div class="px-3 py-2 text-center" x-text="d"></div>
+          </template>
+        </div>
+        <div class="grid grid-cols-7 divide-x divide-y divide-gray-100" style="min-height: 600px">
+          <template x-for="cell in calendarCells" :key="cell.key">
+            <div @click="cell.date && selectDay(cell.date)"
+                 :class="[
+                   cell.date ? 'cursor-pointer hover:bg-gray-50' : 'bg-gray-50/50',
+                   cell.selected && 'ring-2 ring-orange-500 ring-inset',
+                   cell.conflict_count > 0 && !cell.selected && 'bg-red-50/50 border-red-200',
+                 ]"
+                 class="relative p-2 min-h-[88px] text-xs">
+
+              <div x-show="cell.date" class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <span :class="cell.conflict_count > 0 ? 'text-red-600 font-bold' : 'text-gray-700 font-semibold'"
+                        x-text="cell.day"></span>
+                  <svg x-show="cell.conflict_count > 0" class="w-3 h-3 text-red-500"
+                       fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div x-show="cell.total_visits > 0" class="text-gray-900 font-medium">
+                  <span x-text="cell.total_visits"></span> visits
+                </div>
+                <div x-show="cell.total_visits > 0" class="text-[10px] text-gray-500">
+                  <span x-text="cell.rule_count"></span>r ·
+                  <span x-text="cell.pattern_count"></span>p
+                  <span x-show="cell.manual_count > 0"> · <span x-text="cell.manual_count"></span>m</span>
+                </div>
+                <div x-show="cell.conflict_count > 0"
+                     class="text-[10px] text-red-600 font-medium"
+                     x-text="cell.conflict_count + ' conflict' + (cell.conflict_count > 1 ? 's' : '')"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      {# Calendar legend — PRD §15 #}
+      <div class="flex items-center gap-4 text-xs text-gray-600 px-2">
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500"></span> Low (0 conflicts)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500"></span> Attention (1-2)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-500"></span> High (3+)</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-gray-300"></span> No Data</span>
+      </div>
+
+      {# Selected Day Panel + Daily Load + Legend ROW — PRD §16, §20, §21 #}
+      <div class="grid grid-cols-12 gap-4">
+
+        {# Selected Day Schedule — PRD §16 (col-span 7) #}
+        <div x-show="selectedDate" class="col-span-12 lg:col-span-7 bg-white border border-gray-200 rounded-xl">
+          <div class="px-5 py-4 border-b border-gray-100">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h3 class="text-base font-semibold text-gray-900">
+                Selected Day Schedule —
+                <span x-text="formatLongDate(selectedDate)"></span>
+              </h3>
+              <span x-show="dayHoliday" class="text-xs px-2 py-1 bg-amber-100 text-amber-800 rounded font-medium flex items-center gap-1.5">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span x-text="dayHolidaySkipped + ' rules skipped due to holiday'"></span>
+              </span>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+                <tr>
+                  <th class="text-left px-4 py-2 font-medium">Time</th>
+                  <th class="text-left px-4 py-2 font-medium">Customer</th>
+                  <th class="text-left px-4 py-2 font-medium">Technician</th>
+                  <th class="text-left px-4 py-2 font-medium">Source</th>
+                  <th class="text-left px-4 py-2 font-medium">Status</th>
+                  <th class="text-left px-4 py-2 font-medium">Issue</th>
+                  <th class="text-right px-4 py-2 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="ev in dayEvents" :key="ev.id">
+                  <tr :class="[
+                        ev.issue_type ? 'bg-red-50/50 border-l-4 border-l-red-500' : 'hover:bg-gray-50',
+                        highlightedEventId === ev.id && 'ring-2 ring-orange-400'
+                      ]"
+                      class="border-b border-gray-100 transition">
+                    <td class="px-4 py-3 text-gray-700 whitespace-nowrap">
+                      <span x-text="ev.time_start"></span>
+                      <span class="text-gray-400" x-show="ev.time_end"> – <span x-text="ev.time_end"></span></span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="text-gray-900 font-medium" x-text="ev.customer"></div>
+                      <div x-show="ev.customer_address" class="text-xs text-gray-500 truncate max-w-[200px]" x-text="ev.customer_address"></div>
+                    </td>
+                    <td class="px-4 py-3 text-gray-700" x-text="ev.technician"></td>
+                    <td class="px-4 py-3">
+                      <button @click.stop="openSourceInfo(ev)" :class="{
+                        'bg-orange-100 text-orange-700 hover:bg-orange-200': ev.source === 'rule',
+                        'bg-blue-100 text-blue-700 hover:bg-blue-200':     ev.source === 'pattern',
+                        'bg-gray-100 text-gray-700 hover:bg-gray-200':     ev.source === 'manual',
+                      }" class="text-xs font-semibold px-2 py-1 rounded transition" x-text="(ev.source||'').toUpperCase()"></button>
+                    </td>
+                    <td class="px-4 py-3">
+                      <span :class="{
+                        'bg-blue-100 text-blue-700':       ev.status === 'draft' && !ev.issue_type,
+                        'bg-red-100 text-red-700':         ev.issue_type,
+                        'bg-green-100 text-green-700':     ev.status === 'approved',
+                        'bg-purple-100 text-purple-700':   ev.status === 'scheduled',
+                      }" class="text-xs font-semibold px-2 py-1 rounded"
+                            x-text="ev.issue_type ? 'CONFLICT' : (ev.status || '').toUpperCase()"></span>
+                    </td>
+                    <td class="px-4 py-3 text-gray-600 text-xs">
+                      <span x-show="ev.issue_type" class="text-red-600 font-medium"
+                            x-text="(ev.issue_type || '').replace('_',' ')"></span>
+                      <span x-show="!ev.issue_type" class="text-gray-400">—</span>
+                    </td>
+                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                      <button x-show="ev.issue_type" @click="openConflictForEvent(ev.id)"
+                              class="text-xs font-semibold text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded transition">Resolve</button>
+                      <button x-show="!ev.issue_type && ev.status === 'draft'"
+                              class="text-xs font-medium text-gray-600 hover:text-orange-600">Edit</button>
+                      <button x-show="ev.status === 'approved'"
+                              class="text-xs font-medium text-gray-500">View</button>
+                    </td>
+                  </tr>
+                </template>
+                <tr x-show="dayEvents.length === 0">
+                  <td colspan="7" class="px-4 py-12 text-center text-gray-400 text-sm">No visits scheduled for this day</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# Daily Load — PRD §20 (col-span 3) #}
+        <div class="col-span-12 lg:col-span-3 bg-white border border-gray-200 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-gray-900">
+              Daily Load <span class="text-gray-400 font-normal">(Top 5 Technicians)</span>
+            </h3>
+            <select x-model="loadScope" @change="loadPanels()"
+                    class="text-xs border border-gray-200 rounded px-2 py-1">
+              <option value="month">This Month</option>
+              <option value="week">This Week</option>
+              <option value="day">Selected Day</option>
+            </select>
+          </div>
+          <div class="space-y-3">
+            <template x-for="(t, i) in (panelsData.daily_load || []).slice(0, 5)" :key="t.id">
+              <div>
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-gray-700 truncate">
+                    <span class="text-gray-400" x-text="(i+1) + '.'"></span>
+                    <span class="font-medium" x-text="t.name"></span>
+                  </span>
+                  <span class="text-gray-500 font-medium" x-text="t.visits + ' visits'"></span>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                  <div class="bg-orange-500 h-1.5 rounded-full transition-all"
+                       :style="`width: ${t.pct}%`"></div>
+                </div>
+              </div>
+            </template>
+            <div x-show="(panelsData.daily_load || []).length === 0" class="text-xs text-gray-400 italic text-center py-4">No data</div>
+          </div>
+        </div>
+
+        {# Legend — PRD §21 (col-span 2) #}
+        <div class="col-span-12 lg:col-span-2 bg-white border border-gray-200 rounded-xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900 mb-3">Legend</h3>
+          <div class="space-y-3 text-xs">
+            <div>
+              <div class="text-gray-500 uppercase font-medium mb-2 text-[10px]">Source</div>
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-500"></span> Rule</div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Pattern</div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-gray-400"></span> Manual</div>
+              </div>
+            </div>
+            <div class="pt-2 border-t border-gray-100">
+              <div class="text-gray-500 uppercase font-medium mb-2 text-[10px]">Status</div>
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-blue-400"></span> Draft</div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-500"></span> Conflict</div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span> Approved</div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-purple-500"></span> Published</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Rule Impact Preview + Audit Summary ROW — PRD §22, §23 #}
+      <div class="grid grid-cols-12 gap-4">
+
+        {# Rule Impact Preview — PRD §22 (col-span 5) #}
+        <div class="col-span-12 lg:col-span-5 bg-white border border-gray-200 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-gray-900">Rule Impact Preview</h3>
+            <button @click="showImpactDetails = !showImpactDetails"
+                    class="text-xs font-medium text-orange-600 hover:text-orange-700">
+              View Impact Details →
+            </button>
+          </div>
+          <div class="flex items-center gap-6">
+            {# Donut SVG #}
+            <div class="relative w-32 h-32 flex-shrink-0">
+              <svg viewBox="0 0 36 36" class="transform -rotate-90 w-full h-full">
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#F3F4F6" stroke-width="3.5"/>
+                <template x-for="(seg, i) in donutSegments()" :key="i">
+                  <circle cx="18" cy="18" r="15.9" fill="none"
+                          :stroke="seg.color" stroke-width="3.5"
+                          :stroke-dasharray="`${seg.dash} 100`"
+                          :stroke-dashoffset="-seg.offset"/>
+                </template>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-2xl font-bold text-gray-900"
+                      x-text="(panelsData.rule_impact?.total || 0)"></span>
+                <span class="text-[10px] text-gray-500 uppercase">Total Visits</span>
+              </div>
+            </div>
+            {# Legend #}
+            <div class="flex-1 space-y-2">
+              <template x-for="seg in (panelsData.rule_impact?.segments || [])" :key="seg.label">
+                <div class="flex items-center justify-between text-sm">
+                  <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-sm" :style="`background:${seg.color}`"></span>
+                    <span class="text-gray-700" x-text="seg.label"></span>
+                  </div>
+                  <div class="font-medium text-gray-900">
+                    <span x-text="seg.count"></span>
+                    <span class="text-gray-400 text-xs">(<span x-text="seg.pct"></span>%)</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        {# Audit Summary — PRD §23 (col-span 7) #}
+        <div class="col-span-12 lg:col-span-7 bg-white border border-gray-200 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-gray-900">Audit Summary</h3>
+            <button @click="openAuditLog()" class="text-xs font-medium text-orange-600 hover:text-orange-700">
+              View Audit Details →
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div class="flex items-center justify-between border-b border-gray-100 py-1.5">
+              <span class="text-gray-600">Active Rules Applied</span>
+              <span class="font-semibold text-gray-900" x-text="panelsData.audit_summary?.active_rules_applied || 0"></span>
+            </div>
+            <div class="flex items-center justify-between border-b border-gray-100 py-1.5">
+              <span class="text-gray-600">Rules Triggered</span>
+              <span class="font-semibold text-gray-900" x-text="panelsData.audit_summary?.rules_triggered || 0"></span>
+            </div>
+            <div class="flex items-center justify-between border-b border-gray-100 py-1.5">
+              <span class="text-gray-600">Exceptions (Skipped)</span>
+              <span class="font-semibold text-amber-600" x-text="panelsData.audit_summary?.exceptions_skipped || 0"></span>
+            </div>
+            <div class="flex items-center justify-between border-b border-gray-100 py-1.5">
+              <span class="text-gray-600">Holiday Exceptions</span>
+              <span class="font-semibold text-red-600" x-text="panelsData.audit_summary?.holiday_exceptions || 0"></span>
+            </div>
+            <div class="flex items-center justify-between py-1.5">
+              <span class="text-gray-600">Holiday Skipped</span>
+              <span class="font-semibold text-gray-900" x-text="panelsData.audit_summary?.holiday_skipped || 0"></span>
+            </div>
+            <div class="flex items-center justify-between py-1.5">
+              <span class="text-gray-600">Uncovered Customers</span>
+              <span class="font-semibold text-amber-600" x-text="panelsData.audit_summary?.uncovered_customers || 0"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Right: Conflict Resolution Drawer ── PRD §18 #}
+    <div x-show="drawerOpen" x-cloak class="w-96 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col"
+         style="position: sticky; top: 80px; max-height: calc(100vh - 100px);">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-gray-900">Conflict Resolution</h3>
+          <div class="text-xs text-gray-500 mt-1" x-show="conflictDetail">
+            <span x-text="formatLongDate(conflictDetail?.visit_date)"></span> ·
+            <span x-text="(conflictDetail?.type || '').replace('_',' ').toUpperCase()"></span>
+          </div>
+        </div>
+        <button @click="drawerOpen = false" class="text-gray-400 hover:text-gray-700">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div x-show="conflictDetail" class="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        {# Affected technician #}
+        <div>
+          <div class="text-xs text-gray-500 uppercase font-medium mb-1">Affected Technician</div>
+          <div class="bg-gray-50 rounded-lg p-3">
+            <div class="font-medium text-gray-900" x-text="conflictDetail?.technician?.name || '—'"></div>
+            <div class="text-xs text-gray-500 mt-0.5">
+              <span x-text="conflictDetail?.technician?.type"></span>
+            </div>
+          </div>
+        </div>
+
+        {# Conflicting visits #}
+        <div>
+          <div class="text-xs text-gray-500 uppercase font-medium mb-2">Conflicting Visits</div>
+          <div class="space-y-2">
+            <template x-for="(v, i) in (conflictDetail?.visits || [])" :key="v.id">
+              <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div class="flex items-start justify-between mb-1">
+                  <span class="text-xs font-bold text-red-700">Visit <span x-text="String.fromCharCode(65+i)"></span></span>
+                  <span class="text-xs px-2 py-0.5 bg-white border border-red-300 text-red-700 rounded">CONFLICT</span>
+                </div>
+                <div class="text-sm font-medium text-gray-900">
+                  <span x-text="v.time_start"></span> – <span x-text="v.time_end || '?'"></span>
+                </div>
+                <div class="text-sm text-gray-700" x-text="v.customer"></div>
+                <div class="text-xs text-gray-500 mt-1">Source: <span x-text="(v.source || '').toUpperCase()"></span></div>
+              </div>
+              <div x-show="i === 0 && conflictDetail?.visits?.length > 1" class="text-center text-xs font-bold text-gray-400">vs</div>
+            </template>
+          </div>
+        </div>
+
+        {# Issue #}
+        <div>
+          <div class="text-xs text-gray-500 uppercase font-medium mb-1">Issue</div>
+          <div class="text-sm text-gray-700" x-text="conflictDetail?.issue || ''"></div>
+        </div>
+
+        {# Suggested fixes — PRD §18.5 #}
+        <div>
+          <div class="text-xs text-gray-500 uppercase font-medium mb-2">Suggested Fixes</div>
+          <div class="space-y-2">
+            <template x-for="(fix, idx) in (conflictDetail?.suggested_fixes || [])" :key="idx">
+              <button @click="selectedFix = fix"
+                      :class="selectedFix?.type === fix.type
+                                ? 'border-orange-500 ring-2 ring-orange-200 bg-orange-50'
+                                : 'border-gray-200 hover:border-orange-300'"
+                      class="w-full text-left border rounded-lg p-3 transition">
+                <div class="flex items-start justify-between">
+                  <span class="text-sm font-medium text-gray-900" x-text="fix.label"></span>
+                  <span x-show="fix.recommended" class="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded font-medium">Recommended</span>
+                </div>
+                <div x-show="fix.payload?.new_technician_name" class="text-xs text-gray-500 mt-1">
+                  Backup: <span x-text="fix.payload?.new_technician_name"></span>
+                </div>
+              </button>
+            </template>
+            <div x-show="(conflictDetail?.suggested_fixes || []).length === 0"
+                 class="text-xs text-gray-400 italic">No auto-suggested fix. Use manual edit.</div>
+          </div>
+        </div>
+      </div>
+
+      {# Drawer actions #}
+      <div class="px-5 py-4 border-t border-gray-100 space-y-2">
+        <button @click="applySuggestedFix()" :disabled="!selectedFix || busy"
+                class="w-full bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-orange-600 disabled:opacity-50">
+          Apply Suggested Fix
+        </button>
+        <button class="w-full bg-white border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50">
+          Edit Manually
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Confirmation Modal (generic)                                         #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div x-show="confirmModal.open" x-transition.opacity x-cloak
+       @click="confirmModal.open = false"
+       class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-bold text-gray-900" x-text="confirmModal.title"></h3>
+      <p class="text-sm text-gray-600 mt-3" x-text="confirmModal.body"></p>
+      <div class="flex justify-end gap-2 mt-6">
+        <button @click="confirmModal.open = false"
+                class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+          Cancel
+        </button>
+        <button @click="confirmModal.onConfirm && confirmModal.onConfirm(); confirmModal.open = false"
+                :class="confirmModal.confirmClass"
+                class="px-4 py-2 text-sm font-medium text-white rounded-lg"
+                x-text="confirmModal.confirmLabel"></button>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Publish Schedule Modal (PRD §19.3 — summary before confirm)         #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div x-show="publishModal.open" x-transition.opacity x-cloak
+       @click="publishModal.open = false"
+       class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-gray-900">Publish Schedule</h3>
+      </div>
+      <div class="p-6 space-y-4">
+        <p class="text-sm text-gray-600">
+          You are about to publish the schedule for
+          <span class="font-semibold text-gray-900" x-text="formatMonth(targetMonth)"></span>.
+          Technicians will receive their final schedule and can no longer be edited freely.
+        </p>
+        <div class="grid grid-cols-2 gap-3 text-sm bg-gray-50 rounded-lg p-4">
+          <div>
+            <div class="text-xs text-gray-500">Total Visits</div>
+            <div class="font-bold text-gray-900 text-lg" x-text="(kpi.publishable?.total || 0).toLocaleString()"></div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Approved & Publishable</div>
+            <div class="font-bold text-purple-600 text-lg" x-text="(kpi.publishable?.count || 0).toLocaleString()"></div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Active Rules</div>
+            <div class="font-semibold text-gray-900" x-text="kpi.rule_based?.active_rules || 0"></div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Conflicts Remaining</div>
+            <div class="font-semibold" :class="(kpi.conflicts?.total || 0) === 0 ? 'text-green-600' : 'text-red-600'"
+                 x-text="kpi.conflicts?.total || 0"></div>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+        <button @click="publishModal.open = false"
+                class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+          Cancel
+        </button>
+        <button @click="doPublish()"
+                class="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+          Publish Final Schedule
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Source Info Modal — clicked badge                                   #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div x-show="sourceInfoModal.open" x-transition.opacity x-cloak
+       @click="sourceInfoModal.open = false"
+       class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-bold text-gray-900">
+        Source: <span x-text="(sourceInfoModal.event?.source || '').toUpperCase()"></span>
+      </h3>
+      <div class="mt-3 text-sm space-y-2">
+        <div x-show="sourceInfoModal.event?.source === 'rule'" class="bg-orange-50 border border-orange-200 rounded p-3">
+          This visit was generated from an active recurring rule.
+          <div class="mt-2">
+            <a :href="`/enterprise/master-rules?client_id=${sourceInfoModal.event?.client_id}`"
+               class="text-orange-600 font-medium hover:underline">View Master Rule →</a>
+          </div>
+        </div>
+        <div x-show="sourceInfoModal.event?.source === 'pattern'" class="bg-blue-50 border border-blue-200 rounded p-3">
+          This visit was detected from historical schedule patterns (Mei 2026).
+          <div class="text-xs text-gray-600 mt-1" x-text="sourceInfoModal.event?.notes"></div>
+        </div>
+        <div x-show="sourceInfoModal.event?.source === 'manual'" class="bg-gray-50 border border-gray-200 rounded p-3">
+          This visit was added manually.
+        </div>
+      </div>
+      <div class="mt-6 flex justify-end">
+        <button @click="sourceInfoModal.open = false"
+                class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ─────────────────────────────────────────────────────────────────── #}
+  {# Audit Log Modal                                                     #}
+  {# ─────────────────────────────────────────────────────────────────── #}
+  <div x-show="auditModal.open" x-transition.opacity x-cloak
+       @click="auditModal.open = false"
+       class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col" style="max-height: 80vh">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-gray-900">Audit Log</h3>
+        <button @click="auditModal.open = false" class="text-gray-400 hover:text-gray-700">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto p-6">
+        <table class="w-full text-sm">
+          <thead class="text-xs text-gray-500 uppercase border-b border-gray-200">
+            <tr>
+              <th class="text-left py-2 px-3">When</th>
+              <th class="text-left py-2 px-3">Action</th>
+              <th class="text-left py-2 px-3">Reason</th>
+              <th class="text-left py-2 px-3">By</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in auditModal.log" :key="row.id">
+              <tr class="border-b border-gray-50">
+                <td class="py-2 px-3 text-gray-600 text-xs whitespace-nowrap" x-text="new Date(row.changed_at).toLocaleString()"></td>
+                <td class="py-2 px-3"><span class="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded" x-text="row.action.replace('_', ' ')"></span></td>
+                <td class="py-2 px-3 text-gray-700 text-xs" x-text="row.reason || '—'"></td>
+                <td class="py-2 px-3 text-gray-600 text-xs">user #<span x-text="row.changed_by"></span></td>
+              </tr>
+            </template>
+            <tr x-show="auditModal.log.length === 0">
+              <td colspan="4" class="py-8 text-center text-gray-400">No audit entries yet</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# Toast #}
+  <div x-show="toast" x-transition.opacity x-cloak
+       class="fixed bottom-6 right-6 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm max-w-md z-50">
+    <div x-text="toast"></div>
+  </div>
+</div>
+
+<script>
+function scheduleDraftCalendar() {
+  return {
+    // State
+    busy: false,
+    toast: '',
+    batchId: null,
+    kpi: {},
+    summary: [],
+    technicians: [],
+    customers: [],
+    targetMonth: '',
+    viewMode: 'month',
+
+    // Panels data
+    panelsData: {},
+    loadScope: 'month',
+    showImpactDetails: false,
+
+    // Selection
+    selectedDate: null,
+    dayEvents: [],
+    dayHoliday: null,
+    dayHolidaySkipped: 0,
+    highlightedEventId: null,
+
+    // Filters
+    filterTechnician: '',
+    filterCustomer: '',
+    filterSource: '',
+    filterStatus: '',
+
+    // Conflict drawer
+    drawerOpen: false,
+    conflictDetail: null,
+    selectedFix: null,
+    conflictsList: [],
+
+    // Confirmation modals
+    confirmModal: { open: false, title: '', body: '', confirmLabel: 'Confirm',
+                    confirmClass: 'bg-orange-500 hover:bg-orange-600', onConfirm: null },
+    sourceInfoModal: { open: false, event: null },
+    publishModal: { open: false },
+    auditModal: { open: false, log: [] },
+
+    async init() {
+      const today = new Date();
+      const next = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      this.targetMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+      await Promise.all([
+        this.loadBatch(),
+        this.loadTechnicians(),
+      ]);
+    },
+
+    async loadTechnicians() {
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/technicians`);
+        if (r.ok) {
+          const d = await r.json();
+          this.technicians = d.technicians || d || [];
+        }
+      } catch(e) {}
+    },
+
+    async loadBatch() {
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/calendar/draft/latest?target_month=${this.targetMonth}`);
+        if (r.ok) {
+          const d = await r.json();
+          this.batchId = d.batch?.id;
+          await this.reload();
+        } else {
+          this.batchId = null;
+          this.summary = [];
+          this.kpi = {};
+          this.panelsData = {};
+        }
+      } catch(e) { console.error(e); }
+    },
+
+    async reload() {
+      if (!this.batchId) return;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const [kpiR, sumR, panelsR] = await Promise.all([
+        auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/kpi`),
+        auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/summary`),
+        auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/panels?scope=${this.loadScope}`),
+      ]);
+      this.kpi = (await kpiR.json()) || {};
+      this.summary = (await sumR.json())?.days || [];
+      this.panelsData = (await panelsR.json()) || {};
+    },
+
+    async loadPanels() {
+      if (!this.batchId) return;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const dateParam = (this.loadScope !== 'month' && this.selectedDate) ? `&date=${this.selectedDate}` : '';
+      const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/panels?scope=${this.loadScope}${dateParam}`);
+      this.panelsData = (await r.json()) || {};
+    },
+
+    donutSegments() {
+      const segs = this.panelsData.rule_impact?.segments || [];
+      let offset = 0;
+      return segs.filter(s => s.count > 0).map(s => {
+        const dash = s.pct;
+        const cur = { dash, offset, color: s.color };
+        offset += dash;
+        return cur;
+      });
+    },
+
+    async reloadDay() {
+      if (!this.selectedDate) return;
+      await this.selectDay(this.selectedDate);
+    },
+
+    async selectDay(dateStr) {
+      this.selectedDate = dateStr;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/day?date=${dateStr}`);
+      const d = await r.json();
+      const all = d.events || [];
+      this.dayEvents = all.filter(ev => {
+        if (this.filterTechnician && String(ev.technician_id) !== String(this.filterTechnician)) return false;
+        if (this.filterCustomer && ev.customer !== this.filterCustomer) return false;
+        if (this.filterSource && ev.source !== this.filterSource) return false;
+        if (this.filterStatus === 'conflict' && !ev.issue_type) return false;
+        if (this.filterStatus && this.filterStatus !== 'conflict' && ev.status !== this.filterStatus) return false;
+        return true;
+      });
+      this.dayHoliday = d.holiday;
+      this.dayHolidaySkipped = d.holiday_skipped_count;
+      // Reload panels if scope is day/week
+      if (this.loadScope !== 'month') await this.loadPanels();
+    },
+
+    async openConflictForEvent(eventId) {
+      this.highlightedEventId = eventId;
+      setTimeout(() => this.highlightedEventId = null, 3000);
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/conflicts`);
+      const d = await r.json();
+      const conflict = (d.conflicts || []).find(c =>
+        c.visit_a_id === eventId || c.visit_b_id === eventId);
+      if (conflict) await this.openConflictDetail(conflict.id);
+    },
+
+    async openConflictDetail(conflictId) {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/conflicts/${conflictId}`);
+      this.conflictDetail = await r.json();
+      this.selectedFix = (this.conflictDetail.suggested_fixes || []).find(f => f.recommended) || null;
+      this.drawerOpen = true;
+    },
+
+    async applySuggestedFix() {
+      if (!this.selectedFix || !this.conflictDetail) return;
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/conflicts/${this.conflictDetail.id}/apply-fix`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            fix_type: this.selectedFix.type,
+            payload:  this.selectedFix.payload || {},
+            reason:   'Applied via UI',
+          }),
+        });
+        const d = await r.json();
+        if (d.success) {
+          this.showToast(`Fix applied. ${d.remaining_conflicts} conflicts remaining.`);
+          this.drawerOpen = false;
+          await this.reload();
+          if (this.selectedDate) await this.selectDay(this.selectedDate);
+        }
+      } finally { this.busy = false; }
+    },
+
+    confirmModalShow(opts) {
+      this.confirmModal = { open: true, ...opts };
+    },
+
+    async generateDraft() {
+      this.confirmModalShow({
+        title: 'Generate Draft Schedule',
+        body: `Generate draft for ${this.formatMonth(this.targetMonth)}? This will replace any existing draft and re-detect conflicts.`,
+        confirmLabel: 'Generate Draft',
+        confirmClass: 'bg-orange-500 hover:bg-orange-600',
+        onConfirm: async () => {
+          this.busy = true;
+          try {
+            const sourceY = parseInt(this.targetMonth.slice(0, 4));
+            const sourceM = parseInt(this.targetMonth.slice(5)) - 1;
+            const sm = sourceM > 0 ? `${sourceY}-${String(sourceM).padStart(2,'0')}` : `${sourceY-1}-12`;
+            const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const r = await auth(`/api/v1/enterprise/calendar/generate-draft`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({source_month: sm, target_month: this.targetMonth, min_confidence: 0.5}),
+            });
+            const d = await r.json();
+            this.showToast(d.message || 'Draft generated.');
+            await this.loadBatch();
+          } finally { this.busy = false; }
+        }
+      });
+    },
+
+    async approveDay() {
+      if (!this.selectedDate) return;
+      const conflictCount = (this.summary.find(s => s.date === this.selectedDate)?.conflict_count) || 0;
+      const cleanCount = this.dayEvents.filter(e => !e.issue_type && e.status === 'draft').length;
+      this.confirmModalShow({
+        title: `Approve Day — ${this.formatLongDate(this.selectedDate)}`,
+        body: conflictCount > 0
+          ? `Approve ${cleanCount} clean visits for this day? ${conflictCount} conflicted visits will remain unresolved and will not be approved.`
+          : `Approve ${cleanCount} draft visits for this day?`,
+        confirmLabel: 'Approve Clean Visits',
+        confirmClass: 'bg-green-500 hover:bg-green-600',
+        onConfirm: async () => {
+          this.busy = true;
+          try {
+            const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/approve-day`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({date: this.selectedDate, mode: 'clean_only'}),
+            });
+            const d = await r.json();
+            this.showToast(d.message);
+            await this.reload();
+            await this.selectDay(this.selectedDate);
+          } finally { this.busy = false; }
+        }
+      });
+    },
+
+    async approveCleanDays() {
+      const cleanDays = this.summary.filter(s => s.conflict_count === 0 && s.total_visits > 0).length;
+      this.confirmModalShow({
+        title: 'Approve All Clean Days',
+        body: `Approve all draft visits from ${cleanDays} days with 0 conflicts? Days with unresolved conflicts will be skipped.`,
+        confirmLabel: 'Approve All Clean',
+        confirmClass: 'bg-green-500 hover:bg-green-600',
+        onConfirm: async () => {
+          this.busy = true;
+          try {
+            const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+            const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/approve-clean-days`, {method: 'POST'});
+            const d = await r.json();
+            this.showToast(`Approved ${d.approved_count} events across ${d.clean_days.length} clean days. ${d.skipped_conflict_days} conflict-days skipped.`);
+            await this.reload();
+          } finally { this.busy = false; }
+        }
+      });
+    },
+
+    async confirmPublish() {
+      if ((this.kpi.conflicts?.total || 0) > 0) return;
+      this.publishModal.open = true;
+    },
+
+    async doPublish() {
+      this.publishModal.open = false;
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/publish`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({confirm: true}),
+        });
+        const d = await r.json();
+        if (d.success) this.showToast(`✓ Published ${d.published_count} visits. Technicians notified.`);
+        else this.showToast(d.message || 'Publish failed.');
+        await this.reload();
+      } finally { this.busy = false; }
+    },
+
+    openSourceInfo(ev) {
+      this.sourceInfoModal = { open: true, event: ev };
+    },
+
+    async openAuditLog() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/calendar/draft/${this.batchId}/audit?limit=50`);
+      const d = await r.json();
+      this.auditModal = { open: true, log: d.log || [] };
+    },
+
+    prevMonth() {
+      const [y, m] = this.targetMonth.split('-').map(Number);
+      this.targetMonth = m > 1 ? `${y}-${String(m-1).padStart(2,'0')}` : `${y-1}-12`;
+      this.loadBatch();
+    },
+    nextMonth() {
+      const [y, m] = this.targetMonth.split('-').map(Number);
+      this.targetMonth = m < 12 ? `${y}-${String(m+1).padStart(2,'0')}` : `${y+1}-01`;
+      this.loadBatch();
+    },
+
+    formatMonth(m) {
+      if (!m) return '—';
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const [y, mo] = m.split('-').map(Number);
+      return `${months[mo-1]} ${y}`;
+    },
+    formatLongDate(d) {
+      if (!d) return '';
+      const dt = new Date(d);
+      return dt.toLocaleDateString('en-US', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+    },
+
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => this.toast = '', 4000);
+    },
+
+    get uniqueCustomersInDay() {
+      const set = new Set();
+      (this.dayEvents || []).forEach(e => e.customer && set.add(e.customer));
+      return Array.from(set).sort();
+    },
+
+    get calendarCells() {
+      // Build 6×7 grid for the month
+      if (!this.targetMonth) return [];
+      const [y, m] = this.targetMonth.split('-').map(Number);
+      const firstDay = new Date(y, m-1, 1);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const weekdayOffset = (firstDay.getDay() + 6) % 7; // Mon=0
+      const summaryMap = {};
+      this.summary.forEach(d => summaryMap[d.date] = d);
+      const cells = [];
+      for (let i = 0; i < weekdayOffset; i++) {
+        cells.push({key: `pad-${i}`, date: null});
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const iso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const s = summaryMap[iso] || {};
+        cells.push({
+          key:             iso,
+          date:            iso,
+          day:             d,
+          selected:        this.selectedDate === iso,
+          total_visits:    s.total_visits || 0,
+          rule_count:      s.rule_count || 0,
+          pattern_count:   s.pattern_count || 0,
+          manual_count:    s.manual_count || 0,
+          conflict_count:  s.conflict_count || 0,
+        });
+      }
+      // Padding to fill last week
+      while (cells.length % 7 !== 0) cells.push({key: `padE-${cells.length}`, date: null});
+      return cells;
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -707,11 +707,14 @@ def generate_draft():
                             INSERT INTO snc_schedule_events
                                 (technician_id, client_id, visit_type,
                                  start_datetime, end_datetime, start_date,
-                                 schedule_status, draft_batch_id, created_by, notes)
-                            VALUES (%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s)
+                                 schedule_status, draft_batch_id, created_by, notes,
+                                 source, rule_id, is_mandatory)
+                            VALUES (%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s,
+                                    'rule',%s,%s)
                         """, (tech, cid, rule['visit_type'],
                               start_dt, end_dt, visit_date,
-                              batch_id, user_id, notes))
+                              batch_id, user_id, notes,
+                              rule['id'], rule['is_mandatory']))
                         events_created += 1
                         tech_workload[week_key] = tech_workload.get(week_key, 0) + 1
                         tech_workload[day_key]  = tech_workload.get(day_key, 0) + 1
@@ -921,8 +924,9 @@ def generate_draft():
                         INSERT INTO snc_schedule_events
                             (technician_id, supervisor_id, client_id, visit_type,
                              start_datetime, end_datetime, start_date,
-                             schedule_status, draft_batch_id, created_by, notes)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s)
+                             schedule_status, draft_batch_id, created_by, notes,
+                             source)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s,'pattern')
                     """, (
                         assigned_tech, supervisor_id, client_id,
                         p['visit_type'], start_dt, end_dt, visit_date,
@@ -933,6 +937,17 @@ def generate_draft():
                     tech_workload[day_key]  = tech_workload.get(day_key, 0) + 1
 
             conn.commit()
+
+    # ── Auto-detect conflicts setelah generate ──────────────────────────────
+    conflict_stats = {"detected": 0}
+    try:
+        from kil.backend.legacy.api.conflict_detection import detect_conflicts
+        with _get_local_pool().connection() as conn2:
+            with conn2.cursor(row_factory=dict_row) as cur2:
+                conflict_stats = detect_conflicts(cur2, batch_id)
+            conn2.commit()
+    except Exception as _e:
+        pass  # non-fatal
 
     return jsonify({
         "batch_id":         batch_id,
@@ -946,11 +961,12 @@ def generate_draft():
         "events_created":   events_created,
         "events_skipped":   events_skipped,
         "skip_reasons":     dict(skip_reasons),
+        "conflicts_detected": conflict_stats,
         "message": (f"Draft {target_month}: {events_created} kunjungan, "
                     f"{len(schedulable_techs)} teknisi, "
                     f"{len(rules)} rules applied "
                     f"({rules_override_count} mandatory), "
-                    f"{consolidated_count} pattern overlap di-dedup, "
+                    f"{conflict_stats.get('detected', 0)} conflicts terdeteksi, "
                     f"{len(suppressed)} hari libur dilewati."),
     })
 
