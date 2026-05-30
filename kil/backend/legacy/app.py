@@ -229,6 +229,10 @@ app.register_blueprint(schedule_gen_bp, url_prefix="/api/v1/enterprise/schedule-
 from kil.backend.legacy.api.schedule_draft import draft_bp
 app.register_blueprint(draft_bp)
 
+# Manual Recurring Rules (Phase 1)
+from kil.backend.legacy.api.recurring_rules import recurring_rules_bp
+app.register_blueprint(recurring_rules_bp)
+
 # Chemical Usage Tracking
 from kil.backend.legacy.api.chemical_tracking import chemical_bp
 app.register_blueprint(chemical_bp, url_prefix="/api/v1/enterprise/chemicals")

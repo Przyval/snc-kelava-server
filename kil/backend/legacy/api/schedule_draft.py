@@ -132,6 +132,53 @@ def _load_schedulable_technicians(cur, target_date: date) -> set:
     """, (target_date,))
     return {r['id'] for r in cur.fetchall()}
 
+def _generate_rule_dates(rule: dict, year: int, month: int, suppressed: set) -> list:
+    """
+    Generate target dates dari recurring rule untuk bulan target.
+    Support multi-DOW (rule.weekdays = [0, 3] = Mon+Thu) + week_pattern.
+    """
+    import calendar as _cal
+    _, ndays = _cal.monthrange(year, month)
+    weekdays = rule.get('weekdays') or []
+    if not weekdays:
+        return []
+    frequency = rule['frequency']
+    week_pattern = rule.get('week_pattern')
+    suppress_holiday = rule.get('suppress_holiday', True)
+    is_mandatory = rule.get('is_mandatory', False)
+
+    target_dates = []
+    for day in range(1, ndays + 1):
+        d = date(year, month, day)
+        if d.weekday() not in weekdays:
+            continue
+        # Suppression check
+        if d in suppressed and suppress_holiday:
+            continue
+        # Apply week_pattern filter for biweekly/monthly
+        wom = (d.day - 1) // 7 + 1
+        if frequency in ('biweekly', 'monthly') and week_pattern:
+            if week_pattern.startswith('cadence:'):
+                # Cadence anchor projection
+                try:
+                    anchor = date.fromisoformat(week_pattern[8:])
+                    delta = (d - anchor).days
+                    if delta % 14 != 0 or delta < 0:
+                        continue
+                except Exception:
+                    pass
+            else:
+                # Standard week_pattern '1,3' or '2,4'
+                try:
+                    target_woms = [int(w) for w in week_pattern.split(',') if w.strip().isdigit()]
+                    if wom not in target_woms:
+                        continue
+                except Exception:
+                    pass
+        target_dates.append(d)
+    return sorted(target_dates)
+
+
 def _consolidate_patterns_per_client(patterns: list, schedulable_techs: set) -> list:
     """
     BUG FIX #9 + #10 + #12: Dedup multi-pattern per (client, day_of_week) +
@@ -530,6 +577,16 @@ def generate_draft():
             # ── Primary technician per client (sudah pre-filtered ke schedulable)
             primary_tech = _load_primary_technician(cur, schedulable_techs)
 
+            # ── BUG FIX #22 / Phase 1: Load manual recurring rules ────────────
+            # Rules override pattern detection untuk customer yang sudah punya rule
+            cur.execute("""
+                SELECT * FROM snc_recurring_rules
+                WHERE effective_start <= %s
+                  AND (effective_end IS NULL OR effective_end >= %s)
+            """, (target_month_start, target_month_start))
+            rules = cur.fetchall()
+            rule_by_client = {r['client_id']: r for r in rules}
+
             # ── Delete existing draft if re-generating ────────────────────────
             cur.execute("""
                 SELECT id FROM snc_draft_batches WHERE target_month = %s
@@ -574,10 +631,90 @@ def generate_draft():
             patterns = _consolidate_patterns_per_client(patterns, schedulable_techs)
             consolidated_count = patterns_before - len(patterns)
 
+            # ── BUG FIX #22 / Phase 1: Filter patterns yang sudah punya mandatory rule
+            # Customer dengan is_mandatory=true rule → skip pattern detection
+            mandatory_clients = {r['client_id'] for r in rules if r['is_mandatory']}
+            patterns = [p for p in patterns if p['client_id'] not in mandatory_clients]
+            rules_override_count = len(mandatory_clients)
+
             events_created  = 0
             events_skipped  = 0
             skip_reasons    = defaultdict(int)
             tech_workload   = defaultdict(int)   # untuk leveling cap
+
+            # ── Phase 1: Process recurring rules FIRST (mandatory + optional) ──
+            # Semantic: primary + backup_1 + backup_2 = ALL come together (co-visit)
+            # Not fallback — supervisor specifies multi-tech intentionally
+            for rule in rules:
+                cid = rule['client_id']
+                if active_clients is not None and cid not in active_clients:
+                    events_skipped += 1
+                    skip_reasons['rule_customer_inactive'] += 1
+                    continue
+
+                # Collect ALL schedulable techs from rule (primary + backups)
+                rule_techs = []
+                for tid in [rule['primary_tech_id'], rule['backup_tech_1_id'], rule['backup_tech_2_id']]:
+                    if tid and tid in schedulable_techs and tid not in rule_techs:
+                        rule_techs.append(tid)
+
+                if not rule_techs:
+                    events_skipped += 1
+                    skip_reasons['rule_no_tech_available'] += 1
+                    continue
+
+                # Generate target dates per weekday in rule
+                rule_dates = _generate_rule_dates(rule, tgt_year, tgt_month, suppressed)
+
+                # Insert events for each tech × date (co-visit semantic)
+                for visit_date in rule_dates:
+                    for tech in rule_techs:
+                        iso_year, iso_week, _ = visit_date.isocalendar()
+                        week_key = (tech, iso_year, iso_week)
+                        day_key  = (tech, visit_date)
+                        if tech_workload.get(week_key, 0) >= 18:
+                            events_skipped += 1
+                            skip_reasons['week_cap_exceeded'] += 1
+                            continue
+                        if tech_workload.get(day_key, 0) >= 5:
+                            events_skipped += 1
+                            skip_reasons['day_cap_exceeded'] += 1
+                            continue
+
+                        ts = rule['time_start']
+                        te = rule['time_end']
+                        try:
+                            start_dt = datetime.combine(visit_date, ts)
+                        except Exception:
+                            start_dt = datetime(visit_date.year, visit_date.month, visit_date.day, 8, 0)
+                        end_dt = datetime.combine(visit_date, te) if te else None
+                        if end_dt and end_dt <= start_dt:
+                            end_dt += timedelta(days=1)
+
+                        cur.execute("""
+                            SELECT id FROM snc_schedule_events
+                            WHERE draft_batch_id = %s AND technician_id = %s
+                              AND client_id = %s AND start_date = %s LIMIT 1
+                        """, (batch_id, tech, cid, visit_date))
+                        if cur.fetchone():
+                            events_skipped += 1
+                            skip_reasons['duplicate'] += 1
+                            continue
+
+                        notes = f"Rule | {rule['frequency']} | mandatory={rule['is_mandatory']}"
+
+                        cur.execute("""
+                            INSERT INTO snc_schedule_events
+                                (technician_id, client_id, visit_type,
+                                 start_datetime, end_datetime, start_date,
+                                 schedule_status, draft_batch_id, created_by, notes)
+                            VALUES (%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s)
+                        """, (tech, cid, rule['visit_type'],
+                              start_dt, end_dt, visit_date,
+                              batch_id, user_id, notes))
+                        events_created += 1
+                        tech_workload[week_key] = tech_workload.get(week_key, 0) + 1
+                        tech_workload[day_key]  = tech_workload.get(day_key, 0) + 1
 
             for p in patterns:
                 client_id = p['client_id']
@@ -804,11 +941,15 @@ def generate_draft():
         "suppressed_dates": sorted(str(d) for d in suppressed),
         "schedulable_technicians": len(schedulable_techs),
         "patterns_consolidated": consolidated_count,
+        "rules_applied":    len(rules),
+        "rules_mandatory":  rules_override_count,
         "events_created":   events_created,
         "events_skipped":   events_skipped,
         "skip_reasons":     dict(skip_reasons),
         "message": (f"Draft {target_month}: {events_created} kunjungan, "
                     f"{len(schedulable_techs)} teknisi, "
+                    f"{len(rules)} rules applied "
+                    f"({rules_override_count} mandatory), "
                     f"{consolidated_count} pattern overlap di-dedup, "
                     f"{len(suppressed)} hari libur dilewati."),
     })
