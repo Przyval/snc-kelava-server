@@ -6,13 +6,19 @@ Run: 2026-05-30 (local). Source: `snc_schedule_patterns` source_month=2026-05 + 
 
 | Metric | Value | PRD Target | Δ |
 |---|---|---|---|
-| Active rules used | 206 | — | — |
-| Events generated | 634 | — | — |
-| **Hard recall** (exact tech+client+date) | **56.2%** | 78-82% | -21.8 pts |
-| Soft recall (client+date) | 58.6% | — | — |
-| Customer recall (visited at all) | 89.2% | — | — |
-| Precision | 60.4% | — | — |
-| Conflicts detected | 67 (44 overlap + 23 holiday) | — | — |
+| Active rules used | 205 | — | — |
+| Events generated | 622 | — | — |
+| **Hard recall** (exact tech+client+date) | **63.2%** | 78-82% | -14.8 pts |
+| Soft recall (client+date) | 63.3% | — | — |
+| Customer recall (visited at all) | 88.7% | — | — |
+| Precision | 59.6% | — | — |
+| Conflicts detected | 66 (44 overlap + 22 holiday) | — | — |
+
+> **Important correction**: Initial run reported 56.2% recall against a polluted xlsx parse
+> that counted 71 "OFF" entries (off-duty markers) as Tanamera Coffee visits, because the
+> fuzzy matcher allowed `OFF` ⊂ `coffee`. After filtering placeholder values (OFF, CUTI,
+> TP, PM, BDG, NO, P, X, S, JP, ST) and requiring both sides ≥5 chars for substring
+> match, true recall is **63.2%** against 587 real triples (not 682 polluted).
 
 **Verdict**: System works end-to-end. From "auto-generate is impossible" (Pre-promote 11%) to a **working 56% recall draft**. 22 pts short of target — closable with manual rule curation for the top gap customers.
 

@@ -36,6 +36,12 @@ TECH_MAP = {
     'FATHUR': 51, 'RANGGA': 10, 'IMAM': 12, 'ARGA': 13, 'RENDY': 14,
     'IRUL': 15,
 }
+# These xlsx values are placeholders / status markers, never real customer names.
+# Without filtering them, fuzzy substring match misroutes them (e.g. 'OFF' → 'CoFFee').
+NON_CUSTOMER = {
+    'OFF', 'CUTI', 'LIBUR', 'NO', 'P', 'X', 'S', 'JP', 'ST', 'TP', 'PM', 'BDG',
+    'KETERANGAN', 'Keterangan:', 'Penanggung Jawab', 'SNC TEAM', 'OFFICE SNC',
+}
 SYSTEM_USER_ID = 1
 
 
@@ -93,11 +99,16 @@ def resolve_visits(cur, visits):
     idx = {norm(n): cid for cid, n in clients_by_id.items()}
     resolved = []
     for v in visits:
-        cn = norm(v["customer"])
+        raw = (v["customer"] or "").strip()
+        if not raw or raw in NON_CUSTOMER or len(raw) < 2:
+            continue
+        cn = norm(raw)
         cid = idx.get(cn)
-        if not cid:
+        # Tighter fuzzy: only allow substring when BOTH sides ≥5 chars
+        # (prevents 'OFF' matching 'CoFFee')
+        if not cid and len(cn) >= 5:
             for n2, id2 in idx.items():
-                if cn in n2 or (n2 in cn and len(n2) >= 4):
+                if len(n2) >= 5 and (cn in n2 or n2 in cn):
                     cid = id2; break
         if cid:
             resolved.append({**v, "client_id": cid, "tech_id": TECH_MAP.get(v["tech"])})
