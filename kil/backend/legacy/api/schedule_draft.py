@@ -22,7 +22,7 @@ Flow:
 
 from datetime import date, datetime, timedelta
 import calendar as cal_mod
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 from flask import Blueprint, jsonify, request, g
 from core.security import require_auth
@@ -144,6 +144,69 @@ def _load_schedulable_technicians(cur, target_date: date) -> set:
           AND employee_type IN ('mobile', 'support')
     """, (target_date,))
     return {r['id'] for r in cur.fetchall()}
+
+def _stable_week_pattern(visit_infos: list, source_year: int, source_month: int) -> tuple[str | None, float]:
+    """
+    Pattern Detector v22 — multi-month WoM consistency check.
+
+    For a biweekly client, look at every month in lookback and find which
+    weeks-of-month they were visited (on this DOW). If consistent (≥66%
+    of months hit the same WoM set), return that as explicit `week_pattern`
+    (e.g. '2,4' or '1,3,5'). Otherwise return (None, 0) so caller falls
+    back to cadence anchor.
+
+    Returns: (week_pattern_str or None, consistency_score 0..1)
+
+    Why this fixes v21's overfit problem:
+      - v21 used `cadence:<last-may-date>` — projects from a single point,
+        misses if June koordinator shifts cadence
+      - v22 uses majority-vote across all observed months — robust to
+        any single month's irregularity, captures stable patterns
+    """
+    if not visit_infos:
+        return None, 0.0
+
+    # Group by (year, month) → set of WoMs visited that month
+    by_month = defaultdict(set)
+    for v in visit_infos:
+        d = v['date']
+        # Skip source month — we want HISTORY only for inference
+        if d.year == source_year and d.month == source_month:
+            continue
+        by_month[(d.year, d.month)].add(v['wom'])
+
+    if len(by_month) < 2:
+        return None, 0.0  # need ≥2 prior months for consistency
+
+    # Strategy 1: exact set majority vote (e.g. {2,4} appears in 2/3 months)
+    wom_set_counts = Counter()
+    for woms in by_month.values():
+        wom_set_counts[frozenset(woms)] += 1
+    top_set, top_count = wom_set_counts.most_common(1)[0]
+    consistency = top_count / len(by_month)
+
+    # Strategy 2: union-of-stable WoMs (which WoMs appear in ≥50% of months?)
+    # This handles cases where one month skips a week — still captures the
+    # overall stable pattern.
+    wom_freq = Counter()
+    for woms in by_month.values():
+        for w in woms:
+            wom_freq[w] += 1
+    threshold = max(1, len(by_month) // 2)
+    stable_woms = sorted([w for w, n in wom_freq.items() if n >= threshold])
+
+    # Pick whichever strategy gives higher confidence
+    if consistency >= 0.66 and top_set and len(top_set) <= 3:
+        return ','.join(str(w) for w in sorted(top_set)), consistency
+    if stable_woms and 1 <= len(stable_woms) <= 3:
+        # Strategy 2 confidence = avg fraction of months hitting these WoMs
+        s2_conf = sum(wom_freq[w] for w in stable_woms) / (len(stable_woms) * len(by_month))
+        if s2_conf >= 0.5:
+            return ','.join(str(w) for w in stable_woms), s2_conf
+    return None, consistency
+
+    return ','.join(str(w) for w in sorted(top_set)), consistency
+
 
 def _generate_rule_dates(rule: dict, year: int, month: int, suppressed: set) -> list:
     """
@@ -466,7 +529,16 @@ def detect_patterns():
                         confidence   = round(min(0.85, weighted_count / 8.0), 2)
                     else:  # ≥10 hari = biweekly
                         frequency    = 'biweekly'
-                        week_pattern = f"cadence:{last_src_visit.isoformat()}" if last_src_visit else ','.join(str(w) for w in src_woms)
+                        # Pattern Detector v22: try multi-month WoM consistency first.
+                        # Falls back to v21 cadence-anchor only when history is too thin
+                        # or weeks-of-month are inconsistent across months.
+                        stable_wp, _consistency = _stable_week_pattern(visit_infos, year, month)
+                        if stable_wp:
+                            week_pattern = stable_wp
+                        elif last_src_visit:
+                            week_pattern = f"cadence:{last_src_visit.isoformat()}"
+                        else:
+                            week_pattern = ','.join(str(w) for w in src_woms)
                         confidence   = round(min(1.0, weighted_count / (2 * 3.0)), 2)
 
                 elif long_history_weekly:
