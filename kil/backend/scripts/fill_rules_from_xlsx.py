@@ -115,7 +115,7 @@ def resolve_visits(cur, visits):
     return resolved, clients_by_id
 
 
-def derive_rule_for_client(visits_for_client, active_tech_ids):
+def derive_rule_for_client(visits_for_client, active_tech_ids, threshold: int = 3):
     """Returns (rule_payload, reason_string) or (None, skip_reason)."""
     if not visits_for_client:
         return None, "no_visits"
@@ -130,10 +130,10 @@ def derive_rule_for_client(visits_for_client, active_tech_ids):
     if not groups:
         return None, "no_active_tech_visits"
 
-    # Filter to groups with >=3 visits
-    big = {k: vs for k, vs in groups.items() if len(vs) >= 3}
+    # Filter to groups with >=threshold visits
+    big = {k: vs for k, vs in groups.items() if len(vs) >= threshold}
     if not big:
-        return None, "max_group_<3"
+        return None, f"max_group_<{threshold}"
 
     # Pick the largest group as primary
     primary_key = max(big.keys(), key=lambda k: len(big[k]))
@@ -214,6 +214,8 @@ def insert(cur, payload, user_id):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--visits", default="/tmp/juni_visits.json")
+    ap.add_argument("--threshold", type=int, default=3,
+                    help="Min visits in a (tech, dow) group to create a rule")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--user-id", type=int, default=SYSTEM_USER_ID)
     args = ap.parse_args()
@@ -239,7 +241,7 @@ def main():
 
             for cid in gap_clients:
                 vs = by_client[cid]
-                rule, reason = derive_rule_for_client(vs, active_techs)
+                rule, reason = derive_rule_for_client(vs, active_techs, args.threshold)
                 if rule is None:
                     skip_reasons[reason] += 1
                     continue
