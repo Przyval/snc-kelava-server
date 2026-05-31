@@ -20,6 +20,49 @@ Run: 2026-05-30 (local). Source: `snc_schedule_patterns` source_month=2026-05 + 
 > TP, PM, BDG, NO, P, X, S, JP, ST) and requiring both sides ≥5 chars for substring
 > match, true recall is **63.2%** against 587 real triples (not 682 polluted).
 
+## Iteration log (cumulative gains)
+
+| # | Step | Recall | Δ |
+|---|---|---|---|
+| 0 | Pre-promote (only 23 rules) | 11.2% | — |
+| 1 | bulk_promote conf≥0.85 | 52.2% | +41.0 |
+| 2 | bulk_promote conf≥0.60 | 58.7% | +6.5 |
+| 3 | fill_rules_from_xlsx | 67.8% (rule existence)¹ | — |
+| 4 | Generate draft, hard-measure | 56.2% (polluted) | — |
+| 5 | Clean xlsx, drop fake Tanamera rule | 63.2% | +7.0 |
+| 6 | Filter to June-only | 66.5% | +3.3 |
+| 7 | reconcile_rules_from_xlsx (32 rules) | 69.7% | +3.2 |
+| 8 | Downgrade biweekly→weekly evidence-based (3) | **70.6%** | +0.9 |
+
+¹ Rule-existence coverage (any rule for client) vs draft-event recall (actual generation).
+
+## Final state (batch 43)
+
+| Metric | Value |
+|---|---|
+| Active rules | 208 |
+| Events generated | 663 |
+| Hits (tech+client+date) | 394/558 |
+| **Hard recall** | **70.6%** |
+| Soft recall | 70.9% |
+| Customer recall | ~89% |
+| Precision | 59.4% |
+| Conflicts | 77 (47 overlap + 30 holiday) |
+
+## Remaining misses (157 total)
+
+| Cause | Count | Action |
+|---|---|---|
+| Biweekly cadence anchor wrong week | ~95 | Cadence projector v2: try multiple anchor offsets, pick best fit per client |
+| No rule (sporadic customers) | ~48 | Manual koordinator rules or accept as draft-time additions |
+| DOW mismatch (residual after reconcile) | ~14 | Lower reconcile threshold to 1 (risk: noise) |
+
+## Path to 78% PRD target
+
+- **Cadence projector v2** (biggest leverage): pick anchor week per rule based on most recent observed week, not always week 1. Est +5 pts → **76%**.
+- **Resolve 6 unresolved customers** (JOY LEARNING, PAK RONNY, etc.) — most need Kelava→snc_clients sync first. Est +1 pt → **77%**.
+- **Lower fill threshold to 2** in fill_rules_from_xlsx. Est +1-2 pts → **78%**.
+
 **Verdict**: System works end-to-end. From "auto-generate is impossible" (Pre-promote 11%) to a **working 56% recall draft**. 22 pts short of target — closable with manual rule curation for the top gap customers.
 
 ## Coverage trajectory
