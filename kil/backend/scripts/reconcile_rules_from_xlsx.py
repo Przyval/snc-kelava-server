@@ -60,19 +60,25 @@ def main():
                 if not dow_dist:
                     continue
                 rule_dows = set(r["weekdays"] or [])
-                # Strong-evidence DOWs (≥threshold distinct dates in June)
+                # Strong-evidence DOWs (≥threshold distinct dates in target month)
                 strong = {dow for dow, dates in dow_dist.items() if len(dates) >= args.threshold}
-                if not strong:
-                    continue
-                # If rule already covers ALL strong DOWs, nothing to fix
-                if strong.issubset(rule_dows):
-                    continue
-                new_weekdays = sorted(rule_dows | strong)
-                # Downgrade biweekly→weekly if ≥3 dates per DOW
-                new_freq = r["frequency"]
                 max_dates = max((len(dates) for dates in dow_dist.values()), default=0)
-                if r["frequency"] == "biweekly" and max_dates >= 3:
+
+                # Decide new weekdays + frequency
+                new_weekdays = sorted(rule_dows | strong) if strong else sorted(rule_dows)
+                new_freq = r["frequency"]
+                # Upgrade frequency based on evidence:
+                # - any frequency with ≥3 distinct weeks of visits per DOW = weekly
+                # - biweekly/monthly with 2 weeks = biweekly (keep)
+                if max_dates >= 3 and r["frequency"] in ("biweekly", "monthly", "adhoc"):
                     new_freq = "weekly"
+
+                # Skip if no change at all
+                no_dow_change = strong.issubset(rule_dows)
+                no_freq_change = new_freq == r["frequency"]
+                if no_dow_change and no_freq_change:
+                    continue
+
                 updates.append({
                     "rule_id": r["id"],
                     "client_id": r["client_id"],
@@ -93,11 +99,20 @@ def main():
                 return
 
             for u in updates:
-                cur.execute("""
-                    UPDATE snc_recurring_rules
-                    SET weekdays = %s, frequency = %s
-                    WHERE id = %s
-                """, (u["new_weekdays"], u["new_frequency"], u["rule_id"]))
+                # When upgrading to weekly, null out week_pattern (it would still
+                # restrict projection to specific weeks otherwise).
+                if u["new_frequency"] == "weekly":
+                    cur.execute("""
+                        UPDATE snc_recurring_rules
+                        SET weekdays = %s, frequency = %s, week_pattern = NULL
+                        WHERE id = %s
+                    """, (u["new_weekdays"], u["new_frequency"], u["rule_id"]))
+                else:
+                    cur.execute("""
+                        UPDATE snc_recurring_rules
+                        SET weekdays = %s, frequency = %s
+                        WHERE id = %s
+                    """, (u["new_weekdays"], u["new_frequency"], u["rule_id"]))
                 cur.execute("""
                     INSERT INTO snc_recurring_rule_log
                         (rule_id, action, changed_fields, reason, changed_by)
