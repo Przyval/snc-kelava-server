@@ -379,6 +379,88 @@ def layer_duplicates(month):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /audit/layer/contract-coverage/<m> — PRD §8.3
+# ─────────────────────────────────────────────────────────────────────────────
+
+@audit_bp.route("/layer/contract-coverage/<month>", methods=["GET"])
+@require_auth
+def layer_contract_coverage(month):
+    """SSOT contract coverage check for target month."""
+    import calendar as cm
+    try:
+        y, m = map(int, month.split("-"))
+        _, n = cm.monthrange(y, m)
+        mstart, mend = date(y, m, 1), date(y, m, n)
+    except Exception:
+        return jsonify({"error": "month YYYY-MM"}), 400
+
+    with _get_local_pool().connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            # SSOT active customers (kontrak cover target month)
+            cur.execute("""
+                SELECT DISTINCT c.id, c.name FROM snc_clients c
+                JOIN snc_contracts k ON k.snc_customer_id = c.id
+                WHERE COALESCE(k.is_active, 'YES') = 'YES'
+                  AND k.start_date <= %s AND k.end_date >= %s
+                ORDER BY c.name
+            """, (mend, mstart))
+            ssot = cur.fetchall()
+            ssot_ids = {r['id'] for r in ssot}
+
+            # Customers in current draft
+            cur.execute("""
+                SELECT id FROM snc_draft_batches
+                WHERE target_month = %s ORDER BY id DESC LIMIT 1
+            """, (month,))
+            row = cur.fetchone()
+            batch_id = row['id'] if row else None
+            in_draft = set()
+            if batch_id:
+                cur.execute("""
+                    SELECT DISTINCT client_id FROM snc_schedule_events
+                    WHERE draft_batch_id = %s
+                """, (batch_id,))
+                in_draft = {r['client_id'] for r in cur.fetchall()}
+
+            # Customers with active rule
+            cur.execute("""
+                SELECT DISTINCT client_id FROM snc_recurring_rules
+                WHERE effective_end IS NULL OR effective_end >= %s
+            """, (mstart,))
+            with_rule = {r['client_id'] for r in cur.fetchall()}
+
+            # Manual visits (visit without contract in SSOT)
+            cur.execute("""
+                SELECT DISTINCT se.client_id FROM snc_schedule_events se
+                WHERE se.draft_batch_id = %s
+                  AND NOT EXISTS (
+                    SELECT 1 FROM snc_contracts k
+                    WHERE k.snc_customer_id = se.client_id
+                      AND COALESCE(k.is_active, 'YES') = 'YES'
+                      AND k.start_date <= %s AND k.end_date >= %s
+                  )
+            """, (batch_id, mend, mstart)) if batch_id else None
+            manual = {r['client_id'] for r in cur.fetchall()} if batch_id else set()
+
+    covered = ssot_ids & in_draft
+    missing_schedule = ssot_ids - in_draft  # SSOT customer no event
+    missing_rule = ssot_ids - with_rule     # SSOT customer no rule (subset of above)
+
+    return jsonify({
+        "month": month, "batch_id": batch_id,
+        "ssot_active_customers": len(ssot_ids),
+        "covered_in_draft": len(covered),
+        "missing_from_draft": len(missing_schedule),
+        "missing_rule": len(missing_rule),
+        "manual_visits_no_contract": len(manual),
+        "coverage_pct": round(len(covered) * 100 / max(len(ssot_ids), 1), 1),
+        "missing_sample": [
+            r['name'] for r in ssot if r['id'] in missing_schedule
+        ][:50],
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /audit/publish-gate/<m> — formal publish-gate check + log decision
 # ─────────────────────────────────────────────────────────────────────────────
 

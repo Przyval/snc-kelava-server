@@ -705,6 +705,27 @@ def generate_draft():
             src_y, src_m = _parse_month(source_month)
             active_clients = _load_active_clients_smart(cur, src_y, src_m)
 
+            # ── Omzet SSOT filter (PRD: hanya customer dgn kontrak aktif) ────
+            # Customer hanya schedulable kalau ada snc_contracts dengan period
+            # yang mencakup target month.
+            tgt_month_start = date(tgt_year, tgt_month, 1)
+            import calendar as _cal_mod
+            _, tgt_ndays = _cal_mod.monthrange(tgt_year, tgt_month)
+            tgt_month_end = date(tgt_year, tgt_month, tgt_ndays)
+            cur.execute("""
+                SELECT DISTINCT snc_customer_id FROM snc_contracts
+                WHERE snc_customer_id IS NOT NULL
+                  AND COALESCE(is_active, 'YES') = 'YES'
+                  AND start_date <= %s AND end_date >= %s
+            """, (tgt_month_end, tgt_month_start))
+            ssot_active_clients = {r['snc_customer_id'] for r in cur.fetchall()}
+
+            # Intersect with existing active_clients filter (if both set)
+            if active_clients is not None:
+                active_clients = active_clients & ssot_active_clients
+            else:
+                active_clients = ssot_active_clients
+
             # ── Per-customer suppression (Lokasi Libur Sementara) ─────────────
             client_suppressions = _load_client_suppressions(cur, tgt_year, tgt_month)
 
