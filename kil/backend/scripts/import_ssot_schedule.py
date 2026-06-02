@@ -179,7 +179,9 @@ def parse_sheet(ws, src_year: int | None = None, src_month: int | None = None):
                 break
             date_row = rows[i + 1] or ()
             day_dates = {}
-            for col_idx, day_idx in [(0, 0), (3, 1), (6, 2), (9, 3), (12, 4)]:
+            # 7 days per week-block: SEN, SEL, RAB, KAM, JUM, SAB, MIN
+            # Each day spans 3 columns (customer, time, type) starting at col_idx
+            for col_idx, day_idx in [(0, 0), (3, 1), (6, 2), (9, 3), (12, 4), (15, 5), (18, 6)]:
                 cell = date_row[col_idx] if col_idx < len(date_row) else None
                 if isinstance(cell, datetime):
                     d = cell.date()
@@ -192,7 +194,8 @@ def parse_sheet(ws, src_year: int | None = None, src_month: int | None = None):
                 jfirst = str(jrow[0] or '').strip().upper() if jrow else ''
                 if jfirst in ('SENIN', 'SENIN '):
                     break
-                for day_idx, col_start in enumerate(range(0, 15, 3)):
+                # 7 days × 3 cols = 21 columns total per week-block
+                for day_idx, col_start in enumerate(range(0, 21, 3)):
                     if day_idx not in day_dates:
                         continue
                     if col_start >= len(jrow):
