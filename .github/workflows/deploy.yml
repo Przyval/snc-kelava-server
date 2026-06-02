@@ -7,6 +7,7 @@ on:
 
 env:
   REMOTE: root@104.194.154.108
+  HOST: 104.194.154.108
   DEPLOY_DIR: /root/kil-server
 
 jobs:
@@ -35,7 +36,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ env.REMOTE }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ env.HOST }} >> ~/.ssh/known_hosts
 
       - name: Sync kil/backend/ to server
         run: |
