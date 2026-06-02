@@ -15,8 +15,62 @@ Steps:
 
 import sys
 import os
+import re
 import argparse
-from datetime import datetime, timedelta, time
+from datetime import date as _date_cls, datetime, timedelta, time
+
+# Indonesian month names → number (used for filename-based date repair)
+_BULAN_MAP = {
+    'januari': 1, 'january': 1, 'jan': 1,
+    'februari': 2, 'february': 2, 'feb': 2,
+    'maret': 3, 'march': 3, 'mar': 3,
+    'april': 4, 'apr': 4,
+    'mei': 5, 'may': 5,
+    'juni': 6, 'june': 6, 'jun': 6,
+    'juli': 7, 'july': 7, 'jul': 7,
+    'agustus': 8, 'august': 8, 'agust': 8, 'aug': 8,
+    'september': 9, 'sept': 9, 'sep': 9,
+    'oktober': 10, 'october': 10, 'okt': 10, 'oct': 10,
+    'november': 11, 'nov': 11,
+    'desember': 12, 'december': 12, 'des': 12, 'dec': 12,
+}
+
+
+def filename_year_month(filename: str) -> tuple[int | None, int | None]:
+    """
+    Extract (year, month) from xlsx filename like 'JADWAL TEKNISI JANUARI 2026'.
+    Returns (None, None) if not parseable.
+    """
+    lower = filename.lower()
+    year_match = re.search(r'\b(20\d{2})\b', lower)
+    year = int(year_match.group(1)) if year_match else None
+    month = None
+    for name, num in _BULAN_MAP.items():
+        if re.search(rf'\b{name}\b', lower):
+            month = num
+            break
+    return year, month
+
+
+def repair_date(cell_date: _date_cls, src_year: int, src_month: int) -> _date_cls:
+    """
+    If xlsx cell has wrong year/month (Excel epoch glitch: 1900-01-XX), remap
+    the day-of-month into the source year/month. Otherwise return as-is.
+    """
+    if not src_year or not src_month:
+        return cell_date
+    # Trust dates that are in or adjacent to source month
+    if cell_date.year == src_year and abs(cell_date.month - src_month) <= 1:
+        return cell_date
+    # Trust dates within the source month exactly
+    if cell_date.year == src_year and cell_date.month == src_month:
+        return cell_date
+    # Otherwise remap day-of-month onto source year/month
+    day = max(1, min(cell_date.day, 28))  # clamp to 28 to avoid Feb overflow
+    try:
+        return _date_cls(src_year, src_month, day)
+    except ValueError:
+        return _date_cls(src_year, src_month, 28)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
@@ -105,10 +159,13 @@ def make_datetimes(visit_date, start_t, end_t):
 
     return start_dt, end_dt
 
-def parse_sheet(ws):
+def parse_sheet(ws, src_year: int | None = None, src_month: int | None = None):
     """
     Parse one sheet. Returns list of:
     {date, customer_name, start_time, end_time, visit_type, row_number}
+
+    If src_year/src_month given, dates outside that month are repaired (handles
+    the Excel epoch glitch where some sheets store dates as 1900-01-XX).
     """
     rows = list(ws.iter_rows(values_only=True))
     visits = []
@@ -125,7 +182,10 @@ def parse_sheet(ws):
             for col_idx, day_idx in [(0, 0), (3, 1), (6, 2), (9, 3), (12, 4)]:
                 cell = date_row[col_idx] if col_idx < len(date_row) else None
                 if isinstance(cell, datetime):
-                    day_dates[day_idx] = cell.date()
+                    d = cell.date()
+                    if src_year and src_month:
+                        d = repair_date(d, src_year, src_month)
+                    day_dates[day_idx] = d
             j = i + 2
             while j < len(rows):
                 jrow = rows[j] or ()
@@ -227,13 +287,16 @@ def main():
 
     wb = openpyxl.load_workbook(args.xlsx, read_only=True, data_only=True)
     file_name = os.path.basename(args.xlsx)
-    month = None  # will detect from data
+    # Source month from filename (used to repair Excel epoch glitches)
+    src_year, src_month = filename_year_month(file_name)
+    month = (f"{src_year:04d}-{src_month:02d}"
+             if src_year and src_month else None)
 
     all_visits = []
     all_errors = []
 
     # Parse all sheets first
-    print(f"\nParsing {file_name}...")
+    print(f"\nParsing {file_name}  (source month from filename: {month or 'unknown'})...")
     for sheet_name in wb.sheetnames:
         tech_info = SHEET_MAP.get(sheet_name)
         if not tech_info:
@@ -243,7 +306,7 @@ def main():
             print(f"  SKIP '{sheet_name}' — marked skip (PM)")
             continue
         ws = wb[sheet_name]
-        visits, errors = parse_sheet(ws)
+        visits, errors = parse_sheet(ws, src_year, src_month)
         for v in visits:
             v['sheet_name'] = sheet_name
             v['tech_info']  = tech_info
@@ -253,10 +316,11 @@ def main():
             all_errors.append(e)
         print(f"  '{sheet_name}': {len(visits)} visits, {len(errors)} errors")
 
-    # Detect month
-    if all_visits:
-        months = {v['date'].strftime('%Y-%m') for v in all_visits}
-        month = sorted(months)[0]
+    # Fallback: if filename didn't yield month, derive from data (most-common month)
+    if not month and all_visits:
+        from collections import Counter
+        c = Counter(v['date'].strftime('%Y-%m') for v in all_visits)
+        month = c.most_common(1)[0][0]
 
     total = len(all_visits)
     print(f"\nTotal: {total} visits, {len(all_errors)} parse errors")
