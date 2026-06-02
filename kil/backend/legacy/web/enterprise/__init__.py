@@ -81,6 +81,24 @@ def master_rules():
     return render_template("enterprise/master_rules.html")
 
 
+@enterprise_bp.route("/lokasi-baru")
+def lokasi_baru():
+    """Daftar Lokasi — CRUD untuk snc_clients (anak-SD-friendly)."""
+    return render_template("enterprise/lokasi_baru.html")
+
+
+@enterprise_bp.route("/lokasi-libur")
+def lokasi_libur():
+    """Lokasi Libur Sementara — customer suppression manager."""
+    return render_template("enterprise/lokasi_libur.html")
+
+
+@enterprise_bp.route("/tech-tidak-masuk")
+def tech_tidak_masuk():
+    """Teknisi Tidak Masuk — tech availability manager."""
+    return render_template("enterprise/tech_tidak_masuk.html")
+
+
 @enterprise_bp.route("/contracts")
 def contracts():
     """Contract Management page."""

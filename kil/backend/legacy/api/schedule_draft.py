@@ -96,6 +96,50 @@ def _load_suppressed(cur, year: int, month: int) -> set:
     """, (date(year, month, 1), date(year, month, n)))
     return {r['suppression_date'] for r in cur.fetchall()}
 
+def _load_client_suppressions(cur, year: int, month: int) -> dict:
+    """
+    Return dict {client_id: set_of_dates} for per-customer suppressions
+    overlapping target month. Used to skip events for "lokasi libur sementara".
+    """
+    import calendar as cal_mod
+    _, ndays = cal_mod.monthrange(year, month)
+    mstart = date(year, month, 1)
+    mend = date(year, month, ndays)
+    cur.execute("""
+        SELECT client_id, start_date, end_date
+        FROM snc_client_suppression_dates
+        WHERE start_date <= %s AND end_date >= %s
+    """, (mend, mstart))
+    result = defaultdict(set)
+    for r in cur.fetchall():
+        d = max(r['start_date'], mstart)
+        end = min(r['end_date'], mend)
+        while d <= end:
+            result[r['client_id']].add(d)
+            d += timedelta(days=1)
+    return result
+
+
+def _load_tech_unavailable(cur, year: int, month: int) -> dict:
+    """
+    Return dict {(tech_id, date): {'status':'off|sick|training', 'backup_tech_id': N}}
+    for tech absences in target month.
+    """
+    import calendar as cal_mod
+    _, ndays = cal_mod.monthrange(year, month)
+    mstart = date(year, month, 1)
+    mend = date(year, month, ndays)
+    cur.execute("""
+        SELECT technician_id, date, status, backup_tech_id
+        FROM snc_technician_day_status
+        WHERE date BETWEEN %s AND %s
+          AND status IN ('off', 'sick', 'training')
+    """, (mstart, mend))
+    return {(r['technician_id'], r['date']): {
+        'status': r['status'], 'backup_tech_id': r['backup_tech_id']
+    } for r in cur.fetchall()}
+
+
 def _load_active_clients(cur) -> set:
     """
     Return set of snc_client_id yang status = 'active'.
@@ -661,6 +705,12 @@ def generate_draft():
             src_y, src_m = _parse_month(source_month)
             active_clients = _load_active_clients_smart(cur, src_y, src_m)
 
+            # ── Per-customer suppression (Lokasi Libur Sementara) ─────────────
+            client_suppressions = _load_client_suppressions(cur, tgt_year, tgt_month)
+
+            # ── Per-tech unavailability (Teknisi Tidak Masuk) ─────────────────
+            tech_unavailable = _load_tech_unavailable(cur, tgt_year, tgt_month)
+
             # ── Teknisi yang valid untuk di-schedule ──────────────────────────
             target_month_start = date(tgt_year, tgt_month, 1)
             schedulable_techs  = _load_schedulable_technicians(cur, target_month_start)
@@ -759,7 +809,23 @@ def generate_draft():
 
                 # Insert events for each tech × date (co-visit semantic)
                 for visit_date in rule_dates:
+                    # Skip if customer has suppression (Lokasi Libur Sementara)
+                    if visit_date in client_suppressions.get(cid, set()):
+                        events_skipped += 1
+                        skip_reasons['client_suppressed'] += 1
+                        continue
                     for tech in rule_techs:
+                        # Skip if tech is unavailable (cuti/sakit/training)
+                        if (tech, visit_date) in tech_unavailable:
+                            unav = tech_unavailable[(tech, visit_date)]
+                            # Try backup_tech if available and different
+                            backup_id = unav.get('backup_tech_id')
+                            if backup_id and backup_id in schedulable_techs and backup_id not in rule_techs:
+                                tech = backup_id  # reassign to backup
+                            else:
+                                events_skipped += 1
+                                skip_reasons[f'tech_unavailable_{unav["status"]}'] += 1
+                                continue
                         iso_year, iso_week, _ = visit_date.isocalendar()
                         week_key = (tech, iso_year, iso_week)
                         day_key  = (tech, visit_date)

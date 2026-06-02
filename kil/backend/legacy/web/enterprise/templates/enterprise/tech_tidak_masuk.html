@@ -1,0 +1,411 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Teknisi Tidak Masuk{% endblock %}
+
+{% block content %}
+<div x-data="techTidakMasuk()" x-init="init()" class="space-y-6 max-w-6xl mx-auto">
+
+  {# Header #}
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <span class="text-2xl">👤</span> Teknisi Tidak Masuk
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">Catat kalau teknisi cuti, sakit, atau training.</p>
+    </div>
+    <button @click="openWizard()"
+            class="px-6 py-3 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 flex items-center gap-2 shadow-md">
+      <span class="text-lg">➕</span> Catat Tidak Masuk
+    </button>
+  </div>
+
+  {# Month navigator + view toggle #}
+  <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+    <div class="flex items-center gap-2">
+      <button @click="prevMonth()" class="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">◀</button>
+      <span class="font-semibold text-gray-900 min-w-[120px] text-center" x-text="monthLabel"></span>
+      <button @click="nextMonth()" class="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">▶</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <button @click="view='cal'"
+              :class="view==='cal' ? 'bg-orange-100 text-orange-700' : 'bg-white text-gray-600 hover:bg-gray-50'"
+              class="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium">📅 Kalender</button>
+      <button @click="view='list'"
+              :class="view==='list' ? 'bg-orange-100 text-orange-700' : 'bg-white text-gray-600 hover:bg-gray-50'"
+              class="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium">📋 List</button>
+    </div>
+  </div>
+
+  {# Legend #}
+  <div class="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-red-400 rounded"></span> Cuti</span>
+    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-yellow-400 rounded"></span> Sakit</span>
+    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-blue-400 rounded"></span> Training</span>
+    <span class="flex items-center gap-1"><span class="w-3 h-3 bg-purple-400 rounded"></span> ½ hari</span>
+  </div>
+
+  {# Calendar view #}
+  <div x-show="view==='cal'" class="bg-white border border-gray-200 rounded-xl p-4">
+    <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-500 mb-2">
+      <div>Sen</div><div>Sel</div><div>Rab</div><div>Kam</div><div>Jum</div><div>Sab</div><div>Min</div>
+    </div>
+    <div class="grid grid-cols-7 gap-1">
+      <template x-for="d in calendarCells" :key="d.iso || d.k">
+        <div :class="d.iso ? 'bg-white hover:bg-orange-50 cursor-pointer border-gray-100' : 'bg-gray-50 border-transparent'"
+             class="min-h-[68px] border rounded-lg p-1.5 text-left transition"
+             @click="d.iso && openDayDetail(d.iso)">
+          <div x-show="d.iso" class="text-xs font-semibold text-gray-700" x-text="d.day"></div>
+          <div x-show="d.iso" class="flex flex-wrap gap-0.5 mt-1">
+            <template x-for="e in (days[d.iso] || []).slice(0,3)" :key="e.id">
+              <span :class="statusBadgeColor(e.status)"
+                    class="text-[10px] px-1 rounded font-medium leading-tight"
+                    x-text="e.tech_name.substring(0,3)"></span>
+            </template>
+            <span x-show="(days[d.iso] || []).length > 3"
+                  class="text-[10px] text-gray-500" x-text="'+' + ((days[d.iso] || []).length - 3)"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  {# List view #}
+  <div x-show="view==='list'" x-cloak class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="text-left px-4 py-3 font-medium">Teknisi</th>
+          <th class="text-left px-4 py-3 font-medium">Tanggal</th>
+          <th class="text-left px-4 py-3 font-medium">Status</th>
+          <th class="text-left px-4 py-3 font-medium">Alasan</th>
+          <th class="text-left px-4 py-3 font-medium">Pengganti</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="r in flatList" :key="r.id">
+          <tr class="border-b border-gray-100 hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium text-gray-900" x-text="r.tech_name"></td>
+            <td class="px-4 py-3 text-gray-700" x-text="fmtDate(r.date)"></td>
+            <td class="px-4 py-3">
+              <span :class="statusBadgeColor(r.status)" class="text-xs px-2 py-1 rounded font-semibold" x-text="statusLabel(r.status)"></span>
+            </td>
+            <td class="px-4 py-3 text-gray-600 text-sm" x-text="r.reason || '—'"></td>
+            <td class="px-4 py-3 text-gray-600 text-sm" x-text="r.backup_tech_name || '—'"></td>
+            <td class="px-4 py-3 text-right"><button @click="confirmDelete(r)" class="text-xs text-red-600 hover:underline">Hapus</button></td>
+          </tr>
+        </template>
+        <tr x-show="flatList.length === 0">
+          <td colspan="6" class="text-center text-gray-400 py-12">Belum ada catatan tidak masuk bulan ini.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Day detail popup #}
+  <div x-show="dayPopup.open" x-transition.opacity x-cloak
+       @click="dayPopup.open = false"
+       class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-gray-900">📅 <span x-text="fmtDate(dayPopup.date)"></span></h3>
+        <button @click="dayPopup.open = false" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+      </div>
+      <div class="p-6 space-y-2">
+        <template x-for="e in (days[dayPopup.date] || [])" :key="e.id">
+          <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+            <div class="flex items-center gap-3">
+              <span :class="statusBadgeColor(e.status)" class="text-xs px-2 py-1 rounded font-semibold" x-text="statusLabel(e.status)"></span>
+              <div>
+                <div class="font-medium text-gray-900" x-text="e.tech_name"></div>
+                <div class="text-xs text-gray-500" x-text="e.reason || ''"></div>
+              </div>
+            </div>
+            <button @click="confirmDelete(e)" class="text-red-500 hover:text-red-700">🗑</button>
+          </div>
+        </template>
+        <button @click="openWizard(dayPopup.date)" class="w-full mt-4 px-4 py-3 border-2 border-dashed border-orange-300 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-50">
+          + Tambah teknisi tidak masuk hari ini
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Wizard #}
+  <div x-show="wizard.open" x-transition.opacity x-cloak
+       @click="wizard.open = false"
+       class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
+    <div @click.stop class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">➕ Catat Tidak Masuk</h3>
+          <div class="flex items-center gap-1 mt-1">
+            <div :class="wizard.step >= 1 ? 'bg-orange-500' : 'bg-gray-200'" class="w-12 h-1 rounded-full"></div>
+            <div :class="wizard.step >= 2 ? 'bg-orange-500' : 'bg-gray-200'" class="w-12 h-1 rounded-full"></div>
+          </div>
+          <div class="text-xs text-gray-500 mt-1">Step <span x-text="wizard.step"></span> dari 2</div>
+        </div>
+        <button @click="wizard.open = false" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+      </div>
+
+      {# Step 1: Siapa + kapan #}
+      <div x-show="wizard.step === 1" class="p-6 space-y-4">
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Pilih teknisi</label>
+          <div class="grid grid-cols-3 gap-2">
+            <template x-for="t in technicians" :key="t.id">
+              <button @click="wizard.tech_id = t.id" type="button"
+                      :class="wizard.tech_id === t.id ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200 hover:border-orange-400'"
+                      class="px-2 py-2 rounded-lg border-2 text-xs font-semibold transition truncate"
+                      x-text="t.name.split(' ')[0]"></button>
+            </template>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Kapan?</label>
+          <div class="flex items-center gap-2 mb-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" x-model="wizard.range_mode" value="single" name="range-mode" class="w-4 h-4 text-orange-500">
+              <span class="text-sm">1 hari saja</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer ml-4">
+              <input type="radio" x-model="wizard.range_mode" value="range" name="range-mode" class="w-4 h-4 text-orange-500">
+              <span class="text-sm">Beberapa hari</span>
+            </label>
+          </div>
+          <div class="space-y-2">
+            <input type="date" x-model="wizard.date_from" :min="today"
+                   class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+            <input x-show="wizard.range_mode === 'range'" type="date" x-model="wizard.date_to" :min="wizard.date_from || today"
+                   class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+          </div>
+          <div class="text-xs text-orange-600 mt-1" x-show="rangeDays > 0">
+            ⓘ Total <strong x-text="rangeDays"></strong> hari
+          </div>
+        </div>
+      </div>
+
+      {# Step 2: Kenapa #}
+      <div x-show="wizard.step === 2" x-cloak class="p-6 space-y-4">
+        <div class="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 text-sm">
+          <div class="text-xs text-gray-500">Teknisi:</div>
+          <div class="font-semibold text-gray-900" x-text="techName(wizard.tech_id)"></div>
+          <div class="text-xs text-gray-600 mt-1" x-text="fmtRange()"></div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Kenapa tidak masuk?</label>
+          <div class="grid grid-cols-2 gap-2">
+            <template x-for="s in statusChips" :key="s.value">
+              <button @click="wizard.status = s.value" type="button"
+                      :class="wizard.status === s.value ? s.activeClass : 'bg-white text-gray-700 border-gray-200 hover:border-orange-400'"
+                      class="px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition flex items-center justify-center gap-2">
+                <span x-text="s.icon"></span><span x-text="s.label"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Pengganti (boleh skip)</label>
+          <select x-model="wizard.backup_tech_id" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base bg-white focus:border-orange-500 focus:outline-none">
+            <option value="">— Tidak ada pengganti —</option>
+            <template x-for="t in technicians.filter(t => t.id !== wizard.tech_id)" :key="t.id">
+              <option :value="t.id" x-text="t.name"></option>
+            </template>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">📝 Catatan (boleh skip)</label>
+          <textarea x-model="wizard.notes" rows="2" placeholder="Contoh: Sudah lapor HR"
+                    class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none"></textarea>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-100 flex gap-2">
+        <button x-show="wizard.step === 2" @click="wizard.step = 1"
+                class="px-4 py-3 text-sm font-medium text-gray-700 border-2 border-gray-200 rounded-lg hover:bg-gray-50">← Kembali</button>
+        <div class="flex-1"></div>
+        <button x-show="wizard.step === 1" @click="goStep2()"
+                :disabled="!canGoNext"
+                class="px-6 py-3 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40">Lanjut →</button>
+        <button x-show="wizard.step === 2" @click="saveWizard()"
+                :disabled="!wizard.status || busy"
+                class="px-6 py-3 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40 flex items-center gap-2">
+          <svg x-show="busy" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3"/></svg>
+          <span x-text="busy ? 'Menyimpan...' : '✓ Simpan'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Toast #}
+  <div x-show="toast.show" x-transition.opacity x-cloak
+       class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm flex items-center gap-3 z-50 min-w-[280px]">
+    <span x-text="toast.message"></span>
+    <button x-show="toast.undo" @click="undoLast()" class="text-orange-300 font-semibold hover:text-orange-100">UNDO</button>
+  </div>
+</div>
+
+<script>
+function techTidakMasuk() {
+  return {
+    busy: false,
+    view: 'cal',
+    cur: new Date(),
+    days: {},
+    technicians: [],
+    flatList: [],
+    today: new Date().toISOString().slice(0,10),
+    dayPopup: { open: false, date: null },
+    wizard: { open: false, step: 1, tech_id: null, range_mode: 'single',
+              date_from: '', date_to: '', status: '', notes: '', backup_tech_id: '' },
+    toast: { show: false, message: '', undo: null },
+    lastUndo: null,
+    statusChips: [
+      { value: 'off',      icon: '🟥', label: 'Cuti',     activeClass: 'bg-red-500 text-white border-red-500' },
+      { value: 'sick',     icon: '🟨', label: 'Sakit',    activeClass: 'bg-yellow-500 text-white border-yellow-500' },
+      { value: 'training', icon: '🟦', label: 'Training', activeClass: 'bg-blue-500 text-white border-blue-500' },
+      { value: 'half_day', icon: '🟪', label: '½ hari',   activeClass: 'bg-purple-500 text-white border-purple-500' },
+    ],
+
+    get monthLabel() {
+      return this.cur.toLocaleDateString('id-ID', {month:'long', year:'numeric'});
+    },
+    get monthIso() {
+      return this.cur.getFullYear() + '-' + String(this.cur.getMonth()+1).padStart(2,'0');
+    },
+    get calendarCells() {
+      const y = this.cur.getFullYear(), m = this.cur.getMonth();
+      const ndays = new Date(y, m+1, 0).getDate();
+      const first = new Date(y, m, 1).getDay();
+      const offset = (first === 0 ? 6 : first - 1); // Monday-first
+      const cells = [];
+      for (let i = 0; i < offset; i++) cells.push({k: 'pre' + i});
+      for (let d = 1; d <= ndays; d++) {
+        cells.push({day: d, iso: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+      }
+      while (cells.length % 7) cells.push({k: 'post' + cells.length});
+      return cells;
+    },
+    get rangeDays() {
+      if (this.wizard.range_mode === 'single') return this.wizard.date_from ? 1 : 0;
+      if (!this.wizard.date_from || !this.wizard.date_to) return 0;
+      const s = new Date(this.wizard.date_from), e = new Date(this.wizard.date_to);
+      return Math.max(0, Math.round((e-s)/86400000) + 1);
+    },
+    get canGoNext() {
+      if (!this.wizard.tech_id || !this.wizard.date_from) return false;
+      if (this.wizard.range_mode === 'range' && !this.wizard.date_to) return false;
+      return true;
+    },
+
+    async init() {
+      await this.loadTechs();
+      await this.reload();
+    },
+    async loadTechs() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      try {
+        const r = await auth('/api/v1/enterprise/recurring-rules/technicians');
+        const d = await r.json();
+        this.technicians = d.technicians || [];
+      } catch(e) { this.technicians = []; }
+    },
+    async reload() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/tech-availability/calendar?month=${this.monthIso}`);
+      const d = await r.json();
+      this.days = d.days || {};
+      // flat list
+      this.flatList = Object.entries(this.days).flatMap(([date, arr]) =>
+        arr.map(e => ({...e, date}))
+      ).sort((a,b) => b.date.localeCompare(a.date) || a.tech_name.localeCompare(b.tech_name));
+    },
+    prevMonth() { this.cur = new Date(this.cur.getFullYear(), this.cur.getMonth()-1, 1); this.reload(); },
+    nextMonth() { this.cur = new Date(this.cur.getFullYear(), this.cur.getMonth()+1, 1); this.reload(); },
+    openDayDetail(date) { this.dayPopup = { open: true, date }; },
+    openWizard(date = null) {
+      this.wizard = { open: true, step: 1, tech_id: null, range_mode: 'single',
+                      date_from: date || this.today, date_to: '', status: '',
+                      notes: '', backup_tech_id: '' };
+      this.dayPopup.open = false;
+    },
+    goStep2() { if (this.canGoNext) this.wizard.step = 2; },
+    fmtRange() {
+      if (this.wizard.range_mode === 'single') return this.fmtDate(this.wizard.date_from);
+      return this.fmtDate(this.wizard.date_from) + ' – ' + this.fmtDate(this.wizard.date_to);
+    },
+    async saveWizard() {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const date_to = this.wizard.range_mode === 'single' ? this.wizard.date_from : this.wizard.date_to;
+        const r = await auth('/api/v1/enterprise/tech-availability', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            technician_id: this.wizard.tech_id,
+            date_from: this.wizard.date_from,
+            date_to: date_to,
+            status: this.wizard.status,
+            notes: this.wizard.notes || null,
+            backup_tech_id: this.wizard.backup_tech_id || null,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) { this.showToast('❌ ' + (d.error || 'Gagal')); return; }
+        this.lastUndo = { type: 'delete', ids: d.ids || [] };
+        const aff = d.affected_draft_events || 0;
+        this.showToast(`✅ ${d.message}${aff > 0 ? ' (' + aff + ' jadwal terdampak)' : ''}`, true);
+        this.wizard.open = false;
+        await this.reload();
+      } finally { this.busy = false; }
+    },
+    confirmDelete(r) {
+      if (!confirm(`Hapus catatan ${r.tech_name} tanggal ${this.fmtDate(r.date)}?`)) return;
+      this.deleteOne(r.id);
+    },
+    async deleteOne(id) {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/tech-availability/${id}`, {
+        method: 'DELETE', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason: 'Hapus via UI'}),
+      });
+      const d = await r.json();
+      this.showToast(d.message || 'Dihapus');
+      this.dayPopup.open = false;
+      await this.reload();
+    },
+    async undoLast() {
+      if (!this.lastUndo) return;
+      if (this.lastUndo.type === 'delete') {
+        for (const id of this.lastUndo.ids) await this.deleteOne(id);
+      }
+      this.lastUndo = null;
+      this.toast.show = false;
+    },
+    techName(id) { return this.technicians.find(t => t.id === id)?.name || ''; },
+    statusLabel(s) {
+      return ({off:'Cuti', sick:'Sakit', training:'Training', half_day:'½ hari'}[s] || s);
+    },
+    statusBadgeColor(s) {
+      return ({
+        off: 'bg-red-100 text-red-700',
+        sick: 'bg-yellow-100 text-yellow-700',
+        training: 'bg-blue-100 text-blue-700',
+        half_day: 'bg-purple-100 text-purple-700',
+      }[s] || 'bg-gray-100 text-gray-700');
+    },
+    showToast(msg, undo = false) {
+      this.toast = { show: true, message: msg, undo };
+      setTimeout(() => { this.toast.show = false; }, 10000);
+    },
+    fmtDate(s) {
+      if (!s) return '';
+      return new Date(s).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric'});
+    },
+  };
+}
+</script>
+{% endblock %}

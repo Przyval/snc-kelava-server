@@ -1,0 +1,365 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Daftar Lokasi{% endblock %}
+
+{% block content %}
+<div x-data="lokasiBaru()" x-init="init()" class="space-y-6 max-w-5xl mx-auto">
+
+  {# Header #}
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <span class="text-2xl">📍</span> Daftar Lokasi
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">Tempat customer yang dikunjungi teknisi.</p>
+    </div>
+    <button @click="openWizard()"
+            class="px-6 py-3 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 flex items-center gap-2 shadow-md">
+      <span class="text-lg">➕</span> Tambah Lokasi Baru
+    </button>
+  </div>
+
+  {# Search bar (auto-focus) #}
+  <div class="bg-white border-2 border-gray-200 rounded-xl p-3 flex items-center gap-2">
+    <span class="text-gray-400 text-lg">🔍</span>
+    <input x-model="search" @input.debounce.300ms="reload()" x-ref="searchInput"
+           type="text" placeholder="Cari nama lokasi..."
+           class="flex-1 outline-none text-base">
+    <select x-model="filterArea" @change="reload()" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">
+      <option value="">Semua area</option>
+      <template x-for="a in areas" :key="a"><option :value="a" x-text="a"></option></template>
+    </select>
+    <label class="flex items-center gap-1 text-sm text-gray-600">
+      <input type="checkbox" x-model="activeOnly" @change="reload()" class="rounded">
+      Aktif saja
+    </label>
+  </div>
+
+  {# Count #}
+  <div class="text-xs text-gray-500">
+    Menampilkan <strong x-text="rows.length"></strong> dari <strong x-text="total"></strong> lokasi
+  </div>
+
+  {# List #}
+  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <template x-for="r in rows" :key="r.id">
+      <div @click="openDetail(r.id)"
+           class="border-b border-gray-100 hover:bg-orange-50 cursor-pointer p-4 flex items-center justify-between transition">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-gray-900 truncate" x-text="r.name"></div>
+          <div class="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+            <span x-show="r.area">🏠 <span x-text="r.area"></span></span>
+            <span x-show="r.default_visit_type">📋 <span x-text="r.default_visit_type"></span></span>
+            <span x-show="r.active_rule_count > 0">📅 <span x-text="r.active_rule_count + ' jadwal'"></span></span>
+            <span x-show="r.visits_30d > 0">✅ <span x-text="r.visits_30d + 'x bulan ini'"></span></span>
+            <span x-show="!r.is_active" class="text-red-600 font-medium">🚫 Disembunyikan</span>
+          </div>
+        </div>
+        <span class="text-gray-400 ml-3">›</span>
+      </div>
+    </template>
+    <div x-show="rows.length === 0 && !busy" class="p-12 text-center text-sm text-gray-400">
+      <div class="text-4xl mb-2">🔍</div>
+      Tidak ada lokasi dengan kata pencarian ini.
+    </div>
+  </div>
+
+  {# Wizard Modal — 3 steps #}
+  <div x-show="wizard.open" x-transition.opacity x-cloak
+       @click="wizard.open = false"
+       class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
+    <div @click.stop class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">➕ Tambah Lokasi Baru</h3>
+          <div class="flex items-center gap-1 mt-1">
+            <div :class="wizard.step >= 1 ? 'bg-orange-500' : 'bg-gray-200'" class="w-8 h-1 rounded-full"></div>
+            <div :class="wizard.step >= 2 ? 'bg-orange-500' : 'bg-gray-200'" class="w-8 h-1 rounded-full"></div>
+            <div :class="wizard.step >= 3 ? 'bg-orange-500' : 'bg-gray-200'" class="w-8 h-1 rounded-full"></div>
+          </div>
+          <div class="text-xs text-gray-500 mt-1">Step <span x-text="wizard.step"></span> dari 3</div>
+        </div>
+        <button @click="wizard.open = false" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+      </div>
+
+      {# Step 1: Nama #}
+      <div x-show="wizard.step === 1" class="p-6 space-y-4">
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Namanya apa?</label>
+          <input x-model="wizard.name" @input.debounce.500ms="checkDuplicate()"
+                 type="text" placeholder="Contoh: 88 EK"
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+          <div x-show="dupCheck.checking" class="text-xs text-gray-500 mt-2">Sebentar ya...</div>
+          <div x-show="dupCheck.found" x-cloak class="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <div class="text-xs font-semibold text-yellow-800">⚠ Sudah ada di daftar</div>
+            <button @click="openDetail(dupCheck.found?.existing_id); wizard.open=false"
+                    class="mt-2 w-full text-left px-3 py-2 bg-white border border-yellow-300 rounded text-sm hover:bg-yellow-100">
+              <strong x-text="wizard.name"></strong>
+              <span class="text-xs text-gray-500 ml-2" x-text="dupCheck.found?.existing_area || ''"></span>
+              <div class="text-xs text-yellow-700 mt-1">Maksudnya yang ini? Klik untuk buka.</div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {# Step 2: Area + alamat #}
+      <div x-show="wizard.step === 2" x-cloak class="p-6 space-y-4">
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Di area mana?</label>
+          <div class="grid grid-cols-2 gap-2 mb-3">
+            <template x-for="a in popularAreas" :key="a">
+              <button @click="wizard.area = a" type="button"
+                      :class="wizard.area === a ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200 hover:border-orange-400'"
+                      class="px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition"
+                      x-text="a"></button>
+            </template>
+          </div>
+          <input x-model="wizard.area" type="text" placeholder="Atau ketik area lain..."
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-2 text-sm focus:border-orange-500 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Alamat (boleh skip)</label>
+          <textarea x-model="wizard.address" rows="2" placeholder="Contoh: Jl. Mayjen Sungkono..."
+                    class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none"></textarea>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Jenis service</label>
+          <div class="flex gap-2">
+            <template x-for="vt in ['PRC','PC','RC','S-OUT']" :key="vt">
+              <button @click="wizard.default_visit_type = vt" type="button"
+                      :class="wizard.default_visit_type === vt ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200 hover:border-orange-400'"
+                      class="flex-1 px-3 py-2 rounded-lg border-2 text-xs font-semibold transition"
+                      x-text="vt"></button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      {# Step 3: Kontak #}
+      <div x-show="wizard.step === 3" x-cloak class="p-6 space-y-4">
+        <p class="text-xs text-gray-500">Semua field opsional. Klik Simpan kalau ga ada.</p>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">👤 Nama PIC</label>
+          <input x-model="wizard.contact_person" type="text" placeholder="Contoh: Pak Roni"
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">📱 WhatsApp</label>
+          <input x-model="wizard.contact_phone" type="tel" placeholder="0811-xxx-xxxx"
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">📝 Catatan</label>
+          <textarea x-model="wizard.notes" rows="2" placeholder="Contoh: Bayar TF akhir bulan"
+                    class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none"></textarea>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-100 flex gap-2">
+        <button x-show="wizard.step > 1" @click="wizard.step--"
+                class="px-4 py-3 text-sm font-medium text-gray-700 border-2 border-gray-200 rounded-lg hover:bg-gray-50">← Kembali</button>
+        <div class="flex-1"></div>
+        <button x-show="wizard.step < 3" @click="wizard.step++"
+                :disabled="wizard.step === 1 && (wizard.name.trim().length < 2 || dupCheck.found)"
+                class="px-6 py-3 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40">Lanjut →</button>
+        <button x-show="wizard.step === 3" @click="saveWizard()"
+                :disabled="busy"
+                class="px-6 py-3 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40 flex items-center gap-2">
+          <svg x-show="busy" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3"/></svg>
+          <span x-text="busy ? 'Menyimpan...' : '✓ Simpan Lokasi'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Detail Drawer #}
+  <div x-show="detail.open" x-transition.opacity x-cloak
+       @click="detail.open = false"
+       class="fixed inset-0 z-40 bg-black/50 flex justify-end">
+    <div @click.stop class="bg-white w-full sm:max-w-md h-full overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+        <h3 class="text-lg font-bold text-gray-900">📍 <span x-text="detail.row?.name"></span></h3>
+        <button @click="detail.open = false" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+      </div>
+      <div class="p-6 space-y-4" x-show="detail.row">
+        <div x-show="!detail.row?.is_active" class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
+          <div class="font-semibold text-red-700">🚫 Disembunyikan</div>
+          <div class="text-xs text-red-600 mt-1" x-text="detail.row?.deactivation_reason || ''"></div>
+          <button @click="reactivate()" class="mt-2 text-xs font-semibold text-orange-600 hover:underline">↻ Munculkan lagi</button>
+        </div>
+        <div><div class="text-xs text-gray-500">🏠 Area</div><div class="font-medium" x-text="detail.row?.area || '—'"></div></div>
+        <div><div class="text-xs text-gray-500">📋 Service</div><div class="font-medium" x-text="detail.row?.default_visit_type || '—'"></div></div>
+        <div><div class="text-xs text-gray-500">🏠 Alamat</div><div class="text-sm" x-text="detail.row?.address || '—'"></div></div>
+        <div><div class="text-xs text-gray-500">👤 PIC</div><div class="font-medium" x-text="detail.row?.contact_person || '—'"></div></div>
+        <div><div class="text-xs text-gray-500">📱 WhatsApp</div><div class="font-medium" x-text="detail.row?.contact_phone || '—'"></div></div>
+        <div x-show="detail.row?.notes"><div class="text-xs text-gray-500">📝 Catatan</div><div class="text-sm" x-text="detail.row?.notes"></div></div>
+        <div class="pt-4 border-t border-gray-100 grid grid-cols-2 gap-3 text-center">
+          <div class="bg-orange-50 rounded-lg p-3">
+            <div class="text-2xl font-bold text-orange-600" x-text="detail.row?.active_rule_count || 0"></div>
+            <div class="text-xs text-gray-600">Jadwal aktif</div>
+          </div>
+          <div class="bg-blue-50 rounded-lg p-3">
+            <div class="text-2xl font-bold text-blue-600" x-text="detail.row?.visits_90d || 0"></div>
+            <div class="text-xs text-gray-600">Kunjungan 90 hari</div>
+          </div>
+        </div>
+        <div class="pt-4 border-t border-gray-100 space-y-2">
+          <button x-show="detail.row?.is_active" @click="confirmDeactivate()" class="w-full px-4 py-3 text-sm font-semibold text-red-600 border-2 border-red-200 rounded-lg hover:bg-red-50">
+            🚫 Sembunyikan Lokasi
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Toast #}
+  <div x-show="toast.show" x-transition.opacity x-cloak
+       class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm flex items-center gap-3 z-50 min-w-[280px]">
+    <span x-text="toast.message"></span>
+    <button x-show="toast.undo" @click="undoLast()" class="text-orange-300 font-semibold hover:text-orange-100">UNDO</button>
+  </div>
+</div>
+
+<script>
+function lokasiBaru() {
+  return {
+    busy: false,
+    search: '',
+    filterArea: '',
+    activeOnly: true,
+    rows: [], total: 0,
+    areas: [],
+    popularAreas: ['SBY-Utara', 'SBY-Selatan', 'SBY-Tengah', 'Sidoarjo', 'Pakuwon', 'Lainnya'],
+    wizard: { open: false, step: 1, name: '', area: '', address: '', default_visit_type: 'PRC',
+              contact_person: '', contact_phone: '', notes: '' },
+    dupCheck: { checking: false, found: null },
+    detail: { open: false, id: null, row: null },
+    toast: { show: false, message: '', undo: null },
+    lastUndo: null,
+
+    async init() {
+      await this.reload();
+      this.$nextTick(() => this.$refs.searchInput?.focus());
+    },
+    async reload() {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const p = new URLSearchParams({active_only: this.activeOnly, limit: 50});
+        if (this.search) p.set('search', this.search);
+        if (this.filterArea) p.set('area', this.filterArea);
+        const r = await auth(`/api/v1/enterprise/snc-lokasi?${p}`);
+        const d = await r.json();
+        this.rows = d.rows || [];
+        this.total = d.total || 0;
+        if (this.areas.length === 0) this.areas = d.areas || [];
+      } finally { this.busy = false; }
+    },
+    openWizard() {
+      this.wizard = { open: true, step: 1, name: '', area: '', address: '',
+                      default_visit_type: 'PRC', contact_person: '',
+                      contact_phone: '', notes: '' };
+      this.dupCheck = { checking: false, found: null };
+    },
+    async checkDuplicate() {
+      const name = this.wizard.name.trim();
+      if (name.length < 2) { this.dupCheck.found = null; return; }
+      this.dupCheck.checking = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/snc-lokasi?search=${encodeURIComponent(name)}&limit=5`);
+        const d = await r.json();
+        const exact = (d.rows || []).find(c => c.name.toLowerCase() === name.toLowerCase());
+        this.dupCheck.found = exact ? {existing_id: exact.id, existing_area: exact.area} : null;
+      } finally { this.dupCheck.checking = false; }
+    },
+    async saveWizard() {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth('/api/v1/enterprise/snc-lokasi', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            name: this.wizard.name.trim(),
+            area: this.wizard.area || null,
+            address: this.wizard.address || null,
+            default_visit_type: this.wizard.default_visit_type || null,
+            contact_person: this.wizard.contact_person || null,
+            contact_phone: this.wizard.contact_phone || null,
+            notes: this.wizard.notes || null,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          this.showToast('❌ ' + (d.message || d.error || 'Gagal'));
+          return;
+        }
+        this.lastUndo = { type: 'deactivate', id: d.id };
+        this.showToast(`✅ ${d.message}`, true);
+        this.wizard.open = false;
+        await this.reload();
+      } finally { this.busy = false; }
+    },
+    async openDetail(id) {
+      this.detail = { open: true, id, row: null };
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/snc-lokasi/${id}`);
+      const d = await r.json();
+      this.detail.row = d.lokasi;
+    },
+    confirmDeactivate() {
+      const reason = prompt(`Sembunyikan "${this.detail.row.name}"? Tulis alasan:`,
+                            'Tutup permanent');
+      if (!reason) return;
+      this.deactivate(this.detail.row.id, reason);
+    },
+    async deactivate(id, reason) {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/snc-lokasi/${id}`, {
+        method: 'DELETE', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason}),
+      });
+      const d = await r.json();
+      this.lastUndo = { type: 'reactivate', id };
+      this.showToast(d.message, true);
+      this.detail.open = false;
+      await this.reload();
+    },
+    async reactivate() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/snc-lokasi/${this.detail.row.id}/reactivate`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason: 'Munculkan via UI'}),
+      });
+      const d = await r.json();
+      this.showToast(d.message);
+      this.detail.open = false;
+      await this.reload();
+    },
+    async undoLast() {
+      if (!this.lastUndo) return;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      if (this.lastUndo.type === 'deactivate') {
+        await auth(`/api/v1/enterprise/snc-lokasi/${this.lastUndo.id}`, {
+          method: 'DELETE', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({reason: 'Undo'}),
+        });
+      } else if (this.lastUndo.type === 'reactivate') {
+        await auth(`/api/v1/enterprise/snc-lokasi/${this.lastUndo.id}/reactivate`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({reason: 'Undo'}),
+        });
+      }
+      this.lastUndo = null;
+      this.toast.show = false;
+      await this.reload();
+    },
+    showToast(msg, undo = false) {
+      this.toast = { show: true, message: msg, undo };
+      setTimeout(() => { this.toast.show = false; }, 10000);
+    },
+  };
+}
+</script>
+{% endblock %}

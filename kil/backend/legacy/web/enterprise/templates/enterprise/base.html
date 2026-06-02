@@ -8,6 +8,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/enterprise/static/js/auth.js" defer></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/id.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -114,6 +117,21 @@
                    class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.master_rules' else OFF }}">
                     <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
                     Master Rules Editor
+                </a>
+                <a x-show="['admin','koordinator','supervisor'].includes(role)" href="/enterprise/lokasi-baru"
+                   class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.lokasi_baru' else OFF }}">
+                    <span class="text-base flex-shrink-0">📍</span>
+                    Daftar Lokasi
+                </a>
+                <a x-show="['admin','koordinator'].includes(role)" href="/enterprise/lokasi-libur"
+                   class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.lokasi_libur' else OFF }}">
+                    <span class="text-base flex-shrink-0">🚫</span>
+                    Lokasi Libur Sementara
+                </a>
+                <a x-show="['admin','koordinator'].includes(role)" href="/enterprise/tech-tidak-masuk"
+                   class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.tech_tidak_masuk' else OFF }}">
+                    <span class="text-base flex-shrink-0">👤</span>
+                    Teknisi Tidak Masuk
                 </a>
                 <a x-show="['admin','koordinator','supervisor'].includes(role)" href="/enterprise/scheduling"
                    class="{{ A }} {{ ON if request.endpoint == 'enterprise.scheduling' else OFF }}">

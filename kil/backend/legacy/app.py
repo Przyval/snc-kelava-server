@@ -233,6 +233,18 @@ app.register_blueprint(draft_bp)
 from kil.backend.legacy.api.recurring_rules import recurring_rules_bp
 app.register_blueprint(recurring_rules_bp)
 
+# Lokasi Master (snc_clients CRUD)
+from kil.backend.legacy.api.snc_lokasi import snc_lokasi_bp
+app.register_blueprint(snc_lokasi_bp)
+
+# Lokasi Libur Sementara (customer suppression)
+from kil.backend.legacy.api.client_suppression import libur_bp
+app.register_blueprint(libur_bp)
+
+# Teknisi Tidak Masuk (tech availability)
+from kil.backend.legacy.api.tech_availability import availability_bp
+app.register_blueprint(availability_bp)
+
 # Schedule Draft Calendar (Phase 1 PRD §25)
 from kil.backend.legacy.api.schedule_calendar import calendar_bp as draft_calendar_bp
 app.register_blueprint(draft_calendar_bp)

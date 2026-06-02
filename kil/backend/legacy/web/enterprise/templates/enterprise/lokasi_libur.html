@@ -1,0 +1,405 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Lokasi Libur Sementara{% endblock %}
+
+{% block content %}
+<div x-data="lokasiLibur()" x-init="init()" class="space-y-6 max-w-5xl mx-auto">
+
+  {# Header #}
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <span class="text-2xl">🚫</span> Lokasi Libur Sementara
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">Lokasi yang sedang tutup, renovasi, atau libur.</p>
+    </div>
+    <button @click="openWizard()"
+            class="px-6 py-3 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 flex items-center gap-2 shadow-md">
+      <span class="text-lg">➕</span> Catat Lokasi Libur
+    </button>
+  </div>
+
+  {# Section: Sedang libur #}
+  <div>
+    <h2 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+      <span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full" x-text="grouped.active.length"></span>
+      Sedang libur sekarang
+    </h2>
+    <div class="space-y-2">
+      <template x-for="row in grouped.active" :key="row.id">
+        <div @click="openDetail(row)"
+             class="bg-white border border-red-200 rounded-xl p-4 cursor-pointer hover:border-red-400 transition flex items-center justify-between">
+          <div>
+            <div class="font-semibold text-gray-900" x-text="row.client_name"></div>
+            <div class="text-xs text-gray-500 mt-1">
+              <span x-text="fmtRange(row.start_date, row.end_date)"></span>
+              · <span x-text="row.days + ' hari'"></span>
+              <span x-show="row.reason"> · <span x-text="row.reason"></span></span>
+            </div>
+          </div>
+          <span class="text-gray-400">›</span>
+        </div>
+      </template>
+      <div x-show="grouped.active.length === 0" class="bg-gray-50 border border-dashed border-gray-200 rounded-xl p-8 text-center text-sm text-gray-400">
+        Belum ada lokasi yang sedang libur.
+      </div>
+    </div>
+  </div>
+
+  {# Section: Akan datang #}
+  <div x-show="grouped.upcoming.length > 0">
+    <h2 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+      <span class="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full" x-text="grouped.upcoming.length"></span>
+      Akan datang
+    </h2>
+    <div class="space-y-2">
+      <template x-for="row in grouped.upcoming" :key="row.id">
+        <div @click="openDetail(row)"
+             class="bg-white border border-yellow-200 rounded-xl p-4 cursor-pointer hover:border-yellow-400 transition flex items-center justify-between">
+          <div>
+            <div class="font-semibold text-gray-900" x-text="row.client_name"></div>
+            <div class="text-xs text-gray-500 mt-1">
+              <span x-text="fmtRange(row.start_date, row.end_date)"></span>
+              · <span x-text="row.days + ' hari'"></span>
+              <span x-show="row.reason"> · <span x-text="row.reason"></span></span>
+            </div>
+          </div>
+          <span class="text-gray-400">›</span>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  {# Section: Sudah lewat (collapsible) #}
+  <div>
+    <button @click="showPast = !showPast" class="text-sm font-medium text-gray-600 hover:text-gray-900">
+      <span x-text="showPast ? '▾' : '▸'"></span>
+      Sudah lewat (<span x-text="grouped.past.length"></span>)
+    </button>
+    <div x-show="showPast" x-cloak class="space-y-2 mt-3">
+      <template x-for="row in grouped.past" :key="row.id">
+        <div @click="openDetail(row)"
+             class="bg-gray-50 border border-gray-200 rounded-xl p-3 cursor-pointer hover:bg-gray-100 transition flex items-center justify-between opacity-75">
+          <div>
+            <div class="font-medium text-gray-700 text-sm" x-text="row.client_name"></div>
+            <div class="text-xs text-gray-500 mt-0.5">
+              <span x-text="fmtRange(row.start_date, row.end_date)"></span>
+              · <span x-text="row.reason || ''"></span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  {# Wizard Modal #}
+  <div x-show="wizard.open" x-transition.opacity x-cloak
+       @click="wizard.open = false"
+       class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
+    <div @click.stop class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+      {# Header with step indicator #}
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">➕ Catat Lokasi Libur</h3>
+          <div class="flex items-center gap-1 mt-1">
+            <div :class="wizard.step >= 1 ? 'bg-orange-500' : 'bg-gray-200'" class="w-12 h-1 rounded-full"></div>
+            <div :class="wizard.step >= 2 ? 'bg-orange-500' : 'bg-gray-200'" class="w-12 h-1 rounded-full"></div>
+          </div>
+          <div class="text-xs text-gray-500 mt-1">Step <span x-text="wizard.step"></span> dari 2</div>
+        </div>
+        <button @click="wizard.open = false" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+      </div>
+
+      {# Step 1: Pick customer #}
+      <div x-show="wizard.step === 1" class="p-6 space-y-4">
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Lokasi mana yang libur?</label>
+          <input x-model="wizard.search" @input.debounce.300ms="searchClients()"
+                 type="text" placeholder="🔍 Cari lokasi..."
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+        </div>
+
+        {# Recent quick chips #}
+        <div x-show="recentClients.length > 0 && !wizard.search">
+          <div class="text-xs font-medium text-gray-500 mb-2">📌 Yang baru dikunjungi:</div>
+          <div class="space-y-2">
+            <template x-for="c in recentClients" :key="c.id">
+              <button @click="selectClient(c)" type="button"
+                      class="w-full text-left px-4 py-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg text-sm font-medium text-gray-800 transition">
+                <span x-text="c.name"></span>
+                <span class="text-xs text-gray-500 ml-2" x-text="c.area || ''"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        {# Search results #}
+        <div x-show="wizard.search && searchResults.length > 0" class="space-y-2 max-h-72 overflow-y-auto">
+          <template x-for="c in searchResults" :key="c.id">
+            <button @click="selectClient(c)" type="button"
+                    class="w-full text-left px-4 py-3 bg-white border border-gray-200 hover:border-orange-400 rounded-lg text-sm font-medium text-gray-800 transition">
+              <span x-text="c.name"></span>
+              <span class="text-xs text-gray-500 ml-2" x-text="c.area || ''"></span>
+            </button>
+          </template>
+        </div>
+        <div x-show="wizard.search && searchResults.length === 0 && !searching" class="text-center text-sm text-gray-400 py-4">
+          Tidak ada lokasi dengan nama itu. Coba kata lain.
+        </div>
+      </div>
+
+      {# Step 2: Dates + reason #}
+      <div x-show="wizard.step === 2" x-cloak class="p-6 space-y-4">
+        <div class="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 text-sm">
+          <div class="text-xs text-gray-500">Lokasi:</div>
+          <div class="font-semibold text-gray-900" x-text="wizard.client_name"></div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">📅 Mulai libur</label>
+          <input x-ref="startDate" type="date" x-model="wizard.start_date" :min="today"
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">📅 Sampai kapan</label>
+          <input x-ref="endDate" type="date" x-model="wizard.end_date" :min="wizard.start_date || today"
+                 class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:border-orange-500 focus:outline-none">
+          <div class="text-xs text-orange-600 mt-1" x-show="rangeDays > 0">
+            ⓘ Libur <strong x-text="rangeDays"></strong> hari
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Kenapa libur?</label>
+          <div class="grid grid-cols-2 gap-2">
+            <template x-for="r in reasonChips" :key="r.value">
+              <button @click="wizard.reason = r.value" type="button"
+                      :class="wizard.reason === r.value ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200 hover:border-orange-400'"
+                      class="px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition flex items-center gap-2">
+                <span x-text="r.icon"></span><span x-text="r.label"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold text-gray-700 block mb-2">📝 Catatan (boleh skip)</label>
+          <textarea x-model="wizard.notes" rows="2" placeholder="Contoh: Owner WA tgl 25 Mei"
+                    class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-orange-500 focus:outline-none"></textarea>
+        </div>
+      </div>
+
+      {# Footer buttons #}
+      <div class="px-6 py-4 border-t border-gray-100 flex gap-2">
+        <button x-show="wizard.step === 2" @click="wizard.step = 1"
+                class="px-4 py-3 text-sm font-medium text-gray-700 border-2 border-gray-200 rounded-lg hover:bg-gray-50">
+          ← Kembali
+        </button>
+        <div class="flex-1"></div>
+        <button x-show="wizard.step === 1" @click="goStep2()"
+                :disabled="!wizard.client_id"
+                class="px-6 py-3 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed">
+          Lanjut →
+        </button>
+        <button x-show="wizard.step === 2" @click="saveWizard()"
+                :disabled="!canSave || busy"
+                class="px-6 py-3 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2">
+          <svg x-show="busy" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3"/></svg>
+          <span x-text="busy ? 'Menyimpan...' : '✓ Simpan Libur'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Detail Drawer #}
+  <div x-show="detail.open" x-transition.opacity x-cloak
+       @click="detail.open = false"
+       class="fixed inset-0 z-40 bg-black/50 flex justify-end">
+    <div @click.stop class="bg-white w-full sm:max-w-md h-full overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+        <h3 class="text-lg font-bold text-gray-900">🚫 <span x-text="detail.row?.client_name"></span></h3>
+        <button @click="detail.open = false" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+      </div>
+      <div class="p-6 space-y-4" x-show="detail.row">
+        <div>
+          <div class="text-xs text-gray-500">📅 Mulai</div>
+          <div class="font-medium" x-text="fmtDate(detail.row?.start_date)"></div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500">📅 Sampai</div>
+          <div class="font-medium" x-text="fmtDate(detail.row?.end_date)"></div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500">📋 Alasan</div>
+          <div class="font-medium" x-text="detail.row?.reason || '—'"></div>
+        </div>
+        <div x-show="detail.row?.notes">
+          <div class="text-xs text-gray-500">📝 Catatan</div>
+          <div class="text-sm" x-text="detail.row?.notes"></div>
+        </div>
+        <div class="pt-4 border-t border-gray-100">
+          <button @click="confirmDelete()" class="w-full px-4 py-3 text-sm font-semibold text-red-600 border-2 border-red-200 rounded-lg hover:bg-red-50">
+            🗑 Hapus catatan libur
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Toast #}
+  <div x-show="toast.show" x-transition.opacity x-cloak
+       class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm flex items-center gap-3 z-50 min-w-[280px]">
+    <span x-text="toast.message"></span>
+    <button x-show="toast.undo" @click="undoLast()"
+            class="text-orange-300 font-semibold hover:text-orange-100">UNDO</button>
+  </div>
+</div>
+
+<script>
+function lokasiLibur() {
+  return {
+    busy: false,
+    rows: [],
+    grouped: { active: [], upcoming: [], past: [] },
+    recentClients: [],
+    searchResults: [],
+    searching: false,
+    showPast: false,
+    today: new Date().toISOString().slice(0,10),
+    reasonChips: [
+      { value: 'Cuti Lebaran', icon: '🕌', label: 'Lebaran' },
+      { value: 'Renovasi', icon: '🛠', label: 'Renovasi' },
+      { value: 'Event', icon: '🎉', label: 'Event' },
+      { value: 'Tutup Sementara', icon: '🔒', label: 'Tutup' },
+      { value: 'Customer Request', icon: '📞', label: 'Cust. minta' },
+      { value: 'Lainnya', icon: '📝', label: 'Lainnya' },
+    ],
+    wizard: { open: false, step: 1, search: '', client_id: null, client_name: '',
+              start_date: '', end_date: '', reason: '', notes: '' },
+    detail: { open: false, row: null },
+    toast: { show: false, message: '', undo: null },
+    lastUndo: null,
+
+    get rangeDays() {
+      if (!this.wizard.start_date || !this.wizard.end_date) return 0;
+      const s = new Date(this.wizard.start_date), e = new Date(this.wizard.end_date);
+      return Math.max(0, Math.round((e-s)/86400000) + 1);
+    },
+    get canSave() {
+      return this.wizard.client_id && this.wizard.start_date && this.wizard.end_date && this.rangeDays > 0;
+    },
+
+    async init() {
+      await this.reload();
+      this.loadRecent();
+    },
+    async reload() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth('/api/v1/enterprise/libur?show=all');
+      const d = await r.json();
+      this.rows = d.suppressions || [];
+      const today = this.today;
+      this.grouped = {
+        active: this.rows.filter(r => r.start_date <= today && r.end_date >= today),
+        upcoming: this.rows.filter(r => r.start_date > today),
+        past: this.rows.filter(r => r.end_date < today),
+      };
+    },
+    async loadRecent() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      try {
+        const r = await auth('/api/v1/enterprise/snc-lokasi?limit=8');
+        const d = await r.json();
+        this.recentClients = (d.rows || []).slice(0, 6).map(c => ({id: c.id, name: c.name, area: c.area}));
+      } catch(e){}
+    },
+    async searchClients() {
+      if (!this.wizard.search) { this.searchResults = []; return; }
+      this.searching = true;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/snc-lokasi?search=${encodeURIComponent(this.wizard.search)}&limit=15`);
+      const d = await r.json();
+      this.searchResults = (d.rows || []).map(c => ({id: c.id, name: c.name, area: c.area}));
+      this.searching = false;
+    },
+    selectClient(c) {
+      this.wizard.client_id = c.id;
+      this.wizard.client_name = c.name;
+      this.goStep2();
+    },
+    openWizard() {
+      this.wizard = { open: true, step: 1, search: '', client_id: null, client_name: '',
+                      start_date: '', end_date: '', reason: '', notes: '' };
+      this.searchResults = [];
+    },
+    goStep2() {
+      if (!this.wizard.client_id) return;
+      this.wizard.step = 2;
+    },
+    async saveWizard() {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/lokasi/${this.wizard.client_id}/libur`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            start_date: this.wizard.start_date,
+            end_date: this.wizard.end_date,
+            reason: this.wizard.reason || null,
+            notes: this.wizard.notes || null,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) { this.showToast('❌ ' + (d.error || 'Gagal menyimpan')); return; }
+        const aff = d.affected_draft_events || 0;
+        this.lastUndo = { type: 'delete', id: d.id };
+        this.showToast(`✅ ${d.message}${aff > 0 ? ' (' + aff + ' jadwal terdampak)' : ''}`, true);
+        this.wizard.open = false;
+        await this.reload();
+      } finally { this.busy = false; }
+    },
+    openDetail(row) { this.detail = { open: true, row }; },
+    confirmDelete() {
+      if (!confirm(`Hapus catatan libur "${this.detail.row.client_name}"?`)) return;
+      this.deleteSuppression(this.detail.row.id);
+    },
+    async deleteSuppression(id) {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth(`/api/v1/enterprise/libur/${id}`, {
+        method: 'DELETE', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason: 'Hapus via UI'}),
+      });
+      const d = await r.json();
+      this.showToast(d.message || 'Dihapus');
+      this.detail.open = false;
+      await this.reload();
+    },
+    async undoLast() {
+      if (!this.lastUndo) return;
+      if (this.lastUndo.type === 'delete') {
+        await this.deleteSuppression(this.lastUndo.id);
+      }
+      this.lastUndo = null;
+      this.toast.show = false;
+    },
+    showToast(msg, undo = false) {
+      this.toast = { show: true, message: msg, undo };
+      setTimeout(() => { this.toast.show = false; }, 10000);
+    },
+    fmtDate(s) {
+      if (!s) return '';
+      return new Date(s).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric'});
+    },
+    fmtRange(s, e) {
+      if (s === e) return this.fmtDate(s);
+      const sd = new Date(s), ed = new Date(e);
+      if (sd.getMonth() === ed.getMonth() && sd.getFullYear() === ed.getFullYear()) {
+        return sd.getDate() + '-' + ed.getDate() + ' ' +
+               sd.toLocaleDateString('id-ID', {month:'short', year:'numeric'});
+      }
+      return this.fmtDate(s) + ' – ' + this.fmtDate(e);
+    },
+  };
+}
+</script>
+{% endblock %}
