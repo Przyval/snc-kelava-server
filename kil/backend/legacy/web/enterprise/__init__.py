@@ -99,6 +99,12 @@ def tech_tidak_masuk():
     return render_template("enterprise/tech_tidak_masuk.html")
 
 
+@enterprise_bp.route("/perbandingan-jadwal")
+def perbandingan_jadwal():
+    """Diff antara 2 bulan: added/removed/reassigned/retimed."""
+    return render_template("enterprise/schedule_diff.html")
+
+
 @enterprise_bp.route("/contracts")
 def contracts():
     """Contract Management page."""

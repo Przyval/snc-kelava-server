@@ -245,6 +245,10 @@ app.register_blueprint(libur_bp)
 from kil.backend.legacy.api.tech_availability import availability_bp
 app.register_blueprint(availability_bp)
 
+# Schedule Diff (compare 2 months)
+from kil.backend.legacy.api.schedule_diff import diff_bp
+app.register_blueprint(diff_bp)
+
 # Schedule Draft Calendar (Phase 1 PRD §25)
 from kil.backend.legacy.api.schedule_calendar import calendar_bp as draft_calendar_bp
 app.register_blueprint(draft_calendar_bp)

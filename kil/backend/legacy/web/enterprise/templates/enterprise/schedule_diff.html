@@ -1,0 +1,227 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Perbandingan Jadwal{% endblock %}
+
+{% block content %}
+<div x-data="scheduleDiff()" x-init="init()" class="space-y-6 max-w-6xl mx-auto">
+
+  {# Header #}
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+      <span class="text-2xl">🔀</span> Perbandingan Jadwal
+    </h1>
+    <p class="text-sm text-gray-500 mt-1">Lihat apa yang berubah dari bulan satu ke bulan lain.</p>
+  </div>
+
+  {# Month picker #}
+  <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 flex-wrap">
+    <div class="flex items-center gap-2">
+      <label class="text-sm font-semibold text-gray-700">Dari:</label>
+      <input type="month" x-model="fromMonth" class="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-500 focus:outline-none">
+    </div>
+    <span class="text-gray-400 text-xl">→</span>
+    <div class="flex items-center gap-2">
+      <label class="text-sm font-semibold text-gray-700">Ke:</label>
+      <input type="month" x-model="toMonth" class="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-500 focus:outline-none">
+    </div>
+    <button @click="compare()" :disabled="busy"
+            class="ml-2 px-5 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 disabled:opacity-40 flex items-center gap-2">
+      <svg x-show="busy" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" fill="none"/></svg>
+      <span x-text="busy ? 'Membandingkan...' : '🔀 Bandingkan'"></span>
+    </button>
+  </div>
+
+  {# Summary cards #}
+  <div x-show="result" x-cloak>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <div class="text-xs text-gray-500 uppercase">Total <span x-text="fromMonth"></span></div>
+        <div class="text-2xl font-bold text-gray-900 mt-1" x-text="result?.summary.total_from"></div>
+      </div>
+      <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <div class="text-xs text-gray-500 uppercase">Total <span x-text="toMonth"></span></div>
+        <div class="text-2xl font-bold text-gray-900 mt-1" x-text="result?.summary.total_to"></div>
+      </div>
+      <div class="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+        <div class="text-xs text-green-700 uppercase font-semibold">➕ Baru</div>
+        <div class="text-2xl font-bold text-green-700 mt-1" x-text="result?.summary.added"></div>
+      </div>
+      <div class="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+        <div class="text-xs text-red-700 uppercase font-semibold">➖ Hilang</div>
+        <div class="text-2xl font-bold text-red-700 mt-1" x-text="result?.summary.removed"></div>
+      </div>
+      <div class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4">
+        <div class="text-xs text-yellow-700 uppercase font-semibold">🔄 Berubah</div>
+        <div class="text-2xl font-bold text-yellow-700 mt-1" x-text="(result?.summary.reassigned || 0) + (result?.summary.retimed || 0)"></div>
+        <div class="text-xs text-yellow-600 mt-1">
+          <span x-text="result?.summary.reassigned"></span> reassign,
+          <span x-text="result?.summary.retimed"></span> jam beda
+        </div>
+      </div>
+    </div>
+
+    {# Tabs #}
+    <div class="border-b border-gray-200 mb-4">
+      <div class="flex gap-1">
+        <template x-for="tab in tabs" :key="tab.id">
+          <button @click="activeTab = tab.id"
+                  :class="activeTab === tab.id ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                  class="px-4 py-2 border-b-2 text-sm font-semibold transition flex items-center gap-2">
+            <span x-text="tab.icon"></span>
+            <span x-text="tab.label"></span>
+            <span class="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full" x-text="result?.[tab.id]?.length || 0"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    {# Tables per tab #}
+    <div x-show="activeTab === 'added'" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-green-50 text-green-800 text-xs uppercase">
+          <tr>
+            <th class="text-left px-4 py-3">Tanggal</th>
+            <th class="text-left px-4 py-3">Lokasi</th>
+            <th class="text-left px-4 py-3">Teknisi</th>
+            <th class="text-left px-4 py-3">Jam</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in result?.added" :key="r.client_id + r.date + r.tech_name">
+            <tr class="border-b border-gray-100">
+              <td class="px-4 py-2.5" x-text="r.date"></td>
+              <td class="px-4 py-2.5 font-medium" x-text="r.client_name"></td>
+              <td class="px-4 py-2.5" x-text="r.tech_name"></td>
+              <td class="px-4 py-2.5 text-gray-600" x-text="r.time || '—'"></td>
+            </tr>
+          </template>
+          <tr x-show="(result?.added || []).length === 0"><td colspan="4" class="text-center py-8 text-gray-400">Tidak ada visit baru.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div x-show="activeTab === 'removed'" x-cloak class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-red-50 text-red-800 text-xs uppercase">
+          <tr>
+            <th class="text-left px-4 py-3">Tanggal</th>
+            <th class="text-left px-4 py-3">Lokasi</th>
+            <th class="text-left px-4 py-3">Teknisi</th>
+            <th class="text-left px-4 py-3">Jam</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in result?.removed" :key="r.client_id + r.date + r.tech_name">
+            <tr class="border-b border-gray-100">
+              <td class="px-4 py-2.5" x-text="r.date"></td>
+              <td class="px-4 py-2.5 font-medium" x-text="r.client_name"></td>
+              <td class="px-4 py-2.5" x-text="r.tech_name"></td>
+              <td class="px-4 py-2.5 text-gray-600" x-text="r.time || '—'"></td>
+            </tr>
+          </template>
+          <tr x-show="(result?.removed || []).length === 0"><td colspan="4" class="text-center py-8 text-gray-400">Tidak ada visit yang hilang.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div x-show="activeTab === 'reassigned'" x-cloak class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-yellow-50 text-yellow-800 text-xs uppercase">
+          <tr>
+            <th class="text-left px-4 py-3">Lokasi</th>
+            <th class="text-left px-4 py-3">Tgl Dari</th>
+            <th class="text-left px-4 py-3">Tgl Ke</th>
+            <th class="text-left px-4 py-3">Teknisi Dari</th>
+            <th class="text-left px-4 py-3">Teknisi Ke</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in result?.reassigned" :key="r.client_id + r.from_date">
+            <tr class="border-b border-gray-100">
+              <td class="px-4 py-2.5 font-medium" x-text="r.client_name"></td>
+              <td class="px-4 py-2.5 text-gray-600" x-text="r.from_date"></td>
+              <td class="px-4 py-2.5 text-gray-600" x-text="r.to_date"></td>
+              <td class="px-4 py-2.5 line-through text-red-600" x-text="r.from_tech"></td>
+              <td class="px-4 py-2.5 text-green-700 font-semibold" x-text="r.to_tech"></td>
+            </tr>
+          </template>
+          <tr x-show="(result?.reassigned || []).length === 0"><td colspan="5" class="text-center py-8 text-gray-400">Tidak ada perubahan teknisi.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div x-show="activeTab === 'retimed'" x-cloak class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-blue-50 text-blue-800 text-xs uppercase">
+          <tr>
+            <th class="text-left px-4 py-3">Lokasi</th>
+            <th class="text-left px-4 py-3">Teknisi</th>
+            <th class="text-left px-4 py-3">Tgl Dari</th>
+            <th class="text-left px-4 py-3">Jam Dari</th>
+            <th class="text-left px-4 py-3">Tgl Ke</th>
+            <th class="text-left px-4 py-3">Jam Ke</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in result?.retimed" :key="r.client_id + r.from_date">
+            <tr class="border-b border-gray-100">
+              <td class="px-4 py-2.5 font-medium" x-text="r.client_name"></td>
+              <td class="px-4 py-2.5" x-text="r.tech_name"></td>
+              <td class="px-4 py-2.5 text-gray-600" x-text="r.from_date"></td>
+              <td class="px-4 py-2.5 line-through text-gray-500" x-text="r.from_time"></td>
+              <td class="px-4 py-2.5 text-gray-600" x-text="r.to_date"></td>
+              <td class="px-4 py-2.5 text-blue-700 font-semibold" x-text="r.to_time"></td>
+            </tr>
+          </template>
+          <tr x-show="(result?.retimed || []).length === 0"><td colspan="6" class="text-center py-8 text-gray-400">Tidak ada perubahan jam.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div x-show="!result && !busy" class="text-center text-gray-400 py-12">
+    Pilih 2 bulan dan klik <strong>🔀 Bandingkan</strong> untuk lihat perubahan.
+  </div>
+</div>
+
+<script>
+function scheduleDiff() {
+  const today = new Date();
+  const thisMonth = today.toISOString().slice(0,7);
+  const lastMonth = new Date(today.getFullYear(), today.getMonth()-1, 1).toISOString().slice(0,7);
+
+  return {
+    busy: false,
+    fromMonth: lastMonth,
+    toMonth: thisMonth,
+    result: null,
+    activeTab: 'added',
+    tabs: [
+      {id: 'added',      icon: '➕', label: 'Baru'},
+      {id: 'removed',    icon: '➖', label: 'Hilang'},
+      {id: 'reassigned', icon: '👤', label: 'Ganti Teknisi'},
+      {id: 'retimed',    icon: '🕒', label: 'Ganti Jam'},
+    ],
+
+    init() {
+      // Auto-compare on load
+      this.compare();
+    },
+    async compare() {
+      if (!this.fromMonth || !this.toMonth) return;
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/calendar/diff?from=${this.fromMonth}&to=${this.toMonth}`);
+        const d = await r.json();
+        if (!r.ok) {
+          this.result = null;
+          alert(d.error || 'Gagal compare');
+          return;
+        }
+        this.result = d;
+      } finally { this.busy = false; }
+    },
+  };
+}
+</script>
+{% endblock %}

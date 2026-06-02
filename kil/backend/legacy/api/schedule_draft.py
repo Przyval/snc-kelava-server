@@ -1385,6 +1385,7 @@ def export_draft_xlsx(target_month):
 
     batch_id = request.args.get('batch_id', type=int)
     tech_id  = request.args.get('tech_id', type=int)
+    week     = request.args.get('week', type=int)  # 1-5
     statuses_raw = request.args.get('status')
     status_filter = statuses_raw.split(',') if statuses_raw else None
 
@@ -1392,12 +1393,23 @@ def export_draft_xlsx(target_month):
         xlsx_bytes = export_jadwal(
             target_month, batch_id=batch_id,
             status_filter=status_filter, only_tech_id=tech_id,
+            only_week=week,
         )
     except Exception as e:
         return jsonify({"error": "Gagal generate xlsx", "detail": str(e)}), 500
 
     bulan = BULAN_ID[mnum]
-    filename = f'JADWAL TEKNISI {bulan} {year}.xlsx'
+    fname = f'JADWAL TEKNISI {bulan} {year}'
+    if tech_id:
+        with _get_local_pool().connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT name FROM snc_technicians WHERE id = %s", (tech_id,))
+                row = cur.fetchone()
+                if row:
+                    fname += ' - ' + row['name'].replace(' ', '_')
+    if week:
+        fname += f' - Minggu{week}'
+    filename = fname + '.xlsx'
 
     return Response(
         xlsx_bytes,

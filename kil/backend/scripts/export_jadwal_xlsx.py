@@ -31,11 +31,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from kil.db.kelava_db import _get_local_pool
 from psycopg.rows import dict_row
+
+# SanoCare branding logo (370×62 RGBA PNG)
+LOGO_PATH = Path(__file__).resolve().parents[2] / 'backend' / 'legacy' / 'web' / 'enterprise' / 'static' / 'img' / 'logo_snc.png'
 
 BULAN_ID = ['', 'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
             'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER']
@@ -74,7 +78,7 @@ THIN = Side(border_style='thin', color='B0B0B0')
 BORDER = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
 
 STYLE_TITLE = {
-    'font': Font(name='Calibri', bold=True, size=14),
+    'font': Font(name='Calibri', bold=True, size=14, color='EA580C'),  # SanoCare orange
     'alignment': Alignment(horizontal='center', vertical='center'),
 }
 STYLE_HEADER_LABEL = {
@@ -272,8 +276,9 @@ def _weeks_of_month(year: int, month_num: int) -> list[list[date]]:
 def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
                        tech_info: dict, tech_events: list,
                        year: int, month_num: int,
-                       tech_off_dates: dict, suppressed_dates: set):
-    """Render single tech sheet."""
+                       tech_off_dates: dict, suppressed_dates: set,
+                       only_week: int | None = None):
+    """Render single tech sheet. If only_week=1..5, only that week-block."""
     bulan_label = BULAN_ID[month_num]
     title = f'JADWAL TEKNISI BULAN {bulan_label} {year}'
     supervisor = tech_info.get('supervisor_name', '') or 'FAHMI'
@@ -286,12 +291,28 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
             jam_efektif += dur
     jam_efektif = round(jam_efektif, 1)
 
+    # ── Embed SanoCare logo (top-right) ──
+    try:
+        if LOGO_PATH.exists():
+            img = XlImage(str(LOGO_PATH))
+            # Scale to ~120px wide for header
+            scale = 120 / img.width
+            img.width  = int(img.width * scale)
+            img.height = int(img.height * scale)
+            img.anchor = 'O1'  # column O, row 1 = top-right area
+            ws.add_image(img)
+            # Increase row 1-2 height to fit logo
+            ws.row_dimensions[1].height = 22
+            ws.row_dimensions[2].height = 22
+    except Exception:
+        pass  # logo optional, don't fail export if image library missing
+
     # ── Row 1: TEKNISI : <NAME>  |  TITLE ──
     ws.cell(1, 1, 'TEKNISI').font = STYLE_HEADER_LABEL['font']
     ws.cell(1, 3, f': {real_tech_name}').font = Font(name='Calibri', size=11)
     ws.cell(1, 7, title)
     _apply_style(ws.cell(1, 7), STYLE_TITLE)
-    ws.merge_cells(start_row=1, start_column=7, end_row=1, end_column=15)
+    ws.merge_cells(start_row=1, start_column=7, end_row=1, end_column=14)
 
     # ── Row 2-4 ──
     ws.cell(2, 1, 'SUPERVISOR').font = STYLE_HEADER_LABEL['font']
@@ -308,6 +329,8 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
 
     # ── Render weekly blocks ──
     weeks = _weeks_of_month(year, month_num)
+    if only_week and 1 <= only_week <= len(weeks):
+        weeks = [weeks[only_week - 1]]
     cur_row = 6  # start after header rows (5 blank)
 
     for week in weeks:
@@ -426,8 +449,15 @@ def export_jadwal(
     batch_id: int | None = None,
     status_filter: list[str] | None = None,
     only_tech_id: int | None = None,
+    only_week: int | None = None,  # 1-5 = filter to specific week-of-month
 ) -> bytes:
-    """Export jadwal teknisi for target_month as xlsx bytes."""
+    """
+    Export jadwal teknisi for target_month as xlsx bytes.
+
+    Optional filters:
+      only_tech_id : export 1 teknisi saja (single-sheet workbook)
+      only_week    : 1-5, export hanya 1 minggu (saved sheet jadi pendek)
+    """
     with _get_local_pool().connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             data = _load_data(cur, target_month, batch_id, status_filter)
@@ -452,6 +482,7 @@ def export_jadwal(
             ws, sheet_name, real_name, tech_info, events,
             data['year'], data['month_num'],
             data['tech_off_dates'], data['suppressed_dates'],
+            only_week=only_week,
         )
         if tid:
             _render_off_overlay(ws, tid, data['year'], data['month_num'],
