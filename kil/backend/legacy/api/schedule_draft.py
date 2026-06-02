@@ -705,20 +705,33 @@ def generate_draft():
             src_y, src_m = _parse_month(source_month)
             active_clients = _load_active_clients_smart(cur, src_y, src_m)
 
-            # ── Omzet SSOT filter (PRD: hanya customer dgn kontrak aktif) ────
-            # Customer hanya schedulable kalau ada snc_contracts dengan period
-            # yang mencakup target month.
+            # ── Omzet SSOT filter (LENIENT) ────────────────────────────────
+            # Customer dianggap "active untuk schedule" kalau SALAH SATU:
+            #   (a) Ada snc_contracts kontrak Omzet aktif yg cover target month, ATAU
+            #   (b) Ada visit historis di 90 hari terakhir (= masih dilayani aktif)
+            # Strict SSOT terlalu agresif — banyak customer SNC tidak tercatat
+            # di Omzet (cash, internal, baru) tapi tetap divisit teknisi.
             tgt_month_start = date(tgt_year, tgt_month, 1)
             import calendar as _cal_mod
             _, tgt_ndays = _cal_mod.monthrange(tgt_year, tgt_month)
             tgt_month_end = date(tgt_year, tgt_month, tgt_ndays)
+
             cur.execute("""
                 SELECT DISTINCT snc_customer_id FROM snc_contracts
                 WHERE snc_customer_id IS NOT NULL
                   AND COALESCE(is_active, 'YES') = 'YES'
                   AND start_date <= %s AND end_date >= %s
             """, (tgt_month_end, tgt_month_start))
-            ssot_active_clients = {r['snc_customer_id'] for r in cur.fetchall()}
+            ssot_contracts = {r['snc_customer_id'] for r in cur.fetchall()}
+
+            cur.execute("""
+                SELECT DISTINCT client_id FROM snc_schedule_events
+                WHERE start_date BETWEEN (%s::date - INTERVAL '90 days') AND %s
+                  AND schedule_status IN ('scheduled','completed','approved','published')
+            """, (tgt_month_start, tgt_month_end))
+            recently_visited = {r['client_id'] for r in cur.fetchall()}
+
+            ssot_active_clients = ssot_contracts | recently_visited
 
             # Intersect with existing active_clients filter (if both set)
             if active_clients is not None:
