@@ -170,7 +170,10 @@ def _load_data(cur, target_month: str, batch_id: int | None,
 
     statuses = status_filter or ['draft', 'scheduled', 'approved', 'published']
 
-    # Events
+    # Events — STRICT source priority:
+    #   If batch_id: ONLY events in that batch (no OR with imported xlsx)
+    #   Else: ONLY events in date range without batch (legacy xlsx imports)
+    # Plus de-dup by (tech, client, date, start_time) keeping highest schedule_status.
     if batch_id:
         cur.execute("""
             SELECT se.id, se.technician_id, se.client_id,
@@ -183,10 +186,10 @@ def _load_data(cur, target_month: str, batch_id: int | None,
             JOIN snc_technicians t ON t.id = se.technician_id
             JOIN snc_clients c ON c.id = se.client_id
             LEFT JOIN snc_supervisors s ON s.id = t.supervisor_id
-            WHERE (se.draft_batch_id = %s OR se.start_date BETWEEN %s AND %s)
+            WHERE se.draft_batch_id = %s
               AND se.schedule_status = ANY(%s)
             ORDER BY se.technician_id, se.start_date, se.start_datetime
-        """, (batch_id, mstart, mend, statuses))
+        """, (batch_id, statuses))
     else:
         cur.execute("""
             SELECT se.id, se.technician_id, se.client_id,
@@ -201,9 +204,20 @@ def _load_data(cur, target_month: str, batch_id: int | None,
             LEFT JOIN snc_supervisors s ON s.id = t.supervisor_id
             WHERE se.start_date BETWEEN %s AND %s
               AND se.schedule_status = ANY(%s)
+              AND se.draft_batch_id IS NULL
             ORDER BY se.technician_id, se.start_date, se.start_datetime
         """, (mstart, mend, statuses))
-    events = cur.fetchall()
+    events_raw = cur.fetchall()
+
+    # De-dup: kalau ada beberapa events sama (tech, client, date, start_time),
+    # ambil 1 saja (prefer paling baru = id terbesar).
+    dedup_idx = {}
+    for e in events_raw:
+        key = (e['technician_id'], e['client_id'], e['start_date'],
+               e['start_datetime'].time() if e['start_datetime'] else None)
+        if key not in dedup_idx or e['id'] > dedup_idx[key]['id']:
+            dedup_idx[key] = e
+    events = list(dedup_idx.values())
 
     events_by_tech = defaultdict(list)
     tech_info = {}

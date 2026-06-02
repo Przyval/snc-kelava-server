@@ -149,10 +149,9 @@ def _cascade_decision(cur, event, absence_tech_id, support_pool, ephemeral_loads
         }
 
     # ── LEVEL 2: Self-reschedule (Akbar tetap pegang) ──
+    # Sabtu & Minggu boleh — hanya skip kalau tech dicatat cuti.
     for offset in range(1, WINDOW_DAYS + 1):
         cand = event_date + timedelta(days=offset)
-        if cand.weekday() == 6:  # skip Minggu
-            continue
         if _is_tech_absent(cur, absence_tech_id, cand):
             continue
         if _tech_load_on_date(cur, absence_tech_id, cand) >= DAY_CAP:

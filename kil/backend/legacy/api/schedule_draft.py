@@ -75,14 +75,14 @@ def _nth_weekday(year: int, month: int, weekday: int, n: int):
 
 def _working_days_by_dow(year: int, month: int, suppressed: set) -> dict:
     """
-    Return dict dow → [date, ...] untuk hari kerja (Mon-Sat) bulan target.
-    Hari yang masuk suppressed dikeluarkan.
+    Return dict dow → [date, ...] untuk hari kerja bulan target.
+    SEMUA hari (Senin-Minggu) di-include — Sab/Min hanya kosong kalau tidak
+    ada rule/pattern, BUKAN karena di-skip sistem.
+    Hanya hari yang masuk suppressed (libur nasional) yang dikeluarkan.
     """
     result = defaultdict(list)
     for d in _month_dates(year, month):
-        if d.weekday() >= 6:        # skip Minggu
-            continue
-        if d in suppressed:         # skip hari libur
+        if d in suppressed:         # skip hari libur nasional
             continue
         result[d.weekday()].append(d)
     return result
