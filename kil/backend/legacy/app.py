@@ -257,6 +257,10 @@ app.register_blueprint(audit_bp)
 from kil.backend.legacy.api.audit_compare import compare_bp
 app.register_blueprint(compare_bp)
 
+# Absence Cascade (Level 1 backup → Level 2 self-reschedule → Level 3 manual)
+from kil.backend.legacy.api.absence_cascade import cascade_bp
+app.register_blueprint(cascade_bp)
+
 # Schedule Draft Calendar (Phase 1 PRD §25)
 from kil.backend.legacy.api.schedule_calendar import calendar_bp as draft_calendar_bp
 app.register_blueprint(draft_calendar_bp)

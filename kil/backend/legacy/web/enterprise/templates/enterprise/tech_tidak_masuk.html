@@ -240,6 +240,83 @@
     </div>
   </div>
 
+  {# Cascade preview modal #}
+  <div x-show="cascadePreview.open" x-transition.opacity x-cloak
+       class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">🔄 Cascade Otomatis</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Sistem suggest pengalihan untuk visit terdampak</p>
+        </div>
+        <button @click="cascadePreview.open = false" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+      </div>
+      <div class="p-6">
+        <div x-show="cascadePreview.loading" class="text-center text-gray-500 py-8">
+          <div class="text-4xl mb-2 animate-spin inline-block">⏳</div>
+          <div>Menghitung cascade...</div>
+        </div>
+
+        <div x-show="!cascadePreview.loading" x-cloak>
+          {# Summary cards #}
+          <div class="grid grid-cols-3 gap-3 mb-4">
+            <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div class="text-xs text-green-700 font-semibold">🟢 Level 1: Backup Support</div>
+              <div class="text-2xl font-bold text-green-700 mt-1" x-text="cascadePreview.summary.backup_assigned || 0"></div>
+            </div>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <div class="text-xs text-yellow-700 font-semibold">🟡 Level 2: Self-Reschedule</div>
+              <div class="text-2xl font-bold text-yellow-700 mt-1" x-text="cascadePreview.summary.rescheduled || 0"></div>
+            </div>
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div class="text-xs text-red-700 font-semibold">🔴 Level 3: Manual</div>
+              <div class="text-2xl font-bold text-red-700 mt-1" x-text="cascadePreview.summary.manual_needed || 0"></div>
+            </div>
+          </div>
+
+          {# Per-visit decisions #}
+          <div class="space-y-2 max-h-96 overflow-y-auto">
+            <template x-for="row in cascadePreview.results" :key="row.event_id">
+              <div :class="{
+                    'bg-green-50 border-green-200':  row.decision === 'backup_assigned',
+                    'bg-yellow-50 border-yellow-200': row.decision === 'rescheduled',
+                    'bg-red-50 border-red-200':       row.decision === 'manual_needed',
+                   }"
+                   class="border rounded-lg p-3 text-sm">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <div class="font-semibold text-gray-900" x-text="row.client_name"></div>
+                    <div class="text-xs text-gray-600 mt-0.5">
+                      Original: <span x-text="row.original_date"></span> <span x-text="row.original_time || ''"></span>
+                      <span x-show="row.visit_type" class="ml-1 bg-gray-100 px-1.5 py-0.5 rounded text-[10px]" x-text="row.visit_type"></span>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-semibold text-gray-900" x-text="row.decision === 'manual_needed' ? '❌ Manual' : (row.new_tech_name + ' · ' + row.new_date)"></div>
+                    <div class="text-xs text-gray-600 mt-0.5" x-text="row.rationale"></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <div x-show="cascadePreview.results.length === 0" class="text-center text-gray-400 py-6">
+              Tidak ada visit terdampak.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+        <button @click="cascadePreview.open = false"
+                class="px-4 py-2 text-sm font-medium text-gray-700 border-2 border-gray-200 rounded-lg hover:bg-gray-50">
+          Skip Cascade (Catatan tetap, visit tidak dipindah)
+        </button>
+        <button @click="applyCascade()" :disabled="cascadePreview.loading || cascadePreview.results.length === 0"
+                class="px-5 py-2 text-sm font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-40">
+          ✓ Apply Cascade
+        </button>
+      </div>
+    </div>
+  </div>
+
   {# Toast #}
   <div x-show="toast.show" x-transition.opacity x-cloak
        class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm flex items-center gap-3 z-50 min-w-[280px]">
@@ -261,6 +338,7 @@ function techTidakMasuk() {
     dayPopup: { open: false, date: null },
     wizard: { open: false, step: 1, tech_id: null, range_mode: 'single',
               date_from: '', date_to: '', status: '', notes: '', backup_tech_id: '' },
+    cascadePreview: { open: false, loading: false, results: [], summary: {}, absence_ids: [] },
     toast: { show: false, message: '', undo: null },
     lastUndo: null,
     statusChips: [
@@ -356,11 +434,47 @@ function techTidakMasuk() {
         const d = await r.json();
         if (!r.ok) { this.showToast('❌ ' + (d.error || 'Gagal')); return; }
         this.lastUndo = { type: 'delete', ids: d.ids || [] };
-        const aff = d.affected_draft_events || 0;
-        this.showToast(`✅ ${d.message}${aff > 0 ? ' (' + aff + ' jadwal terdampak)' : ''}`, true);
         this.wizard.open = false;
         await this.reload();
+
+        // Auto-run cascade preview (dry-run) untuk semua absence_ids yang baru dibuat
+        if (d.ids && d.ids.length > 0 && ['off','sick','training'].includes(this.wizard.status)) {
+          await this.runCascadePreview(d.ids);
+        } else {
+          const aff = d.affected_draft_events || 0;
+          this.showToast(`✅ ${d.message}${aff > 0 ? ' (' + aff + ' jadwal terdampak)' : ''}`, true);
+        }
       } finally { this.busy = false; }
+    },
+
+    async runCascadePreview(absenceIds) {
+      this.cascadePreview = { open: true, loading: true, results: [], summary: {}, absence_ids: absenceIds };
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const all = [];
+      for (const aid of absenceIds) {
+        const r = await auth(`/api/v1/enterprise/absence/${aid}/cascade?dry_run=true`, {method: 'POST'});
+        const d = await r.json();
+        if (d.results) {
+          for (const row of d.results) all.push({...row, absence_id: aid, absence_date: d.absence_date, tech_name: d.tech_name});
+        }
+      }
+      const summary = {backup_assigned:0, rescheduled:0, manual_needed:0};
+      for (const r of all) summary[r.decision] = (summary[r.decision]||0) + 1;
+      this.cascadePreview = { open: true, loading: false, results: all, summary, absence_ids: absenceIds };
+    },
+
+    async applyCascade() {
+      this.cascadePreview.loading = true;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      let totalApplied = 0;
+      for (const aid of this.cascadePreview.absence_ids) {
+        const r = await auth(`/api/v1/enterprise/absence/${aid}/cascade?dry_run=false`, {method: 'POST'});
+        const d = await r.json();
+        totalApplied += d.applied || 0;
+      }
+      this.cascadePreview.open = false;
+      this.showToast(`✅ Cascade applied: ${totalApplied} visit dipindahkan`, false);
+      await this.reload();
     },
     confirmDelete(r) {
       if (!confirm(`Hapus catatan ${r.tech_name} tanggal ${this.fmtDate(r.date)}?`)) return;
