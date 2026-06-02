@@ -231,6 +231,36 @@
     </div>
   </div>
 
+  {# Cascade decisions widget #}
+  <div x-show="readiness?.batch_id" x-cloak>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-gray-900">🔄 Absence Cascades</h2>
+      <button @click="loadCascades()" class="text-sm text-orange-600 hover:underline">Refresh</button>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <template x-for="abs in cascadeAbsences" :key="abs.absence_id">
+        <div class="border-b border-gray-100 p-4">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <span class="font-semibold text-gray-900" x-text="abs.tech_name"></span>
+              <span class="text-xs text-gray-500 ml-2" x-text="`${abs.status} · ${abs.date}`"></span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span x-show="abs.lvl1 > 0" class="bg-green-100 text-green-700 px-2 py-0.5 rounded">🟢 <span x-text="abs.lvl1"></span> backup</span>
+              <span x-show="abs.lvl2 > 0" class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">🟡 <span x-text="abs.lvl2"></span> reschedule</span>
+              <span x-show="abs.lvl3 > 0" class="bg-red-100 text-red-700 px-2 py-0.5 rounded">🔴 <span x-text="abs.lvl3"></span> manual</span>
+              <span x-show="abs.reverted > 0" class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded"><span x-text="abs.reverted"></span> reverted</span>
+              <span x-show="!abs.lvl1 && !abs.lvl2 && !abs.lvl3" class="text-gray-400">— belum cascade</span>
+            </div>
+          </div>
+        </div>
+      </template>
+      <div x-show="cascadeAbsences.length === 0" class="p-8 text-center text-gray-400 text-sm">
+        Tidak ada tech absence bulan ini.
+      </div>
+    </div>
+  </div>
+
   {# Publish gate action #}
   <div x-show="readiness?.batch_id" x-cloak class="bg-white border-2 border-purple-200 rounded-xl p-5">
     <h2 class="text-lg font-bold text-purple-900 mb-3">🚀 Publish Gate</h2>
@@ -283,6 +313,7 @@ function auditDashboard() {
     readiness: null,
     blockers: [], warnings: [],
     layerCalendar: [], layerTech: [], layerDup: [],
+    cascadeAbsences: [],
     hasExcelCompare: false,
     overrideDialog: false, overrideNote: '',
     toast: {show:false, message:''},
@@ -298,8 +329,8 @@ function auditDashboard() {
         const d = await r2.json();
         this.blockers = d.blockers || [];
         this.warnings = d.warnings || [];
-        // Auto-load layers
-        await Promise.all([this.loadLayerCalendar(), this.loadLayerTech(), this.loadLayerDup()]);
+        // Auto-load layers + cascade summary
+        await Promise.all([this.loadLayerCalendar(), this.loadLayerTech(), this.loadLayerDup(), this.loadCascades()]);
       } finally { this.busy = false; }
     },
     async loadLayerCalendar() {
@@ -326,6 +357,14 @@ function auditDashboard() {
         const r = await auth(`/api/v1/enterprise/audit/layer/duplicates/${this.month}`);
         const d = await r.json();
         this.layerDup = d.duplicates || [];
+      } catch(e) {}
+    },
+    async loadCascades() {
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/absence/cascade/summary?month=${this.month}`);
+        const d = await r.json();
+        this.cascadeAbsences = d.absences || [];
       } catch(e) {}
     },
     async runGate(override) {
