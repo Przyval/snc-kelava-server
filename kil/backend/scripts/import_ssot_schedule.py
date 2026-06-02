@@ -98,7 +98,7 @@ SHEET_MAP = {
     'LUCKY':     {'name': 'Lucky Adi Putra',          'p_user_id': 391, 'supervisor': 'Fahmi'},
     'MAULANA':   {'name': 'Moch Maulana',             'p_user_id': 428, 'supervisor': 'Fahmi'},
     'RANGGA':    {'name': 'Rangga',                   'p_user_id': None, 'supervisor': 'Fahmi'},
-    'FATHUR':    {'name': 'Fathur',                   'p_user_id': None, 'supervisor': 'Fahmi'},
+    'FATHUR':    {'name': 'Fathur Rozek',             'p_user_id': None, 'supervisor': 'Fahmi'},
     'IMAM':      {'name': 'Nur Imam Siswo Utomo',     'p_user_id': 459, 'supervisor': 'Fahmi'},
     'ARGA':      {'name': 'Argantara Alif Saputra',   'p_user_id': 442, 'supervisor': 'Fahmi'},
     'RENDY':     {'name': 'I Wayan Rendy',            'p_user_id': 407, 'supervisor': 'Fahmi'},
@@ -255,9 +255,10 @@ def upsert_technician(cur, tech_info, supervisor_id):
             "RETURNING id", (p_uid, name, supervisor_id)
         )
     else:
+        # Relies on UNIQUE constraint snc_technicians_name_unique added 2026-05-31
         cur.execute(
             "INSERT INTO snc_technicians (name, supervisor_id) VALUES (%s, %s) "
-            "ON CONFLICT DO NOTHING RETURNING id", (name, supervisor_id)
+            "ON CONFLICT (name) DO NOTHING RETURNING id", (name, supervisor_id)
         )
         if not cur.fetchone():
             cur.execute("SELECT id FROM snc_technicians WHERE name = %s", (name,))
@@ -269,8 +270,13 @@ def upsert_technician(cur, tech_info, supervisor_id):
     return r['id'] if r else None
 
 def upsert_client(cur, name):
+    """
+    Upsert client by name. Relies on UNIQUE constraint snc_clients_name_unique
+    added 2026-05-31 after cleanup of 1153 duplicate name rows.
+    """
     cur.execute(
-        "INSERT INTO snc_clients (name) VALUES (%s) ON CONFLICT DO NOTHING RETURNING id", (name,)
+        "INSERT INTO snc_clients (name) VALUES (%s) "
+        "ON CONFLICT (name) DO NOTHING RETURNING id", (name,)
     )
     row = cur.fetchone()
     if row:
@@ -393,12 +399,14 @@ def main():
         sup_name = v['tech_info'].get('supervisor')
         sup_id   = sup_cache.get(sup_name) if sup_name else None
 
-        # Dedup check: same tech + client + date + start_time
+        # Dedup check: same (tech, client, date) = same visit (regardless of time).
+        # Previous logic also keyed on start_datetime which let near-duplicates
+        # slip through whenever time parsing differed by even 1 second.
         cur.execute(
             "SELECT id FROM snc_schedule_events "
-            "WHERE technician_id = %s AND client_id = %s AND start_date = %s AND start_datetime = %s "
+            "WHERE technician_id = %s AND client_id = %s AND start_date = %s "
             "LIMIT 1",
-            (tech_id, client_id, start_date, start_dt)
+            (tech_id, client_id, start_date)
         )
         if cur.fetchone():
             continue  # duplicate, skip silently
