@@ -1358,3 +1358,52 @@ def get_patterns():
         "summary":  dict(freq_summary),
         "high_confidence": sum(1 for r in result if r['confidence'] >= 0.8),
     })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. EXPORT TO EXCEL (Jadwal Teknisi format)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@draft_bp.route("/draft/<target_month>/export.xlsx", methods=["GET"])
+@require_auth
+def export_draft_xlsx(target_month):
+    """
+    GET /calendar/draft/2026-07/export.xlsx
+    Optional: ?batch_id=N&tech_id=N&status=draft,scheduled
+
+    Returns xlsx file in 'Jadwal Teknisi' format (per-tech sheets).
+    """
+    from flask import Response
+    from kil.backend.scripts.export_jadwal_xlsx import export_jadwal, BULAN_ID
+
+    try:
+        year, mnum = map(int, target_month.split('-'))
+        if not (1 <= mnum <= 12):
+            raise ValueError
+    except (ValueError, AttributeError):
+        return jsonify({"error": "target_month harus YYYY-MM"}), 400
+
+    batch_id = request.args.get('batch_id', type=int)
+    tech_id  = request.args.get('tech_id', type=int)
+    statuses_raw = request.args.get('status')
+    status_filter = statuses_raw.split(',') if statuses_raw else None
+
+    try:
+        xlsx_bytes = export_jadwal(
+            target_month, batch_id=batch_id,
+            status_filter=status_filter, only_tech_id=tech_id,
+        )
+    except Exception as e:
+        return jsonify({"error": "Gagal generate xlsx", "detail": str(e)}), 500
+
+    bulan = BULAN_ID[mnum]
+    filename = f'JADWAL TEKNISI {bulan} {year}.xlsx'
+
+    return Response(
+        xlsx_bytes,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Length': str(len(xlsx_bytes)),
+        },
+    )
