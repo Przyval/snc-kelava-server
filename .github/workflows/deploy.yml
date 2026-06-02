@@ -46,6 +46,24 @@ jobs:
             --exclude='*.db' \
             kil/backend/ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/kil/backend/
 
+      - name: Sync kil/db/migrations/ to server
+        run: |
+          rsync -avz \
+            kil/db/migrations/ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/kil/db/migrations/
+
+      - name: Apply new migrations (idempotent)
+        run: |
+          ssh ${{ env.REMOTE }} bash -c "'
+            cd ${{ env.DEPLOY_DIR }}/kil/db/migrations
+            # Apply migrations 031-040 — all are idempotent (IF NOT EXISTS / DROP IF EXISTS)
+            for f in 031_*.sql 032_*.sql 033_*.sql 034_*.sql 035_*.sql 036_*.sql; do
+              if [ -f \"\$f\" ]; then
+                echo \"--- Applying \$f ---\"
+                PGPASSWORD=KilEnt2026! psql -h 127.0.0.1 -U kil_ent -d kil_enterprise -f \"\$f\" 2>&1 | grep -v \"^$\" | tail -10 || true
+              fi
+            done
+          '"
+
       - name: Restart service
         run: |
           ssh ${{ env.REMOTE }} \

@@ -76,6 +76,19 @@ def _test_remote(base_url):
         ("schedule-draft-patterns", "GET", "/api/v1/enterprise/calendar/patterns?month=2026-05"),
         ("master-rules-page", "GET", "/enterprise/master-rules"),
         ("schedule-draft-calendar-page", "GET", "/enterprise/schedule-draft-calendar"),
+        # Scheduling Phase 2 (3 input UIs)
+        ("snc-lokasi-list", "GET", "/api/v1/enterprise/snc-lokasi"),
+        ("libur-list", "GET", "/api/v1/enterprise/libur"),
+        ("tech-availability-list", "GET", "/api/v1/enterprise/tech-availability"),
+        ("lokasi-baru-page", "GET", "/enterprise/lokasi-baru"),
+        ("lokasi-libur-page", "GET", "/enterprise/lokasi-libur"),
+        ("tech-tidak-masuk-page", "GET", "/enterprise/tech-tidak-masuk"),
+        # Audit workflow (PRD §8-§14)
+        ("audit-readiness", "GET", "/api/v1/enterprise/audit/readiness/2026-06"),
+        ("audit-blockers", "GET", "/api/v1/enterprise/audit/blockers/2026-06"),
+        ("audit-dashboard-page", "GET", "/enterprise/audit-dashboard"),
+        ("audit-compare-page", "GET", "/enterprise/audit-compare"),
+        ("perbandingan-jadwal-page", "GET", "/enterprise/perbandingan-jadwal"),
         ("auth-reject", "GET", "/api/v1/enterprise/dashboard-stats"),  # no token → 401
     ]
     for name, method, path in endpoints[:-1]:
