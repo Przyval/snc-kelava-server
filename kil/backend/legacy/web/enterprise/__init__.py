@@ -105,6 +105,24 @@ def perbandingan_jadwal():
     return render_template("enterprise/schedule_diff.html")
 
 
+@enterprise_bp.route("/audit-dashboard")
+def audit_dashboard():
+    """Audit dashboard — readiness score, blockers, layers."""
+    return render_template("enterprise/audit_dashboard.html")
+
+
+@enterprise_bp.route("/audit-compare")
+def audit_compare():
+    """Compare draft jadwal dengan Excel lama (PRD §14.5)."""
+    return render_template("enterprise/audit_compare.html")
+
+
+@enterprise_bp.route("/audit-matching")
+def audit_matching():
+    """Customer matching review page (PRD §14.6)."""
+    return render_template("enterprise/audit_matching.html")
+
+
 @enterprise_bp.route("/contracts")
 def contracts():
     """Contract Management page."""

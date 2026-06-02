@@ -249,6 +249,14 @@ app.register_blueprint(availability_bp)
 from kil.backend.legacy.api.schedule_diff import diff_bp
 app.register_blueprint(diff_bp)
 
+# Audit (readiness, blockers, layers, publish gate)
+from kil.backend.legacy.api.audit import audit_bp
+app.register_blueprint(audit_bp)
+
+# Audit Compare (Excel upload + side-by-side)
+from kil.backend.legacy.api.audit_compare import compare_bp
+app.register_blueprint(compare_bp)
+
 # Schedule Draft Calendar (Phase 1 PRD §25)
 from kil.backend.legacy.api.schedule_calendar import calendar_bp as draft_calendar_bp
 app.register_blueprint(draft_calendar_bp)

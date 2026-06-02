@@ -1,0 +1,225 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Bandingkan dengan Excel{% endblock %}
+
+{% block content %}
+<div x-data="auditCompare()" x-init="init()" class="space-y-6 max-w-7xl mx-auto">
+
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <span class="text-2xl">📑</span> Bandingkan Excel vs Sistem
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">Upload Excel jadwal lama, sistem otomatis klasifikasi perbedaannya.</p>
+    </div>
+  </div>
+
+  {# Upload card #}
+  <div class="bg-white border-2 border-orange-200 rounded-xl p-5">
+    <h2 class="font-bold text-gray-900 mb-3">📤 Upload Excel</h2>
+    <div class="flex items-end gap-3 flex-wrap">
+      <div>
+        <label class="text-xs font-semibold text-gray-600 block mb-1">Bulan target</label>
+        <input type="month" x-model="targetMonth" class="border-2 border-gray-200 rounded-lg px-3 py-2">
+      </div>
+      <div class="flex-1 min-w-[240px]">
+        <label class="text-xs font-semibold text-gray-600 block mb-1">File xlsx</label>
+        <input type="file" accept=".xlsx" @change="file = $event.target.files[0]"
+               class="block w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-50 file:text-orange-700 file:font-semibold hover:file:bg-orange-100">
+      </div>
+      <button @click="upload()" :disabled="!file || !targetMonth || busy"
+              class="px-6 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 disabled:opacity-40">
+        <span x-show="!busy">📤 Upload & Bandingkan</span>
+        <span x-show="busy">Memproses...</span>
+      </button>
+    </div>
+  </div>
+
+  {# Recent uploads #}
+  <div x-show="uploads.length > 0" x-cloak>
+    <h2 class="text-sm font-semibold text-gray-700 mb-2">📂 Upload sebelumnya</h2>
+    <div class="space-y-1">
+      <template x-for="u in uploads" :key="u.id">
+        <button @click="loadCompare(u.id, u.target_month)"
+                :class="currentUploadId === u.id ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-200 hover:border-orange-300'"
+                class="w-full text-left px-4 py-3 border-2 rounded-lg flex items-center justify-between text-sm">
+          <div>
+            <span class="font-medium" x-text="u.filename"></span>
+            <span class="text-xs text-gray-500 ml-2" x-text="`${u.target_month} · ${u.raw_visit_count} visit`"></span>
+          </div>
+          <span class="text-xs text-gray-400" x-text="new Date(u.uploaded_at).toLocaleString('id-ID')"></span>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  {# Summary cards by category #}
+  <div x-show="currentUploadId && summary" x-cloak>
+    <h2 class="text-lg font-bold text-gray-900 mb-3">📊 Klasifikasi Perbedaan</h2>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <template x-for="cat in categories" :key="cat.key">
+        <button @click="filterCategory = (filterCategory === cat.key ? '' : cat.key); reloadRows()"
+                :class="filterCategory === cat.key ? cat.activeClass : cat.passiveClass"
+                class="px-3 py-3 rounded-xl border-2 text-left transition">
+          <div class="text-2xl font-bold" x-text="totalForCategory(cat.key)"></div>
+          <div class="text-xs font-semibold mt-1" x-text="cat.icon + ' ' + cat.label"></div>
+          <div class="text-xs opacity-70 mt-0.5">
+            <span x-text="pendingForCategory(cat.key)"></span> pending
+          </div>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  {# Rows table #}
+  <div x-show="rows.length > 0" x-cloak class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+        <tr>
+          <th class="text-left px-3 py-2">Tanggal</th>
+          <th class="text-left px-3 py-2">Lokasi (Excel)</th>
+          <th class="text-left px-3 py-2">Tech (Excel)</th>
+          <th class="text-left px-3 py-2">Tech (Sistem)</th>
+          <th class="text-center px-3 py-2">Kategori</th>
+          <th class="text-center px-3 py-2">Status</th>
+          <th class="text-right px-3 py-2">Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="r in rows" :key="r.id">
+          <tr class="border-b border-gray-100 hover:bg-gray-50">
+            <td class="px-3 py-2" x-text="r.excel_date"></td>
+            <td class="px-3 py-2 font-medium" x-text="r.client_name || '(unmatched)'"></td>
+            <td class="px-3 py-2" x-text="r.tech_name || '—'"></td>
+            <td class="px-3 py-2" x-text="r.sys_tech_name || '—'"></td>
+            <td class="px-3 py-2 text-center">
+              <span :class="catColor(r.diff_category)" class="text-xs px-2 py-0.5 rounded font-semibold" x-text="catLabel(r.diff_category)"></span>
+            </td>
+            <td class="px-3 py-2 text-center">
+              <span :class="resColor(r.resolution)" class="text-xs px-2 py-0.5 rounded" x-text="r.resolution"></span>
+            </td>
+            <td class="px-3 py-2 text-right">
+              <button @click="resolve(r.id, 'accepted')" x-show="r.resolution === 'pending'"
+                      class="text-xs text-green-600 hover:underline mr-2">✓ OK</button>
+              <button @click="resolve(r.id, 'ignored')" x-show="r.resolution === 'pending'"
+                      class="text-xs text-gray-500 hover:underline">Skip</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  {# Empty state #}
+  <div x-show="currentUploadId && rows.length === 0 && !busy" x-cloak
+       class="bg-gray-50 border border-dashed rounded-xl p-12 text-center text-gray-400">
+    Tidak ada baris dengan filter ini.
+  </div>
+
+  {# Toast #}
+  <div x-show="toast.show" x-transition.opacity x-cloak
+       class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm z-50">
+    <span x-text="toast.message"></span>
+  </div>
+</div>
+
+<script>
+function auditCompare() {
+  return {
+    busy: false,
+    targetMonth: new Date().toISOString().slice(0,7),
+    file: null,
+    uploads: [],
+    currentUploadId: null,
+    rows: [],
+    summary: null,
+    filterCategory: '',
+    toast: {show:false, message:''},
+
+    categories: [
+      {key:'same', label:'Sama', icon:'✅', activeClass:'bg-green-100 border-green-500 text-green-800', passiveClass:'bg-white border-gray-200 text-gray-700 hover:border-green-300'},
+      {key:'tech_diff_backup', label:'Ganti Tech', icon:'👤', activeClass:'bg-yellow-100 border-yellow-500 text-yellow-800', passiveClass:'bg-white border-gray-200 text-gray-700 hover:border-yellow-300'},
+      {key:'excel_only', label:'Excel Only', icon:'📄', activeClass:'bg-blue-100 border-blue-500 text-blue-800', passiveClass:'bg-white border-gray-200 text-gray-700 hover:border-blue-300'},
+      {key:'system_added', label:'Sistem Tambah', icon:'➕', activeClass:'bg-purple-100 border-purple-500 text-purple-800', passiveClass:'bg-white border-gray-200 text-gray-700 hover:border-purple-300'},
+      {key:'dup_excel', label:'Dup Excel', icon:'🔁', activeClass:'bg-orange-100 border-orange-500 text-orange-800', passiveClass:'bg-white border-gray-200 text-gray-700 hover:border-orange-300'},
+    ],
+
+    async init() {
+      await this.loadUploads();
+      if (this.uploads.length > 0) {
+        const latest = this.uploads[0];
+        this.loadCompare(latest.id, latest.target_month);
+      }
+    },
+    async loadUploads() {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const r = await auth('/api/v1/enterprise/audit/compare/list');
+      this.uploads = (await r.json()).uploads || [];
+    },
+    async upload() {
+      if (!this.file || !this.targetMonth) return;
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const fd = new FormData();
+        fd.append('file', this.file);
+        fd.append('target_month', this.targetMonth);
+        const r = await auth('/api/v1/enterprise/audit/compare/upload', {
+          method: 'POST', body: fd,
+        });
+        const d = await r.json();
+        if (!r.ok) { this.showToast('❌ ' + (d.error || 'Gagal upload')); return; }
+        this.showToast(`✅ ${d.compare_rows} baris perbandingan tersimpan`);
+        await this.loadUploads();
+        await this.loadCompare(d.upload_id, d.target_month);
+      } finally { this.busy = false; }
+    },
+    async loadCompare(uploadId, month) {
+      this.currentUploadId = uploadId;
+      this.targetMonth = month;
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const params = new URLSearchParams();
+        if (this.filterCategory) params.set('category', this.filterCategory);
+        const r = await auth(`/api/v1/enterprise/audit/compare/${uploadId}?${params}`);
+        const d = await r.json();
+        this.rows = d.rows || [];
+        this.summary = d.summary || {};
+      } finally { this.busy = false; }
+    },
+    async reloadRows() { if (this.currentUploadId) await this.loadCompare(this.currentUploadId, this.targetMonth); },
+    async resolve(rowId, resolution) {
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      await auth(`/api/v1/enterprise/audit/compare/row/${rowId}/resolve`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({resolution}),
+      });
+      await this.reloadRows();
+      this.showToast(`Row ${resolution}`);
+    },
+    totalForCategory(cat) {
+      const stats = this.summary?.[cat];
+      if (!stats) return 0;
+      return Object.values(stats).reduce((a,b) => a+b, 0);
+    },
+    pendingForCategory(cat) { return this.summary?.[cat]?.pending || 0; },
+    catLabel(c) {
+      return ({same:'✅ Sama', tech_diff_backup:'👤 Tech beda', tech_diff_absence:'🚫 Tech cuti',
+               system_added:'➕ Sistem', excel_only:'📄 Excel only',
+               dup_excel:'🔁 Dup Excel', dup_system:'🔁 Dup Sistem',
+               unresolved:'❌ Unresolved'}[c] || c);
+    },
+    catColor(c) {
+      return ({same:'bg-green-100 text-green-700', tech_diff_backup:'bg-yellow-100 text-yellow-700',
+               system_added:'bg-purple-100 text-purple-700', excel_only:'bg-blue-100 text-blue-700',
+               dup_excel:'bg-orange-100 text-orange-700', dup_system:'bg-orange-100 text-orange-700'}[c] || 'bg-gray-100 text-gray-700');
+    },
+    resColor(r) {
+      return ({pending:'bg-gray-100 text-gray-700', accepted:'bg-green-100 text-green-700',
+               fixed:'bg-blue-100 text-blue-700', ignored:'bg-gray-100 text-gray-500'}[r] || 'bg-gray-100');
+    },
+    showToast(msg) { this.toast = {show:true, message:msg}; setTimeout(() => this.toast.show=false, 6000); },
+  };
+}
+</script>
+{% endblock %}

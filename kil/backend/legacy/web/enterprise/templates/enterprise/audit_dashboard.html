@@ -1,0 +1,352 @@
+{% extends "enterprise/base.html" %}
+{% block title %}Audit Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="auditDashboard()" x-init="init()" class="space-y-6 max-w-7xl mx-auto">
+
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <span class="text-2xl">📊</span> Audit Dashboard
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">Cek kesiapan jadwal sebelum publish.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="month" x-model="month" @change="reload()"
+             class="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-orange-500 focus:outline-none">
+      <button @click="reload()" :disabled="busy"
+              class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 disabled:opacity-50">
+        🔄 Refresh
+      </button>
+    </div>
+  </div>
+
+  {# Readiness score hero card #}
+  <div x-show="readiness" x-cloak
+       :class="{
+         'bg-green-50 border-green-300':  readiness?.status === 'ready',
+         'bg-yellow-50 border-yellow-300': readiness?.status === 'warning',
+         'bg-orange-50 border-orange-300': readiness?.status === 'review',
+         'bg-red-50 border-red-300':       readiness?.status === 'not_ready',
+       }"
+       class="border-2 rounded-xl p-6">
+    <div class="flex items-center justify-between flex-wrap gap-4">
+      <div class="flex items-center gap-5">
+        <div class="text-6xl font-bold"
+             :class="{
+               'text-green-600':  readiness?.status === 'ready',
+               'text-yellow-600': readiness?.status === 'warning',
+               'text-orange-600': readiness?.status === 'review',
+               'text-red-600':    readiness?.status === 'not_ready',
+             }">
+          <span x-text="readiness?.readiness_score"></span><span class="text-3xl">%</span>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wider font-semibold text-gray-600">Kesiapan Publish</div>
+          <div class="text-xl font-bold text-gray-900" x-text="readiness?.label"></div>
+          <div class="text-sm text-gray-600 mt-1">
+            <strong x-text="readiness?.blockers_total"></strong> blocker ·
+            <strong x-text="readiness?.warnings_total"></strong> warning
+          </div>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-xs uppercase tracking-wider font-semibold text-gray-600">Jumlah Event</div>
+        <div class="text-3xl font-bold text-gray-900" x-text="readiness?.stats?.total || 0"></div>
+        <div class="text-xs text-gray-500 mt-1">
+          <span x-text="readiness?.stats?.techs"></span> teknisi ·
+          <span x-text="readiness?.stats?.clients"></span> lokasi
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Empty state #}
+  <div x-show="!readiness?.batch_id && !busy" x-cloak class="bg-gray-50 border border-dashed rounded-xl p-12 text-center">
+    <div class="text-5xl mb-3">📋</div>
+    <div class="text-gray-600">Belum ada draft jadwal untuk bulan ini.</div>
+    <a href="/enterprise/schedule-draft-calendar"
+       class="inline-block mt-3 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold">
+      Generate Draft →
+    </a>
+  </div>
+
+  {# Blockers section #}
+  <div x-show="readiness?.batch_id && (blockers.length > 0 || warnings.length > 0)" x-cloak>
+    <h2 class="text-lg font-bold text-gray-900 mb-3">🚧 Yang harus diselesaikan</h2>
+    <div class="grid md:grid-cols-2 gap-3">
+      <div class="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+        <div class="font-semibold text-red-800 mb-2">❌ Hard Blockers (<span x-text="blockers.length"></span>)</div>
+        <p class="text-xs text-red-700 mb-3">Wajib selesai sebelum publish.</p>
+        <div class="space-y-2">
+          <template x-for="b in blockers" :key="b.key">
+            <div class="bg-white rounded-lg p-3 border border-red-200">
+              <div class="flex items-center justify-between">
+                <div class="font-medium text-gray-900 text-sm" x-text="b.label"></div>
+                <span class="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded" x-text="b.count"></span>
+              </div>
+              <div class="text-xs text-gray-600 mt-1" x-text="b.hint"></div>
+            </div>
+          </template>
+          <div x-show="blockers.length === 0" class="text-xs text-gray-500 italic">Tidak ada blocker. 🎉</div>
+        </div>
+      </div>
+
+      <div class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4">
+        <div class="font-semibold text-yellow-800 mb-2">⚠️ Soft Warnings (<span x-text="warnings.length"></span>)</div>
+        <p class="text-xs text-yellow-700 mb-3">Boleh publish tapi sebaiknya direview.</p>
+        <div class="space-y-2">
+          <template x-for="w in warnings" :key="w.key">
+            <div class="bg-white rounded-lg p-3 border border-yellow-200">
+              <div class="flex items-center justify-between">
+                <div class="font-medium text-gray-900 text-sm" x-text="w.label"></div>
+                <span class="bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-1 rounded" x-text="w.count"></span>
+              </div>
+              <div class="text-xs text-gray-600 mt-1" x-text="w.hint"></div>
+            </div>
+          </template>
+          <div x-show="warnings.length === 0" class="text-xs text-gray-500 italic">Tidak ada warning.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Layer 1: Calendar count #}
+  <div x-show="readiness?.batch_id" x-cloak>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-gray-900">📅 Layer 1 — Kalender per Tanggal</h2>
+      <button @click="loadLayerCalendar()" :disabled="busyLayer"
+              class="text-sm text-orange-600 hover:underline">Refresh</button>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+          <tr>
+            <th class="text-left px-4 py-2">Tanggal</th>
+            <th class="text-right px-4 py-2">Sistem</th>
+            <th class="text-right px-4 py-2">Excel</th>
+            <th class="text-right px-4 py-2">Selisih</th>
+            <th class="text-center px-4 py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in layerCalendar" :key="r.date">
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
+              <td class="px-4 py-2 font-medium" x-text="r.date"></td>
+              <td class="px-4 py-2 text-right" x-text="r.system_count"></td>
+              <td class="px-4 py-2 text-right text-gray-500" x-text="r.excel_count || '—'"></td>
+              <td class="px-4 py-2 text-right"
+                  :class="r.diff > 0 ? 'text-orange-600 font-semibold' : r.diff < 0 ? 'text-red-600 font-semibold' : 'text-gray-500'"
+                  x-text="r.diff > 0 ? '+'+r.diff : r.diff"></td>
+              <td class="px-4 py-2 text-center">
+                <span :class="{'bg-green-100 text-green-700': r.status==='ok','bg-orange-100 text-orange-700': r.status==='over','bg-red-100 text-red-700': r.status==='under'}"
+                      class="text-xs px-2 py-0.5 rounded font-semibold" x-text="r.status === 'ok' ? '✓ OK' : r.status === 'over' ? '⬆ Lebih' : '⬇ Kurang'"></span>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="layerCalendar.length === 0 && !busyLayer"><td colspan="5" class="text-center py-8 text-gray-400">Klik Refresh untuk load.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div x-show="!hasExcelCompare && layerCalendar.length > 0" class="mt-2 text-xs text-gray-500">
+      ℹ️ Tidak ada Excel upload untuk bulan ini. Compare → <a href="/enterprise/audit-compare" class="text-orange-600 hover:underline">Upload Excel</a>
+    </div>
+  </div>
+
+  {# Layer 4: Tech assignment #}
+  <div x-show="readiness?.batch_id" x-cloak>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-gray-900">👤 Layer 4 — Beban Teknisi</h2>
+      <button @click="loadLayerTech()" :disabled="busyLayer" class="text-sm text-orange-600 hover:underline">Refresh</button>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+          <tr>
+            <th class="text-left px-4 py-2">Teknisi</th>
+            <th class="text-right px-4 py-2">Total Visit</th>
+            <th class="text-right px-4 py-2">Hari Kerja</th>
+            <th class="text-right px-4 py-2">Hari Overload (>5)</th>
+            <th class="text-right px-4 py-2">Cuti tapi dijadwal</th>
+            <th class="text-center px-4 py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in layerTech" :key="r.tech">
+            <tr class="border-b border-gray-100">
+              <td class="px-4 py-2 font-medium" x-text="r.tech"></td>
+              <td class="px-4 py-2 text-right" x-text="r.total"></td>
+              <td class="px-4 py-2 text-right" x-text="r.days_worked"></td>
+              <td class="px-4 py-2 text-right"
+                  :class="r.overload_days > 0 ? 'text-orange-600 font-semibold' : 'text-gray-500'"
+                  x-text="r.overload_days"></td>
+              <td class="px-4 py-2 text-right"
+                  :class="r.unavail_assigned > 0 ? 'text-red-600 font-semibold' : 'text-gray-500'"
+                  x-text="r.unavail_assigned"></td>
+              <td class="px-4 py-2 text-center">
+                <template x-if="r.unavail_assigned > 0">
+                  <span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded">❌ Konflik</span>
+                </template>
+                <template x-if="r.unavail_assigned === 0 && r.overload_days > 0">
+                  <span class="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded">⚠️ Overload</span>
+                </template>
+                <template x-if="r.unavail_assigned === 0 && r.overload_days === 0">
+                  <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded">✓ OK</span>
+                </template>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="layerTech.length === 0 && !busyLayer"><td colspan="6" class="text-center py-8 text-gray-400">Klik Refresh untuk load.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Layer 7: Duplicates #}
+  <div x-show="readiness?.batch_id" x-cloak>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-gray-900">🔁 Layer 7 — Duplikasi</h2>
+      <button @click="loadLayerDup()" :disabled="busyLayer" class="text-sm text-orange-600 hover:underline">Refresh</button>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+          <tr><th class="text-left px-4 py-2">Lokasi</th>
+              <th class="text-left px-4 py-2">Teknisi</th>
+              <th class="text-left px-4 py-2">Tanggal</th>
+              <th class="text-right px-4 py-2">Dup count</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="r in layerDup" :key="r.event_ids?.join('-')">
+            <tr class="border-b border-gray-100">
+              <td class="px-4 py-2 font-medium" x-text="r.client_name"></td>
+              <td class="px-4 py-2" x-text="r.tech_name"></td>
+              <td class="px-4 py-2" x-text="r.start_date"></td>
+              <td class="px-4 py-2 text-right text-red-600 font-bold" x-text="r.dup_count"></td>
+            </tr>
+          </template>
+          <tr x-show="layerDup.length === 0 && !busyLayer"><td colspan="4" class="text-center py-8 text-gray-400">Klik Refresh. Tidak ada dup = bagus!</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Publish gate action #}
+  <div x-show="readiness?.batch_id" x-cloak class="bg-white border-2 border-purple-200 rounded-xl p-5">
+    <h2 class="text-lg font-bold text-purple-900 mb-3">🚀 Publish Gate</h2>
+    <p class="text-sm text-gray-700 mb-4">
+      <span x-show="readiness?.blockers_total === 0">✅ Tidak ada blocker. Aman untuk publish.</span>
+      <span x-show="readiness?.blockers_total > 0" class="text-red-700">❌ Ada <strong x-text="readiness?.blockers_total"></strong> blocker. Resolve dulu atau klik "Override" jika urgent.</span>
+    </p>
+    <div class="flex items-center gap-3 flex-wrap">
+      <button @click="runGate(false)" :disabled="busyGate || readiness?.blockers_total > 0"
+              class="px-5 py-3 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed">
+        ✓ Publish Schedule
+      </button>
+      <button @click="overrideDialog = true" x-show="readiness?.blockers_total > 0"
+              class="px-5 py-3 bg-white border-2 border-red-300 text-red-600 rounded-lg text-sm font-semibold hover:bg-red-50">
+        ⚠️ Override + Publish (alasan wajib)
+      </button>
+    </div>
+  </div>
+
+  {# Override dialog #}
+  <div x-show="overrideDialog" x-cloak @click="overrideDialog=false"
+       class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+    <div @click.stop class="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full">
+      <h3 class="text-lg font-bold text-red-700 mb-2">⚠️ Override Publish Gate</h3>
+      <p class="text-sm text-gray-700 mb-3">Bypass <strong x-text="readiness?.blockers_total"></strong> blocker. Wajib kasih alasan.</p>
+      <textarea x-model="overrideNote" rows="3" placeholder="Alasan override (wajib)"
+                class="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm"></textarea>
+      <div class="flex gap-2 mt-4">
+        <button @click="overrideDialog=false" class="flex-1 px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-medium">Batal</button>
+        <button @click="runGate(true)" :disabled="!overrideNote.trim() || busyGate"
+                class="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-40">
+          Override & Publish
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Toast #}
+  <div x-show="toast.show" x-transition.opacity x-cloak
+       class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm z-50 min-w-[280px]">
+    <span x-text="toast.message"></span>
+  </div>
+</div>
+
+<script>
+function auditDashboard() {
+  return {
+    busy: false, busyLayer: false, busyGate: false,
+    month: new Date().toISOString().slice(0,7),
+    readiness: null,
+    blockers: [], warnings: [],
+    layerCalendar: [], layerTech: [], layerDup: [],
+    hasExcelCompare: false,
+    overrideDialog: false, overrideNote: '',
+    toast: {show:false, message:''},
+
+    async init() { await this.reload(); },
+    async reload() {
+      this.busy = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/audit/readiness/${this.month}`);
+        this.readiness = await r.json();
+        const r2 = await auth(`/api/v1/enterprise/audit/blockers/${this.month}`);
+        const d = await r2.json();
+        this.blockers = d.blockers || [];
+        this.warnings = d.warnings || [];
+        // Auto-load layers
+        await Promise.all([this.loadLayerCalendar(), this.loadLayerTech(), this.loadLayerDup()]);
+      } finally { this.busy = false; }
+    },
+    async loadLayerCalendar() {
+      this.busyLayer = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/audit/layer/calendar-count/${this.month}`);
+        const d = await r.json();
+        this.layerCalendar = d.rows || [];
+        this.hasExcelCompare = d.has_excel_compare || false;
+      } finally { this.busyLayer = false; }
+    },
+    async loadLayerTech() {
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/audit/layer/tech-assignment/${this.month}`);
+        const d = await r.json();
+        this.layerTech = d.rows || [];
+      } catch(e) {}
+    },
+    async loadLayerDup() {
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/audit/layer/duplicates/${this.month}`);
+        const d = await r.json();
+        this.layerDup = d.duplicates || [];
+      } catch(e) {}
+    },
+    async runGate(override) {
+      this.busyGate = true;
+      try {
+        const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+        const r = await auth(`/api/v1/enterprise/audit/publish-gate/${this.month}`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({override, notes: this.overrideNote || ''}),
+        });
+        const d = await r.json();
+        if (d.allowed) {
+          this.showToast(`✅ Publish gate: ${d.decision} (score ${d.readiness_score})`);
+          this.overrideDialog = false; this.overrideNote = '';
+        } else {
+          this.showToast(`❌ Blocked: ${d.blockers_total} blocker harus diresolve dulu.`);
+        }
+      } finally { this.busyGate = false; }
+    },
+    showToast(msg) { this.toast = {show:true, message:msg}; setTimeout(() => this.toast.show=false, 6000); },
+  };
+}
+</script>
+{% endblock %}

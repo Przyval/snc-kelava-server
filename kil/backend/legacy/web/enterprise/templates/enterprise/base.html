@@ -138,6 +138,21 @@
                     <span class="text-base flex-shrink-0">🔀</span>
                     Perbandingan Jadwal
                 </a>
+                <a x-show="['admin','koordinator','supervisor'].includes(role)" href="/enterprise/audit-dashboard"
+                   class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.audit_dashboard' else OFF }}">
+                    <span class="text-base flex-shrink-0">📊</span>
+                    Audit Dashboard
+                </a>
+                <a x-show="['admin','koordinator'].includes(role)" href="/enterprise/audit-compare"
+                   class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.audit_compare' else OFF }}">
+                    <span class="text-base flex-shrink-0">📑</span>
+                    Bandingkan vs Excel
+                </a>
+                <a x-show="['admin','koordinator'].includes(role)" href="/enterprise/audit-matching"
+                   class="{{ A }} pl-9 {{ ON if request.endpoint == 'enterprise.audit_matching' else OFF }}">
+                    <span class="text-base flex-shrink-0">🔍</span>
+                    Matching Review
+                </a>
                 <a x-show="['admin','koordinator','supervisor'].includes(role)" href="/enterprise/scheduling"
                    class="{{ A }} {{ ON if request.endpoint == 'enterprise.scheduling' else OFF }}">
                     <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
