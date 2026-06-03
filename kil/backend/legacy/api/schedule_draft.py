@@ -881,12 +881,17 @@ def generate_draft():
                         end_dt = datetime.combine(visit_date, te) if te else None
                         if end_dt and end_dt <= start_dt:
                             end_dt += timedelta(days=1)
+                        if end_dt is None:
+                            end_dt = start_dt + timedelta(hours=1)
 
+                        # Granular dup check: per start_datetime, bukan per date.
+                        # Sebelumnya: AHYAT 16:00 fire dulu → 08:00 di-skip krn sama date.
+                        # Sekarang: beda slot waktu boleh coexist.
                         cur.execute("""
                             SELECT id FROM snc_schedule_events
                             WHERE draft_batch_id = %s AND technician_id = %s
-                              AND client_id = %s AND start_date = %s LIMIT 1
-                        """, (batch_id, tech, cid, visit_date))
+                              AND client_id = %s AND start_datetime = %s LIMIT 1
+                        """, (batch_id, tech, cid, start_dt))
                         if cur.fetchone():
                             events_skipped += 1
                             skip_reasons['duplicate'] += 1
@@ -1075,6 +1080,9 @@ def generate_draft():
                                 end_dt += timedelta(days=1)   # midnight crossing
                         except Exception:
                             pass
+                    if end_dt is None:
+                        # Default 1 jam — biar event punya durasi visible di kalender
+                        end_dt = start_dt + timedelta(hours=1)
 
                     # Tag confidence & pattern di notes
                     notes = (f"Draft v2 | {p['frequency']} | conf={p['confidence']:.2f} "
