@@ -236,14 +236,12 @@ def main():
                              notes, effective_start, created_by)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'PRC',
                                 true, true, %s, %s, %s)
-                        ON CONFLICT (client_id, effective_start) DO UPDATE SET
+                        ON CONFLICT (client_id, weekdays, time_start, COALESCE(week_pattern, '_'))
+                        DO UPDATE SET
                             primary_tech_id = EXCLUDED.primary_tech_id,
                             backup_tech_1_id = EXCLUDED.backup_tech_1_id,
                             backup_tech_2_id = EXCLUDED.backup_tech_2_id,
                             frequency = EXCLUDED.frequency,
-                            weekdays = EXCLUDED.weekdays,
-                            week_pattern = EXCLUDED.week_pattern,
-                            time_start = EXCLUDED.time_start,
                             time_end = EXCLUDED.time_end,
                             is_mandatory = true,
                             notes = EXCLUDED.notes,
@@ -252,7 +250,7 @@ def main():
                     """, (client_id, primary_id, bkp1_id, bkp2_id,
                           freq, [day_idx], wp,
                           t_start, t_end,
-                          notes, date.today().isoformat(), args.user_id))
+                          notes, '2026-01-01', args.user_id))
                     res = cur.fetchone()
                     if res['is_new']:
                         stats['rules_inserted'] += 1
