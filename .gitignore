@@ -56,6 +56,8 @@ analytics/dashboard/.env
 
 # --- Generated / Large Data (regeneratable, not for git) ---
 data/
+!data/golden/
+!data/golden/**
 analytics/kpi/
 analytics/staging/
 analytics/insights/
