@@ -6,8 +6,11 @@ on:
   workflow_dispatch:        # allow manual trigger from GitHub UI
 
 env:
-  REMOTE: root@104.194.154.108
-  HOST: 104.194.154.108
+  # DEPLOY_HOST + DEPLOY_DOMAIN are set as repo secrets — easier to rotate
+  # when migrating to new VPS (mis. kalender.safencare.work). Fallback ke
+  # safencare.work production lama kalau secret kosong.
+  HOST: ${{ secrets.DEPLOY_HOST || '104.194.154.108' }}
+  REMOTE: root@${{ secrets.DEPLOY_HOST || '104.194.154.108' }}
   DEPLOY_DIR: /root/kil-server
 
 jobs:
