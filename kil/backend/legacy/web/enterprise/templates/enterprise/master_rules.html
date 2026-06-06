@@ -59,9 +59,23 @@
     </div>
   </div>
 
+  {# View tab switcher — Per Client (default, admin cek 1-by-1) vs Per Rule #}
+  <div class="bg-white border border-gray-200 rounded-xl p-1 inline-flex">
+    <button @click="viewMode = 'clients'"
+            :class="viewMode === 'clients' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
+            class="px-4 py-2 text-sm font-medium rounded-lg transition">
+      📋 Per Client
+    </button>
+    <button @click="viewMode = 'rules'"
+            :class="viewMode === 'rules' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-100'"
+            class="px-4 py-2 text-sm font-medium rounded-lg transition">
+      ⚙️ Per Rule
+    </button>
+  </div>
+
   {# Toolbar #}
   <div class="bg-white border border-gray-200 rounded-xl p-4">
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3" x-show="viewMode === 'rules'">
       <input x-model="filterSearch" @input.debounce.300ms="reload()"
              type="text" placeholder="Search customer..."
              class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-64">
@@ -87,10 +101,84 @@
         Showing <span x-text="rules.length"></span> of <span x-text="totalRules"></span>
       </span>
     </div>
+    <div class="flex flex-wrap items-center gap-3" x-show="viewMode === 'clients'">
+      <input x-model="clientSearch" @input.debounce.300ms="loadClientsCoverage()"
+             type="text" placeholder="Search client name..."
+             class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-64">
+      <select x-model="clientFilter" @change="loadClientsCoverage()" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="all">Semua klien aktif</option>
+        <option value="no_rules">❌ Belum ada rule</option>
+        <option value="has_rules">✅ Sudah ada rule</option>
+        <option value="inconsistent">⚠️ Jam tidak konsisten</option>
+      </select>
+      <div class="flex-1"></div>
+      <span class="text-sm text-gray-500">
+        <span x-text="clientsList.length"></span> klien
+        <span class="text-gray-400">| Total active: <span x-text="clientsTotal"></span></span>
+      </span>
+    </div>
   </div>
 
-  {# Rules Table #}
-  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+  {# Per Client view — tabel klien-centric #}
+  <div x-show="viewMode === 'clients'" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="text-left px-4 py-3 font-medium">Klien</th>
+          <th class="text-center px-4 py-3 font-medium">Rules</th>
+          <th class="text-center px-4 py-3 font-medium">Mandatory</th>
+          <th class="text-center px-4 py-3 font-medium">Visit 60d</th>
+          <th class="text-left px-4 py-3 font-medium">Last Visit</th>
+          <th class="text-center px-4 py-3 font-medium">Jam Konsisten?</th>
+          <th class="text-right px-4 py-3 font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="cli in clientsList" :key="cli.id">
+          <tr class="border-b border-gray-100 hover:bg-gray-50" :class="{ 'bg-red-50': cli.n_rules === 0 }">
+            <td class="px-4 py-3">
+              <div class="font-medium text-gray-900" x-text="cli.name"></div>
+              <div class="text-xs text-gray-400" x-text="'#' + cli.id"></div>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <span :class="cli.n_rules === 0 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'"
+                    class="text-xs font-semibold px-2 py-1 rounded" x-text="cli.n_rules"></span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <span x-show="cli.n_mandatory > 0" class="text-orange-600 font-bold" x-text="cli.n_mandatory"></span>
+              <span x-show="cli.n_mandatory === 0" class="text-gray-400">—</span>
+            </td>
+            <td class="px-4 py-3 text-center text-gray-700" x-text="cli.visits_60d"></td>
+            <td class="px-4 py-3 text-gray-600 text-xs" x-text="cli.last_visit || '—'"></td>
+            <td class="px-4 py-3 text-center">
+              <template x-if="cli.time_variance !== null && Number(cli.time_variance) > 3">
+                <span class="text-xs text-red-700 bg-red-100 px-2 py-1 rounded font-semibold"
+                      :title="'Variance: ' + Number(cli.time_variance).toFixed(1) + 'h'">
+                  ⚠️ Tidak konsisten
+                </span>
+              </template>
+              <template x-if="!(cli.time_variance !== null && Number(cli.time_variance) > 3)">
+                <span class="text-xs text-gray-400">✓</span>
+              </template>
+            </td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <button @click="viewClientRules(cli)" class="text-xs font-medium text-blue-600 hover:underline" x-show="cli.n_rules > 0">View Rules</button>
+              <button @click="addRuleForClient(cli)" class="text-xs font-medium text-orange-600 hover:underline ml-2">+ Rule</button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="clientsList.length === 0 && !clientsBusy">
+          <td colspan="7" class="px-4 py-12 text-center text-gray-400 text-sm">No clients found.</td>
+        </tr>
+        <tr x-show="clientsBusy">
+          <td colspan="7" class="px-4 py-12 text-center text-gray-400 text-sm">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Rules Table — Per Rule view #}
+  <div x-show="viewMode === 'rules'" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
         <tr>
@@ -403,11 +491,21 @@ function masterRulesEditor() {
     customersWithPattern: [],
     auditLog: [],
 
-    // Filters
+    // View mode
+    viewMode: 'clients',  // 'clients' | 'rules'
+
+    // Filters (Per Rule)
     filterSearch: '',
     filterFrequency: '',
     filterTech: '',
     activeOnly: true,
+
+    // Per Client view
+    clientSearch: '',
+    clientFilter: 'all',
+    clientsList: [],
+    clientsTotal: 0,
+    clientsBusy: false,
 
     // Suggest panel
     showSuggest: false,
@@ -436,7 +534,37 @@ function masterRulesEditor() {
         this.loadTechnicians(),
         this.loadCustomers(),
         this.loadAuditLog(),
+        this.loadClientsCoverage(),
       ]);
+    },
+
+    async loadClientsCoverage() {
+      this.clientsBusy = true;
+      const auth = window.SanoCareAuth?.authenticatedFetch || fetch;
+      const params = new URLSearchParams({
+        limit: 1000,
+        filter: this.clientFilter,
+      });
+      if (this.clientSearch) params.set('search', this.clientSearch);
+      try {
+        const r = await auth(`/api/v1/enterprise/recurring-rules/clients-coverage?${params}`);
+        const d = await r.json();
+        this.clientsList = d.clients || [];
+        this.clientsTotal = d.total || 0;
+      } catch(e) { console.error(e); }
+      this.clientsBusy = false;
+    },
+
+    viewClientRules(cli) {
+      // Switch ke Per Rule view + filter by client name
+      this.viewMode = 'rules';
+      this.filterSearch = cli.name;
+      this.reload();
+    },
+
+    addRuleForClient(cli) {
+      this.openCreateModal();
+      this.editModal.client_id = cli.id;
     },
 
     async reload() {

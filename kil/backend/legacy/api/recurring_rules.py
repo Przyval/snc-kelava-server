@@ -631,6 +631,112 @@ def list_clients_for_rules():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /recurring-rules/clients-coverage — semua klien dengan rules + history
+# ─────────────────────────────────────────────────────────────────────────────
+
+@recurring_rules_bp.route("/clients-coverage", methods=["GET"])
+@require_auth
+def clients_coverage():
+    """
+    Returns semua klien aktif (or recently visited) + rules per klien + history.
+    Admin pakai ini untuk cek 1-by-1 apakah semua klien punya rule yang valid.
+
+    Query params:
+      search        client name LIKE
+      filter        'all' | 'no_rules' | 'has_rules' | 'inconsistent' (default 'all')
+      limit         default 200, max 1000
+      offset        default 0
+    """
+    search = request.args.get("search", "").strip()
+    rule_filter = request.args.get("filter", "all")
+    limit = min(int(request.args.get("limit", 200)), 1000)
+    offset = int(request.args.get("offset", 0))
+
+    where = ["1=1"]
+    params = []
+    if search:
+        where.append("c.name ILIKE %s")
+        params.append(f"%{search}%")
+
+    # Filter: hanya klien aktif (visited last 90 days OR has rule OR has contract)
+    where.append("""(
+        EXISTS (SELECT 1 FROM snc_recurring_rules r
+                WHERE r.client_id = c.id
+                  AND (r.effective_end IS NULL OR r.effective_end >= CURRENT_DATE))
+        OR EXISTS (SELECT 1 FROM snc_schedule_events se
+                   WHERE se.client_id = c.id
+                     AND se.start_date >= (CURRENT_DATE - INTERVAL '90 days'))
+        OR EXISTS (SELECT 1 FROM snc_contracts ct
+                   WHERE ct.snc_customer_id = c.id
+                     AND COALESCE(ct.is_active, 'YES') = 'YES')
+    )""")
+
+    sql_base = f"""
+        FROM snc_clients c
+        WHERE {' AND '.join(where)}
+    """
+
+    sql_list = f"""
+        SELECT c.id, c.name, c.address,
+               (SELECT COUNT(*) FROM snc_recurring_rules r
+                WHERE r.client_id = c.id
+                  AND (r.effective_end IS NULL OR r.effective_end >= CURRENT_DATE)) AS n_rules,
+               (SELECT COUNT(*) FROM snc_recurring_rules r
+                WHERE r.client_id = c.id AND r.is_mandatory = true
+                  AND (r.effective_end IS NULL OR r.effective_end >= CURRENT_DATE)) AS n_mandatory,
+               (SELECT MAX(start_date) FROM snc_schedule_events se
+                WHERE se.client_id = c.id) AS last_visit,
+               (SELECT COUNT(*) FROM snc_schedule_events se
+                WHERE se.client_id = c.id
+                  AND se.start_date >= (CURRENT_DATE - INTERVAL '60 days')) AS visits_60d,
+               (SELECT MAX(ABS(EXTRACT(HOUR FROM start_datetime) -
+                              (SELECT AVG(EXTRACT(HOUR FROM start_datetime))
+                               FROM snc_schedule_events
+                               WHERE client_id = c.id
+                                 AND start_date >= (CURRENT_DATE - INTERVAL '90 days')
+                                 AND start_datetime IS NOT NULL)))
+                FROM snc_schedule_events
+                WHERE client_id = c.id
+                  AND start_date >= (CURRENT_DATE - INTERVAL '90 days')
+                  AND start_datetime IS NOT NULL) AS time_variance
+        {sql_base}
+        ORDER BY c.name
+        LIMIT %s OFFSET %s
+    """
+    sql_count = f"SELECT COUNT(*) AS n {sql_base}"
+
+    with _get_local_pool().connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql_count, params)
+            total = cur.fetchone()['n']
+
+            cur.execute(sql_list, params + [limit, offset])
+            clients = cur.fetchall()
+
+    # Post-filter berdasarkan rule_filter (in-memory)
+    if rule_filter == 'no_rules':
+        clients = [c for c in clients if c['n_rules'] == 0]
+    elif rule_filter == 'has_rules':
+        clients = [c for c in clients if c['n_rules'] > 0]
+    elif rule_filter == 'inconsistent':
+        # Klien dengan time variance > 3 jam (jam tidak konsisten)
+        clients = [c for c in clients if c['time_variance'] and float(c['time_variance']) > 3]
+
+    # Serialize
+    for c in clients:
+        if c['last_visit']:
+            c['last_visit'] = c['last_visit'].isoformat()
+        if c['time_variance']:
+            c['time_variance'] = float(c['time_variance'])
+
+    return jsonify({
+        'total': total,
+        'returned': len(clients),
+        'clients': clients,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /recurring-rules/bulk-import — create many at once
 # ─────────────────────────────────────────────────────────────────────────────
 
