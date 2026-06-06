@@ -341,6 +341,16 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
     for e in tech_events:
         events_by_date[e['start_date']].append(e)
 
+    # ── Detect overlapping events (same tech + same start_datetime, beda klien)
+    #    Untuk koord: kasih tahu visual — warna merah + "!" prefix.
+    #    Sistem tidak bedakan klien dekat (Akbar 3 klien sebelahan = OK) vs jauh
+    #    (Anam Saisho G-Walk + Demand Jemursari = jauh). Manual review koord.
+    dt_counts = defaultdict(int)
+    for e in tech_events:
+        if e['start_datetime']:
+            dt_counts[e['start_datetime']] += 1
+    conflict_dts = {dt for dt, n in dt_counts.items() if n > 1}
+
     # ── Render weekly blocks ──
     weeks = _weeks_of_month(year, month_num)
     if only_week and 1 <= only_week <= len(weeks):
@@ -401,12 +411,22 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
                 evts = events_by_date.get(d, [])
                 if ri < len(evts):
                     e = evts[ri]
-                    ws.cell(cur_row, col, e['client_name'])
+                    is_conflict = e['start_datetime'] in conflict_dts
+                    # Prefix "!" + warna merah kalau tech booking sama datetime,
+                    # beda klien. Koord review manual.
+                    name_prefix = '! ' if is_conflict else ''
+                    ws.cell(cur_row, col, name_prefix + e['client_name'])
                     _apply_style(ws.cell(cur_row, col), STYLE_CUSTOMER)
                     ws.cell(cur_row, col + 1, _fmt_time_range(e['start_datetime'], e['end_datetime']))
                     _apply_style(ws.cell(cur_row, col + 1), STYLE_TIME)
                     ws.cell(cur_row, col + 2, e.get('visit_type') or '')
                     _apply_style(ws.cell(cur_row, col + 2), STYLE_TYPE)
+                    if is_conflict:
+                        red_fill = PatternFill('solid', fgColor='FFC7CE')
+                        red_font = Font(name='Calibri', size=10, bold=True, color='9C0006')
+                        for sc in range(SUBCOLS_PER_DAY):
+                            ws.cell(cur_row, col + sc).fill = red_fill
+                            ws.cell(cur_row, col + sc).font = red_font
                 else:
                     for sc in range(SUBCOLS_PER_DAY):
                         ws.cell(cur_row, col + sc).border = BORDER
