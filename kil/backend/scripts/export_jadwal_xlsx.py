@@ -247,31 +247,6 @@ def _load_data(cur, target_month: str, batch_id: int | None,
     for r in cur.fetchall():
         tech_off[r['technician_id']][r['date']] = r['status']
 
-    # ── Inconsistent-time clients (untuk alert merah) ──
-    # Klien dengan time_start range > 3 jam di history 90 hari → flag.
-    # Contoh: Indo Rempah kadang siang kadang sore. Sistem tidak bisa
-    # tentukan jam yang tepat, koord harus review manual.
-    client_ids_in_events = {e['client_id'] for e in events}
-    inconsistent_clients = set()
-    if client_ids_in_events:
-        cur.execute("""
-            WITH hist AS (
-                SELECT client_id,
-                       EXTRACT(HOUR FROM start_datetime) AS h
-                FROM snc_schedule_events
-                WHERE client_id = ANY(%s)
-                  AND start_date >= (%s::date - INTERVAL '90 days')
-                  AND start_date <  %s
-                  AND start_datetime IS NOT NULL
-            )
-            SELECT client_id, MAX(h) - MIN(h) AS hrange,
-                   COUNT(DISTINCT h) AS distinct_h
-            FROM hist
-            GROUP BY client_id
-            HAVING COUNT(*) >= 3 AND (MAX(h) - MIN(h) > 3 OR COUNT(DISTINCT h) >= 4)
-        """, (list(client_ids_in_events), mstart, mstart))
-        inconsistent_clients = {r['client_id'] for r in cur.fetchall()}
-
     return {
         'month': target_month, 'year': year, 'month_num': mnum,
         'batch_id': batch_id,
@@ -280,7 +255,6 @@ def _load_data(cur, target_month: str, batch_id: int | None,
         'tech_info': tech_info,
         'suppressed_dates': suppressed,
         'tech_off_dates': tech_off,
-        'inconsistent_clients': inconsistent_clients,
     }
 
 
@@ -317,10 +291,7 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
                        tech_info: dict, tech_events: list,
                        year: int, month_num: int,
                        tech_off_dates: dict, suppressed_dates: set,
-                       only_week: int | None = None,
-                       inconsistent_clients: set | None = None):
-    if inconsistent_clients is None:
-        inconsistent_clients = set()
+                       only_week: int | None = None):
     """Render single tech sheet. If only_week=1..5, only that week-block."""
     bulan_label = BULAN_ID[month_num]
     title = f'JADWAL TEKNISI BULAN {bulan_label} {year}'
@@ -370,26 +341,15 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
     for e in tech_events:
         events_by_date[e['start_date']].append(e)
 
-    # ── Alert detection — 3 jenis flag merah + "!" prefix:
-    #    1. Overlap: tech sama + start_datetime sama (beda klien)
-    #       Contoh: Akbar Jum 08:00 punya 3 klien
-    #    2. Durasi > 2 jam: per-event end-start > 2 jam
-    #       Contoh: Anam Indo Rempah 08:00-14:00 (6 jam, real-nya 1 jam)
-    #    3. Jam tidak konsisten: client di history punya time_start range > 3 jam
-    #       Contoh: Indo Rempah kadang siang kadang sore — sistem belum bisa baca
-    #    Koord tetap review manual — sistem tidak auto-fix.
+    # ── Detect overlapping events (same tech + same start_datetime, beda klien)
+    #    Untuk koord: kasih tahu visual — warna merah + "!" prefix.
+    #    Sistem tidak bedakan klien dekat (Akbar 3 klien sebelahan = OK) vs jauh
+    #    (Anam Saisho G-Walk + Demand Jemursari = jauh). Manual review koord.
     dt_counts = defaultdict(int)
     for e in tech_events:
         if e['start_datetime']:
             dt_counts[e['start_datetime']] += 1
     conflict_dts = {dt for dt, n in dt_counts.items() if n > 1}
-
-    long_event_ids = set()
-    for e in tech_events:
-        if e['start_datetime'] and e['end_datetime']:
-            secs = (e['end_datetime'] - e['start_datetime']).total_seconds()
-            if secs > 2 * 3600:        # >2 jam
-                long_event_ids.add(e['id'])
 
     # ── Render weekly blocks ──
     weeks = _weeks_of_month(year, month_num)
@@ -451,21 +411,17 @@ def _render_tech_sheet(ws, sheet_name: str, real_tech_name: str,
                 evts = events_by_date.get(d, [])
                 if ri < len(evts):
                     e = evts[ri]
-                    is_overlap = e['start_datetime'] in conflict_dts
-                    is_long = e['id'] in long_event_ids
-                    is_inconsistent = e['client_id'] in inconsistent_clients
-                    is_flagged = is_overlap or is_long or is_inconsistent
-                    # Prefix "!" + warna merah utk: overlap (tech booking sama
-                    # datetime, beda klien), durasi >2 jam, atau klien dengan
-                    # jam tidak konsisten di history.
-                    name_prefix = '! ' if is_flagged else ''
+                    is_conflict = e['start_datetime'] in conflict_dts
+                    # Prefix "!" + warna merah kalau tech booking sama datetime,
+                    # beda klien. Koord review manual.
+                    name_prefix = '! ' if is_conflict else ''
                     ws.cell(cur_row, col, name_prefix + e['client_name'])
                     _apply_style(ws.cell(cur_row, col), STYLE_CUSTOMER)
                     ws.cell(cur_row, col + 1, _fmt_time_range(e['start_datetime'], e['end_datetime']))
                     _apply_style(ws.cell(cur_row, col + 1), STYLE_TIME)
                     ws.cell(cur_row, col + 2, e.get('visit_type') or '')
                     _apply_style(ws.cell(cur_row, col + 2), STYLE_TYPE)
-                    if is_flagged:
+                    if is_conflict:
                         red_fill = PatternFill('solid', fgColor='FFC7CE')
                         red_font = Font(name='Calibri', size=10, bold=True, color='9C0006')
                         for sc in range(SUBCOLS_PER_DAY):
@@ -561,7 +517,6 @@ def export_jadwal(
             data['year'], data['month_num'],
             data['tech_off_dates'], data['suppressed_dates'],
             only_week=only_week,
-            inconsistent_clients=data.get('inconsistent_clients', set()),
         )
         if tid:
             _render_off_overlay(ws, tid, data['year'], data['month_num'],
